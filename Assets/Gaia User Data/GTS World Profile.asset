@@ -323,8 +323,8 @@ MonoBehaviour:
     anisoLevel: 1
     mipMapBias: 0
     maxTextureSize: 2048
-    compressed: 0
-    compressionFormat: 4
+    compressed: 1
+    compressionFormat: 51
   variationSettings:
     enabled: 0
     isExpanded: 0

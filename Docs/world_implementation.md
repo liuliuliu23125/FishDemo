@@ -1,6 +1,6 @@
 # World 场景实现分析
 
-> **本文件 394 行，是查阅型参考，不要通读。**
+> **本文件 396 行，是查阅型参考，不要通读。**
 > 只在以下情况打开：要重跑世界生成、排查 chunk 加载不出来、要改世界尺寸/海平面、要接 YooAsset 替换 SECTR、或核对"这个场景到底是怎么来的"。
 >
 > 结论分三类标注：**代码事实**（file:line）、**产物事实**（解析 `World.unity` / 资产文件得到）、**推断**（注明依据）。
@@ -168,8 +168,10 @@ Terrain 仍保留的关键参数（草/树/碰撞仍由它负责）：
 | 三角总量 | 4,718,592（原 Terrain 1887 万的 **25%**） |
 | 常驻 4 块估算 | ≈52.4 万三角 |
 | GTS 资产体积 | **298 MB**（mesh 273.8MB + png 180 个 + mat 36 个） |
+| 纹理数组 | `ASTC_8x8`，2048×2048×8 层，单数组 21.3MB（原 RGBA32 为 341MB） |
 | 材质 | 36 个（每 chunk 一个），共用 shader `PW/GTS_URP_Compiled` |
 | 每个 subTile 组件 | `MeshFilter` + `MeshRenderer` + `GTSMesh` + `GtsRuntimeDataBootstrap` |
+| 合批 | **SRP Batcher**（静态合批已关闭，二者互相干扰） |
 
 **为什么每 chunk 一个材质**：`_Control0/_Control1/_SplatmapIndex/_WorldNormalMap` 是 per-chunk
 的 splat 数据，绑在材质上，因此材质无法跨 chunk 共享。**SRP Batcher 仍能合批**——
