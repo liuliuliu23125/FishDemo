@@ -76,9 +76,47 @@ namespace ProceduralWorlds.GTS
         {
             get => new Vector2(1024, 1024);
         }
+        /// <summary>
+        /// 地形世界尺寸，用于计算贴图 tiling（tiling = worldSize / layer.tileSize）。
+        ///
+        /// ── 为什么不再硬编码 1024 ──
+        /// 原实现返回固定 (1024, 0, 1024)，是给"一个 Terrain = 1024m"的场景用的。
+        /// 本工程把每个 512m chunk 再切成 2×2 的 256m subTile，
+        /// 若仍按 1024 计算，tiling 会是正确值的 4 倍 —— 贴图肉眼可见过密。
+        ///
+        /// 这里改为读取序列化字段 m_worldSizeOverride：
+        ///   > 0 时用它（由构建脚本按 chunk 实际尺寸写入）
+        ///   否则回退到 mesh 包围盒的 XZ 尺寸（转换后 mesh 单位就是米）
+        /// </summary>
         public override Vector3 worldSize
         {
-            get => new Vector3(1024, 0f, 1024f);
+            get
+            {
+                if (m_worldSizeOverride.x > 0.001f && m_worldSizeOverride.z > 0.001f)
+                    return new Vector3(m_worldSizeOverride.x, 0f, m_worldSizeOverride.z);
+
+                var mesh = sharedMesh;
+                if (mesh != null)
+                {
+                    var b = mesh.bounds.size;
+                    if (b.x > 0.001f && b.z > 0.001f)
+                        return new Vector3(b.x, 0f, b.z);
+                }
+
+                // 兜底：保留原行为
+                return new Vector3(1024f, 0f, 1024f);
+            }
+        }
+        /// <summary>构建期写入的地形世界尺寸；0 表示未设置，回退到 mesh 包围盒。</summary>
+        [SerializeField] private Vector3 m_worldSizeOverride = Vector3.zero;
+
+        /// <summary>
+        /// 由构建脚本调用，写入该 mesh 实际覆盖的地形世界尺寸（米）。
+        /// 必须在 Refresh() 之前调用，否则 tiling 会按旧值算。
+        /// </summary>
+        public void SetWorldSizeOverride(Vector3 worldSizeXZ)
+        {
+            m_worldSizeOverride = new Vector3(worldSizeXZ.x, 0f, worldSizeXZ.z);
         }
         public override int heightmapResolution
         {

@@ -31,6 +31,20 @@ Gameplay → World Streaming（chunk + 流式）
 
 **判定标准**：任何新增渲染内容，必须说明它走哪一条批处理路径。说不出来就是设计缺陷。
 
+### 2.1 SRP Batcher 的实际经验（2026-11-09）
+
+地形 mesh 化后吃过一次完整的 SRP Batcher 排查，结论值得复用：
+
+| 认知 | 说明 |
+|---|---|
+| 合批单位是 **CBUFFER 布局**，不是材质对象 | 36 个不同材质（不同贴图）只要 `UnityPerMaterial` 布局一致就能合批 |
+| **贴图不参与 CBUFFER** | 所以"每块地形不同贴图"不妨碍合批，不需要 MaterialPropertyBlock |
+| `MaterialPropertyBlock` **会拆批** | 它让每个 renderer 的常量不同，SRP Batcher 判定状态不一致 |
+| per-object 数据不能进材质 CBUFFER | 如 `[PerRendererData]` 标量，会让批次内不一致 |
+| 静态合批与 SRP Batcher **互相干扰** | 静态合批先合并成大 mesh，破坏 SRP Batcher 的归并粒度，二选一 |
+
+具体改造过程见 [gts_srp_batcher](gts_srp_batcher.md)。
+
 ## 3. 光照约束
 
 - 主光：单一 directional，按时间曲线驱动角度/颜色/强度。
@@ -42,7 +56,10 @@ Gameplay → World Streaming（chunk + 流式）
 - ❌ 假设 URP 14 有 Forward+ / RenderGraph / 内置水体 / 内置体积雾。
 - ❌ 每帧无条件开水面反射相机。
 - ❌ 依赖 Terrain 自带 grass/detail 做大规模植被（CPU 提交）。
+  **现状例外**：草目前仍走 Terrain detail（`drawInstanced=1`，可见实例约 136 万），
+  是已知的下一步改造目标，不是最终方案。
 - ❌ 在 `Update` 里逐对象设材质属性（破坏 SRP Batcher）。
+- ❌ 用 `MaterialPropertyBlock` 传 per-object 数据（会拆 SRP Batcher 批次）。
 - ❌ 运行时逐像素算调色 / 大气散射。
 - ❌ 用 `Resources.Load` 做流式加载。
 - ❌ 在 Gameplay 层直接写 `CommandBuffer`。

@@ -1,0 +1,340 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 173a311d4a0bf7d4693f2ba609db0f31, type: 3}
+  m_Name: GTS World Profile
+  m_EditorClassIdentifier: 
+  gtsLayers:
+  - name: PW_Beach_Sand_D
+    albedoMapTexture: {fileID: 2800000, guid: e3f17a6e4a4c8f84b8c0589b8aafccd9, type: 3}
+    normalMapTexture: {fileID: 2800000, guid: d5ebc139dead0b04cb78a0c380a091bf, type: 3}
+    maskMapTexture: {fileID: 2800000, guid: 42bf544cc8aaca7468b1bf65e4a52d1d, type: 3}
+    tint: {r: 1, g: 1, b: 1, a: 1}
+    tileSize: {x: 8, y: 8}
+    tileOffset: {x: 0, y: 0}
+    normalStrength: 1
+    maskMapRemapMin: {x: 0, y: 0, z: 0, w: 0}
+    maskMapRemapMax: {x: 1, y: 1, z: 1, w: 0.5}
+    detailAmount: 1
+    geoAmount: 1
+    heightContrast: 1
+    heightBrightness: 1
+    heightIncrease: 0
+    displacementContrast: 0.1
+    displacementBrightness: 0.1
+    displacementIncrease: 0
+    tessellationAmount: 25
+    triPlanar: 0
+    triPlanarSize: {x: 1, y: 1}
+    stochastic: 0
+    albedoPackedMap: {fileID: 0}
+    normalPackedMap: {fileID: 0}
+  - name: PWT_Grass_03_Dark_D
+    albedoMapTexture: {fileID: 2800000, guid: 8aeee82e568afb240a2ed53c1318d80b, type: 3}
+    normalMapTexture: {fileID: 2800000, guid: c0ff98ace5cd21d48b8c8ad2adcf4fd9, type: 3}
+    maskMapTexture: {fileID: 2800000, guid: 7de3bed47578ee84c8d4cfc89a36260f, type: 3}
+    tint: {r: 1, g: 1, b: 1, a: 1}
+    tileSize: {x: 2, y: 2}
+    tileOffset: {x: 0, y: 0}
+    normalStrength: 1
+    maskMapRemapMin: {x: 0, y: 0, z: 0, w: 0}
+    maskMapRemapMax: {x: 1, y: 1, z: 1, w: 0.5}
+    detailAmount: 1
+    geoAmount: 1
+    heightContrast: 1
+    heightBrightness: 1
+    heightIncrease: 0
+    displacementContrast: 0.1
+    displacementBrightness: 0.1
+    displacementIncrease: 0
+    tessellationAmount: 25
+    triPlanar: 0
+    triPlanarSize: {x: 1, y: 1}
+    stochastic: 0
+    albedoPackedMap: {fileID: 0}
+    normalPackedMap: {fileID: 0}
+  - name: PW_Grass_Mountain_01_D
+    albedoMapTexture: {fileID: 2800000, guid: c3166f2f83b429e49ad4ad09c5c027da, type: 3}
+    normalMapTexture: {fileID: 2800000, guid: 735028648145d2246821d251a2eecc72, type: 3}
+    maskMapTexture: {fileID: 2800000, guid: fd917585fcf997746a8d74d2d9a595bb, type: 3}
+    tint: {r: 1, g: 1, b: 1, a: 1}
+    tileSize: {x: 1, y: 1}
+    tileOffset: {x: 0, y: 0}
+    normalStrength: 0.5
+    maskMapRemapMin: {x: 0, y: 0, z: 0, w: 0}
+    maskMapRemapMax: {x: 1, y: 1, z: 1, w: 0.5}
+    detailAmount: 1
+    geoAmount: 1
+    heightContrast: 1
+    heightBrightness: 1
+    heightIncrease: 0
+    displacementContrast: 0.1
+    displacementBrightness: 0.1
+    displacementIncrease: 0
+    tessellationAmount: 25
+    triPlanar: 0
+    triPlanarSize: {x: 1, y: 1}
+    stochastic: 0
+    albedoPackedMap: {fileID: 0}
+    normalPackedMap: {fileID: 0}
+  - name: PW_Forest_Path_D
+    albedoMapTexture: {fileID: 2800000, guid: a932f95468a81b048b51d83dde5ddc30, type: 3}
+    normalMapTexture: {fileID: 2800000, guid: f2bd79b98e582954ca47db8998dbaaac, type: 3}
+    maskMapTexture: {fileID: 2800000, guid: cbedbe630a8964e4394fcee664742039, type: 3}
+    tint: {r: 1, g: 1, b: 1, a: 1}
+    tileSize: {x: 2, y: 2}
+    tileOffset: {x: 0, y: 0}
+    normalStrength: 1.17
+    maskMapRemapMin: {x: 0, y: 0, z: 0, w: 0}
+    maskMapRemapMax: {x: 1, y: 1, z: 1, w: 0.5}
+    detailAmount: 1
+    geoAmount: 1
+    heightContrast: 1
+    heightBrightness: 1
+    heightIncrease: 0
+    displacementContrast: 0.1
+    displacementBrightness: 0.1
+    displacementIncrease: 0
+    tessellationAmount: 25
+    triPlanar: 0
+    triPlanarSize: {x: 1, y: 1}
+    stochastic: 0
+    albedoPackedMap: {fileID: 0}
+    normalPackedMap: {fileID: 0}
+  - name: PW_Forest Ground Scatter_D
+    albedoMapTexture: {fileID: 2800000, guid: 4ea59cc1a14c0b14c948d13885657547, type: 3}
+    normalMapTexture: {fileID: 2800000, guid: 2ccd1203701c6004588cfa2286a50c13, type: 3}
+    maskMapTexture: {fileID: 2800000, guid: 12b3e732bfdc3c84ab374302f259137a, type: 3}
+    tint: {r: 1, g: 1, b: 1, a: 1}
+    tileSize: {x: 8, y: 8}
+    tileOffset: {x: 0, y: 0}
+    normalStrength: 1
+    maskMapRemapMin: {x: 0, y: 0, z: 0, w: 0}
+    maskMapRemapMax: {x: 1, y: 1, z: 1, w: 0.5}
+    detailAmount: 1
+    geoAmount: 1
+    heightContrast: 1
+    heightBrightness: 1
+    heightIncrease: 0
+    displacementContrast: 0.1
+    displacementBrightness: 0.1
+    displacementIncrease: 0
+    tessellationAmount: 25
+    triPlanar: 0
+    triPlanarSize: {x: 1, y: 1}
+    stochastic: 0
+    albedoPackedMap: {fileID: 0}
+    normalPackedMap: {fileID: 0}
+  - name: PW_Dry Stoned Path_D
+    albedoMapTexture: {fileID: 2800000, guid: c5747fedb26fd6741af08a881c83db45, type: 3}
+    normalMapTexture: {fileID: 2800000, guid: 4ddd106821b0b8949a1d047bd847715c, type: 3}
+    maskMapTexture: {fileID: 2800000, guid: 9d13e641f5db5474ab5d8adb1e142795, type: 3}
+    tint: {r: 1, g: 1, b: 1, a: 1}
+    tileSize: {x: 8, y: 8}
+    tileOffset: {x: 0, y: 0}
+    normalStrength: 1.07
+    maskMapRemapMin: {x: 0, y: 0, z: 0, w: 0}
+    maskMapRemapMax: {x: 1, y: 1, z: 1, w: 0}
+    detailAmount: 1
+    geoAmount: 1
+    heightContrast: 1
+    heightBrightness: 1
+    heightIncrease: 0
+    displacementContrast: 0.1
+    displacementBrightness: 0.1
+    displacementIncrease: 0
+    tessellationAmount: 25
+    triPlanar: 0
+    triPlanarSize: {x: 1, y: 1}
+    stochastic: 0
+    albedoPackedMap: {fileID: 0}
+    normalPackedMap: {fileID: 0}
+  - name: PW_Craggy Cliff_D
+    albedoMapTexture: {fileID: 2800000, guid: e94ef7a510706d64ca0bbd33b3cb15c6, type: 3}
+    normalMapTexture: {fileID: 2800000, guid: 972152e7f7614f94bb9c163fd5fdefab, type: 3}
+    maskMapTexture: {fileID: 2800000, guid: 58827adfe0ff7eb46936d3b27ba6cfb9, type: 3}
+    tint: {r: 1, g: 1, b: 1, a: 1}
+    tileSize: {x: 16, y: 16}
+    tileOffset: {x: 0, y: 0}
+    normalStrength: 1.3
+    maskMapRemapMin: {x: 0, y: 0, z: 0, w: 0}
+    maskMapRemapMax: {x: 1, y: 1, z: 1, w: 0}
+    detailAmount: 1
+    geoAmount: 1
+    heightContrast: 1
+    heightBrightness: 1
+    heightIncrease: 0
+    displacementContrast: 0.1
+    displacementBrightness: 0.1
+    displacementIncrease: 0
+    tessellationAmount: 25
+    triPlanar: 0
+    triPlanarSize: {x: 1, y: 1}
+    stochastic: 0
+    albedoPackedMap: {fileID: 0}
+    normalPackedMap: {fileID: 0}
+  - name: PW_SnowCover_D
+    albedoMapTexture: {fileID: 2800000, guid: 9c3c5b0ec643d45449ebbae45215ea5f, type: 3}
+    normalMapTexture: {fileID: 2800000, guid: 4eeef42163de5e04da31879a9ad0e025, type: 3}
+    maskMapTexture: {fileID: 2800000, guid: 6143398dfd19bd04faf4e98bdbc0859b, type: 3}
+    tint: {r: 1, g: 1, b: 1, a: 1}
+    tileSize: {x: 8, y: 8}
+    tileOffset: {x: 0, y: 0}
+    normalStrength: 1
+    maskMapRemapMin: {x: 0, y: 0, z: 0, w: 0}
+    maskMapRemapMax: {x: 1, y: 1, z: 1, w: 1}
+    detailAmount: 1
+    geoAmount: 1
+    heightContrast: 1
+    heightBrightness: 1
+    heightIncrease: 0
+    displacementContrast: 0.1
+    displacementBrightness: 0.1
+    displacementIncrease: 0
+    tessellationAmount: 25
+    triPlanar: 0
+    triPlanarSize: {x: 1, y: 1}
+    stochastic: 0
+    albedoPackedMap: {fileID: 0}
+    normalPackedMap: {fileID: 0}
+  globalSettings:
+    enabled: 0
+    isExpanded: 0
+    uvTarget: 1
+    targetPlatform: 0
+    blendDistance: 0.1
+    blendRange: 1
+  meshSettings:
+    enabled: 0
+    isExpanded: 0
+    saveResolution: 1
+    lodCount: 1
+    lodQuality:
+    - 100
+    - 50
+    - 25
+    - 12.5
+    subTiles: 1
+  heightSettings:
+    enabled: 0
+    isExpanded: 0
+    blendFactor: 0.9
+  tessellationSettings:
+    enabled: 0
+    isExpanded: 0
+    multiplier: 1
+    minDistance: 5
+    maxDistance: 25
+  snowSettings:
+    enabled: 0
+    isExpanded: 0
+    albedoTexture: {fileID: 2800000, guid: f6ed0f4f04341e0459adc2eb21907aca, type: 3}
+    normalTexture: {fileID: 2800000, guid: c6fdad8c6d6c9a74db6d908808e2b908, type: 3}
+    maskTexture: {fileID: 2800000, guid: 80c4d51544f0ddd4c8bf846c221e2ec6, type: 3}
+    power: 1
+    minHeight: 100
+    blendRange: 20
+    slopeBlend: 20
+    age: 0
+    scale: 1
+    normalStrength: 3
+    maskRemapMin: {x: 0, y: 0, z: 0, w: 0}
+    maskRemapMax: {x: 1, y: 1, z: 3, w: 1}
+    heightContrast: 1
+    heightBrightness: 1
+    heightIncrease: 0
+    displacementContrast: 1
+    displacementBrightness: 0.4
+    displacementIncrease: 0.1
+    tessellationAmount: 25
+    color: {r: 1, g: 1, b: 1, a: 1}
+    objectSpace: 0
+  rainSettings:
+    enabled: 0
+    isExpanded: 0
+    Power: 1
+    MinHeight: 0
+    MaxHeight: 3000
+    Speed: 1
+    Darkness: 0.2
+    Smoothness: 0.8
+    Scale: 2
+    rainDataTexture: {fileID: 2800000, guid: 7d2ea86e3c417644aac2b390f6f73c18, type: 3}
+  detailSettings:
+    enabled: 1
+    isExpanded: 0
+    normalTexture: {fileID: 2800000, guid: c0a80725d58eb0a49852fa15fc934925, type: 3}
+    nearTiling: 100
+    nearStrength: 0.6
+    farTiling: 1000
+    farStrength: 0.8
+    objectSpace: 0
+  geoSettings:
+    enabled: 0
+    isExpanded: 0
+    albedoTexture: {fileID: 2800000, guid: 4504b46c384e3824abb34e3ac5fb4be1, type: 3}
+    normalTexture: {fileID: 2800000, guid: 1193394813603ae4fa126ba777b9a9e0, type: 3}
+    nearStrength: 0.2
+    nearNormalStrength: 0.5
+    nearScale: 50
+    nearOffset: 0
+    farStrength: 0.2
+    farNormalStrength: 0.5
+    farScale: 200
+    farOffset: 0
+    objectSpace: 0
+  colorMapSettings:
+    enabled: 0
+    isExpanded: 0
+    colorMapTex: {fileID: 0}
+    colorMapNormalTex: {fileID: 0}
+    alphaIntensity: 1
+    colorIntensity: 1
+    nearIntensity: 1
+    farIntensity: 1
+    normalScale: 40
+    nearNormalIntensity: 1
+    farNormalIntensity: 1
+  vegetationMapSettings:
+    enabled: 0
+    isExpanded: 0
+    useFloraColormap: 0
+    colorMapTex: {fileID: 0}
+    colorMapNormalTex: {fileID: 0}
+    alphaIntensity: 2
+    colorIntensity: 0.5
+    nearIntensity: 0.5
+    farIntensity: 1
+    nearNormalIntensity: 0.5
+    farNormalIntensity: 0.6
+  textureArraySettings:
+    enabled: 0
+    isExpanded: 0
+    albedoArray: {fileID: 18700000, guid: 217c69088b9bc56429a46372b0348a4a, type: 2}
+    normalArray: {fileID: 18700000, guid: f93669fa66dcb6f458765f869ed58195, type: 2}
+    anisoLevel: 1
+    mipMapBias: 0
+    maxTextureSize: 2048
+    compressed: 0
+    compressionFormat: 4
+  variationSettings:
+    enabled: 0
+    isExpanded: 0
+    texture: {fileID: 2800000, guid: 2f6179c152f56b048958dd7dc649cb41, type: 3}
+    sizeA: 10
+    sizeB: 10
+    sizeC: 10
+    intensity: 0.5
+    objectSpace: 0
+  terrainsHidden: 0
+  refreshTexturesArrays: 1
+  exceededMaxTerrainLayers: 0
+  runtime: {fileID: 0}

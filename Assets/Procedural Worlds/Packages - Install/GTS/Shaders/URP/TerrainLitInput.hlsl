@@ -7,11 +7,16 @@
 
 #define _Surface 0.0 // Terrain is always opaque
 
+// ── SRP Batcher 兼容改造（2026-11-09）────────────────────────────────
+// _NumLayersCount 原本在 _Terrain CBUFFER 内，且 shader Properties 里标了
+// [PerRendererData]。per-object 数据进入 CBUFFER 会让 SRP Batcher 判定
+// 批次内状态不一致，直接拆批。
+// 本工程该变量在 GTS shader 里只声明、从未被读取（grep 全 shader 目录只有声明行），
+// 因此移出 CBUFFER、保留全局声明，即可消除这个 per-object 差异。
 CBUFFER_START(_Terrain)
     float4 _Control_ST;
     float4 _Control_TexelSize;
     half _HeightTransition;
-    half _NumLayersCount;
 
     #ifdef UNITY_INSTANCING_ENABLED
     //float4 _TerrainHeightmapRecipSize;   // float4(1.0f/width, 1.0f/height, 1.0f/(width-1), 1.0f/(height-1))
@@ -22,6 +27,9 @@ CBUFFER_START(_Terrain)
     int _PassValue;
     #endif
 CBUFFER_END
+
+// 未被 GTS_URP_Compiled 读取，仅保留声明以免 Properties 引用失效。
+half _NumLayersCount;
 
 
 TEXTURE2D(_Control);    SAMPLER(sampler_Control);

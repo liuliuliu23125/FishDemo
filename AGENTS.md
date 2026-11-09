@@ -32,13 +32,14 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 |---|---|---|---|
 | 地形生成 | Gaia Pro VS（已装） | 同 | [terrain_streaming](Docs/terrain_streaming.md) |
 | 地形细节雕琢 | 未接入 | GeNa Pro | 同上 |
-| Terrain → Mesh 分块 | 未使用（chunk 仍是 Unity Terrain） | GTS（Gaia 内含） | 同上 |
+| **Terrain → Mesh 分块** | **GTS 已落地**：144 个 subTile，`saveResolution=Half` | 加 LOD 链、走 YooAsset | 同上 + [gts_srp_batcher](Docs/gts_srp_batcher.md) |
+| **地表合批** | **SRP Batcher 已生效**（改 GTS shader 加 CBUFFER） | 视 Frame Debugger 结果决定是否去 `isStatic` | [gts_srp_batcher](Docs/gts_srp_batcher.md) |
 | 大世界流式 | **SECTR**（承担全部 chunk 加载） | SECTR 降为区域级，chunk 走 YooAsset | 同上 |
 | 水体 | **Gaia Water (URP)** | Crest Water 5 | [water](Docs/water.md) |
 | 昼夜/天气/大气雾 | **无**（仅一盏平行光） | Enviro 3 | [atmosphere](Docs/atmosphere.md) |
 | 体积雾/光 | 未接入 | Fog Mist 2 / Light Beam 2 / Lights 2 | 同上 |
 | 后处理 | URP 内置（主场景无 Volume） | 同 | [postprocess](Docs/postprocess.md) |
-| 草 | Terrain detail（`drawInstanced=false`） | 自研 GPU instancing / BRG | [vegetation](Docs/vegetation.md) |
+| 草 | Terrain detail（`drawInstanced=true`，可见实例约 136 万） | 自研 GPU instancing / BRG | [vegetation](Docs/vegetation.md) |
 | 植被 LOD | 未接入 | Amplify Impostors | 同上 |
 | Shader 变体裁剪 | 未接入 | Shader Control | 同上 |
 | 玩家动画 | 未接入 | Animancer Pro（CPU） | [character_animation](Docs/character_animation.md) |
@@ -68,8 +69,8 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | [Assets/Scripts](Assets/Scripts/AGENTS.md) | 51 | 写任何自研代码前（程序集边界、命名空间约定） |
 | [Assets/Scripts/Editor](Assets/Scripts/Editor/AGENTS.md) | 80 | 改 Gaia 世界生成工具链 |
 | [Assets/Scripts/Runtime](Assets/Scripts/Runtime/AGENTS.md) | 46 | 改资源层、接 YooAsset |
-| [Assets/Editor](Assets/Editor/AGENTS.md) | 86 | 改 SECTR 切块/收尾/验证脚本 |
-| [Assets/Procedural Worlds](Assets/Procedural%20Worlds/AGENTS.md) | 65 | 用第三方插件、排查 Gaia/SECTR 问题 |
+| [Assets/Editor](Assets/Editor/AGENTS.md) | 122 | 改 SECTR 切块 / GTS 转换 / 验证脚本 |
+| [Assets/Procedural Worlds](Assets/Procedural%20Worlds/AGENTS.md) | 81 | 用第三方插件、排查 Gaia/SECTR/GTS 问题 |
 | [Assets/Scenes](Assets/Scenes/AGENTS.md) | 64 | 改场景、重跑世界生成 |
 | [Packages/com.tuyoogame.yooasset](Packages/com.tuyoogame.yooasset/AGENTS.md) | 90 | 改资源层代码前 |
 
@@ -81,7 +82,7 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 
 | 文档 | 行数 | 何时读 |
 |---|---|---|
-| [rendering_rules](Docs/rendering_rules.md) | 56 | 写任何渲染代码前 |
+| [rendering_rules](Docs/rendering_rules.md) | 73 | 写任何渲染代码前（含 SRP Batcher 实战结论） |
 | [performance_budget](Docs/performance_budget.md) | 42 | 评估性能、做验收 |
 | [Packages/…/AGENTS.md](Packages/com.tuyoogame.yooasset/AGENTS.md) | 90 | 改资源层代码前 |
 
@@ -89,7 +90,8 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 
 | 文档 | 何时读 |
 |---|---|
-| [world_implementation](Docs/world_implementation.md) | 重跑世界生成、排查 chunk 加载、改世界尺寸/海平面、核对"场景怎么来的"。**332 行，只跳读需要的节** |
+| [gts_srp_batcher](Docs/gts_srp_batcher.md) | 改 GTS shader、排查地形合批（SRP Batcher）不生效、mesh 地形与 Terrain 视觉不一致。**173 行** |
+| [world_implementation](Docs/world_implementation.md) | 重跑世界生成、排查 chunk 加载、改世界尺寸/海平面、核对"场景怎么来的"。**394 行，只跳读需要的节** |
 | [terrain_streaming](Docs/terrain_streaming.md) | 做地形、流式加载、SECTR |
 | [water](Docs/water.md) | 做水体、水下、反射 |
 | [atmosphere](Docs/atmosphere.md) | 做昼夜、天气、体积雾光 |
@@ -110,5 +112,11 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 ## 6. 工程约定
 
 - **Git LFS**：大世界资源必须配。
+  ⚠️ 当前**尚未配置**（无 `.gitattributes`），而 `Assets/GTS User Data` 298MB、
+  `Assets/Gaia User Data` 657MB。提交前必须先配 LFS。
 - **目录**：`Assets/Scripts/Runtime/{Rendering,Streaming,Gameplay}`、`Assets/ThirdParty/`。
+- **默认程序集目录**：`Assets/Editor/`（Editor 专用）、`Assets/GTSRuntime/`（运行时）。
+  两者都**没有 asmdef**，因为它们要引用同样无 asmdef 的 SECTR / GTS。
+  不要把运行时脚本放进 `Assets/Editor/`（打包后不存在），
+  也不要放进有 asmdef 的 `Assets/Scripts/Runtime/`（引用不到 `Assembly-CSharp`）。
 - **注释**：关键函数写中文注释，说明意图、约束、非显而易见的原因。
