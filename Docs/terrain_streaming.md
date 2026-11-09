@@ -115,7 +115,7 @@ activationQueue.AddLast(this);
 SceneManager.UnloadSceneAsync(ScenePath);
 ```
 
-**关键特性 1：异步 + 激活队列节流。** `activationQueue` 保证每帧只激活有限数量的 chunk，避免单帧卡顿。这是它比"自己写 Addressables 加载"省事的地方。
+**关键特性 1：异步 + 激活队列节流。** `activationQueue` 保证每帧只激活有限数量的 chunk，避免单帧卡顿。这是它比"自己写 YooAsset 加载"省事的地方。
 
 **关键特性 2：加载器基于体积判定**（`SECTR_RegionLoader.cs:21-22`）：
 
@@ -130,7 +130,7 @@ public Vector3 LoadSize = new Vector3(20f, 10f, 20f);
 1. Scene 加载有固定开销（即使异步），比直接实例化 prefab 重。
 2. 每块 scene 里的对象无法跨 scene 合批。
 
-**结论**：SECTR 适合"大区域切换"（如不同海湾），不适合"每 64m 一块"的高密度网格流式。**地形 mesh 分块建议自己做（Addressables + 对象池），SECTR 用于区域级的内容流式。**
+**结论**：SECTR 适合"大区域切换"（如不同海湾），不适合"每 64m 一块"的高密度网格流式。**地形 mesh 分块建议自己做（YooAsset + 对象池），SECTR 用于区域级的内容流式。**
 
 ## 6. 与 BRG / SRP Batcher 的配合
 
@@ -162,7 +162,7 @@ public Vector3 LoadSize = new Vector3(20f, 10f, 20f);
   GTS          → Terrain 转 Mesh，按 64~128m 分块，导出 LOD 金字塔
 
 运行时：
-  地形 chunk  → 自研 Addressables 流式 + 对象池 + BRG/SRP Batcher
+  地形 chunk  → 自研 YooAsset 流式 + 对象池 + BRG/SRP Batcher
   区域内容    → SECTR（可选，用于"整个海湾"级别的加载）
   植被        → 从 Gaia 导出位置数据 → 自研 GPU instancing / BRG
   碰撞        → 近处 MeshCollider，远处高度图采样
@@ -178,3 +178,57 @@ public Vector3 LoadSize = new Vector3(20f, 10f, 20f);
 - GTS 转换后 URP 材质是否正确（splat 层数上限是多少）
 - 分块 mesh 的顶点数/块大小，与移动端带宽的平衡
 - Gaia 植被导出为实例数据的可行性（是否有现成 API）
+
+## 9. 「多 scene 打断合批」这条说法要拆开看
+
+> 2026-11-09 补：针对"chunk 能不能改 prefab 管理"做的专项核实。
+
+结论：**多 scene 不打断 SRP Batcher，只打断静态合批；而本工程的 chunk 主体是 Terrain，两条都用不上。所以为了合批去做 prefab 化，收益极小。**
+
+按合批机制分别判定：
+
+| 机制 | 是否跨 scene | 依据 | 本工程是否吃到 |
+|---|---|---|---|
+| SRP Batcher | **是**（按 shader + CBUFFER 布局归并，不看 scene 边界） | `UniversalRP.asset:63` `m_UseSRPBatcher: 1` | 仅 267 个 MeshRenderer 可吃 |
+| 静态合批 | **否**（构建期按 scene 合并 VBO） | Unity 构建行为 | 地形不参与，等于用不上 |
+| 动态合批 | 否 | `UniversalRP.asset:64` `m_SupportsDynamicBatching: 0`（且规约要求关闭） | 不用 |
+
+**决定性事实**：每个 chunk 的视觉主体是 1 个 `Terrain` 组件（36 个 chunk / 36 个 Terrain）。Terrain 由引擎原生 TerrainRenderer 绘制，**不参与 SRP Batcher，也不参与静态合批**。chunk 内真正的 GameObject 几何总共只有 267 个 `MeshRenderer`（Gaia 撒的树桩/音效区/风暴），常驻 4 块时约 30 个。
+
+所以"chunk 之间能否合批"这个问题，在当前实现里**没有可挽救的对象**——不是 scene 挡住的，是 Terrain 本身不进合批管线。
+
+## 10. chunk 为什么不能改成 prefab
+
+**SECTR 这一版只支持 scene 加载**（穷举 `SECTR_Chunk.cs`）：
+
+- `_Load()`（`:227-252`）只有 `SceneManager.LoadScene` / `LoadSceneAsync` 两条路径；
+- `_DestroyChunk()`（`:282-320`）只有 `UnloadSceneAsync`；
+- 全目录 `grep AssetBundle` = 0 命中；
+- `ProxyMesh`（`:60`）只是卸载后的占位 proxy，不是 prefab 加载。
+
+**更硬的障碍：Terrain 不能装进 prefab**。全工程 `grep "^--- !u!218 " --include="*.prefab"` = 0 命中，Unity 不支持把 Terrain 组件序列化进 prefab 资产。
+
+因此：
+
+| 诉求 | 可行性 |
+|---|---|
+| 整个 chunk 改 prefab | ❌ Terrain 装不进 prefab，SECTR 也不支持 |
+| chunk 内撒点物用 prefab 实例 | ✅ 现状已如此（267 个 MeshRenderer 都是 prefab 实例） |
+| Terrain→Mesh 后的 chunk 用 prefab + YooAsset | ✅ 推荐，但前提是先做 Mesh 化 |
+
+**所以 prefab 化是 Mesh 化的下游动作，不是替代方案。**
+
+## 11. 当前 chunk 的真实性能构成
+
+| 项 | 数值 | 来源 |
+|---|---|---|
+| 每块 splat 层数 | 8 | `chunk-render-stats.txt` |
+| 每块地形 pass 数 | **2**（4 层/pass，超出走 `TerrainLitAdd`） | `TerrainLitAdd.shader:89` |
+| 常驻地形 pass | ≈8 | 常驻 4 块 × 2 pass |
+| 每块 detail 实例（全密度） | ≈570 万 | `chunk-render-stats.txt` |
+| 36 块 detail 总量 | **2.07 亿** | 同上 |
+| 每块树实例 | ≈1.3 万 | 同上 |
+| 36 块树总量 | 46.5 万 | 同上 |
+| 每块 TerrainData | ≈4.68MB | 文件大小 |
+
+→ 瓶颈排序：**草 > splat pass > 树 >> 普通 MeshRenderer**。前三条都与 scene/prefab 无关。

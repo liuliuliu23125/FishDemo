@@ -1,0 +1,80 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e251860fcd970734c9f14ebd98a146c3, type: 3}
+  m_Name: GS-20261109 - 135717
+  m_EditorClassIdentifier: 
+  m_name: Session 20261109-135717
+  m_description: 'Rocking out at Creativity Central!
+
+
+    If you like Gaia please
+    consider rating it :)'
+  m_previewImage: {fileID: 0}
+  m_dateCreated: 2026/11/9 13:57:17
+  m_terrainWidth: 1024
+  m_terrainDepth: 1024
+  m_terrainHeight: 1024
+  m_seaLevel: 85
+  m_spawnDensity: 0.8
+  m_isLocked: 0
+  m_previewImageBytes: 
+  m_previewImageWidth: 0
+  m_previewImageHeight: 0
+  m_operations: []
+  m_terrainMinMaxCache:
+  - guid: 9d4b57762a1d53444b8b3da9f13f0061
+    isWorldmap: 0
+    recalculate: 1
+    min: 114.99504
+    max: 154.345
+  - guid: cbe6e589d07486242990e8516c5318d1
+    isWorldmap: 0
+    recalculate: 1
+    min: 128.88075
+    max: 160.32655
+  - guid: 100186e111555ef48b7c95d3a2175011
+    isWorldmap: 0
+    recalculate: 1
+    min: 107.60357
+    max: 159.89929
+  - guid: a4120b32b0f00d7408dfabcfa6ba45c0
+    isWorldmap: 0
+    recalculate: 1
+    min: 125.05684
+    max: 154.90044
+  - guid: df3d961b42e9bfd45baab304b07af255
+    isWorldmap: 0
+    recalculate: 1
+    min: 118.69078
+    max: 158.70299
+  - guid: 901f238c3e0bdbe438c0b01e9324b010
+    isWorldmap: 0
+    recalculate: 1
+    min: 109.996185
+    max: 159.04478
+  - guid: 70b1185af06898c4cbd99bcebabb4bbb
+    isWorldmap: 0
+    recalculate: 1
+    min: 132.74739
+    max: 160.15564
+  - guid: bda5a8a6cc6266046af104a4b77a4366
+    isWorldmap: 0
+    recalculate: 1
+    min: 121.40383
+    max: 159.8352
+  - guid: be3675fd62abbd040968c09815f75ea3
+    isWorldmap: 0
+    recalculate: 1
+    min: 113.90555
+    max: 142.7451
+  m_bakedMaskCacheEntries: []
+  m_worldBiomeMaskSettings: {fileID: 0}

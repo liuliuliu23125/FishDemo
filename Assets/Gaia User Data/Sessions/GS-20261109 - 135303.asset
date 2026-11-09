@@ -1,0 +1,80 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e251860fcd970734c9f14ebd98a146c3, type: 3}
+  m_Name: GS-20261109 - 135303
+  m_EditorClassIdentifier: 
+  m_name: Session 20261109-135303
+  m_description: 'Rocking out at Creativity Central!
+
+
+    If you like Gaia please
+    consider rating it :)'
+  m_previewImage: {fileID: 0}
+  m_dateCreated: 2026/11/9 13:53:03
+  m_terrainWidth: 1024
+  m_terrainDepth: 1024
+  m_terrainHeight: 1024
+  m_seaLevel: 85
+  m_spawnDensity: 0.8
+  m_isLocked: 0
+  m_previewImageBytes: 
+  m_previewImageWidth: 0
+  m_previewImageHeight: 0
+  m_operations: []
+  m_terrainMinMaxCache:
+  - guid: ece80367f1d7b5a4bb7b00e8ba06c198
+    isWorldmap: 0
+    recalculate: 1
+    min: 697.10535
+    max: 699.9893
+  - guid: b50a91a66519092429dc378dd08c5c70
+    isWorldmap: 0
+    recalculate: 1
+    min: 695.9518
+    max: 699.9893
+  - guid: 0504afbe78891764bafee40bfd62b9c8
+    isWorldmap: 0
+    recalculate: 1
+    min: 695.0973
+    max: 699.9893
+  - guid: 0ad6116d52c77074fa5e5d2a76a4a4e1
+    isWorldmap: 0
+    recalculate: 1
+    min: 699.9893
+    max: 699.9893
+  - guid: f2516a1aaa3efd245aa3ac9accd67acc
+    isWorldmap: 0
+    recalculate: 1
+    min: 699.9893
+    max: 699.9893
+  - guid: d149b78b758990a4598f47ee567b1bcc
+    isWorldmap: 0
+    recalculate: 1
+    min: 699.9893
+    max: 699.9893
+  - guid: 5d80fe9e5e6f6a640ad87940f5f1b695
+    isWorldmap: 0
+    recalculate: 1
+    min: 699.9893
+    max: 699.9893
+  - guid: ebb327f78b6242b4186691cba3632f41
+    isWorldmap: 0
+    recalculate: 1
+    min: 699.9893
+    max: 699.9893
+  - guid: 3a1f2c7f4c00d4b439ac1ce9e76e15f0
+    isWorldmap: 0
+    recalculate: 1
+    min: 699.9893
+    max: 699.9893
+  m_bakedMaskCacheEntries: []
+  m_worldBiomeMaskSettings: {fileID: 0}
