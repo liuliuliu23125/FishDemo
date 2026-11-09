@@ -1,6 +1,6 @@
 # World 场景实现分析
 
-> **本文件 332 行，是查阅型参考，不要通读。**
+> **本文件 394 行，是查阅型参考，不要通读。**
 > 只在以下情况打开：要重跑世界生成、排查 chunk 加载不出来、要改世界尺寸/海平面、要接 YooAsset 替换 SECTR、或核对"这个场景到底是怎么来的"。
 >
 > 结论分三类标注：**代码事实**（file:line）、**产物事实**（解析 `World.unity` / 资产文件得到）、**推断**（注明依据）。
@@ -14,7 +14,7 @@
 | 世界规模 | 3×3 tile × 1024m = 3072m × 3072m | `WorldPipeline.cs:38-40` |
 | 地形高度 | 700m，海平面 **60**（代码）/ **85**（session） | 见 §6.1 冲突 |
 | 分块 | 每 tile 2×2 → 9×4 = **36 个 chunk**，每块 512m | `WorldPipeline.cs:43`、`SectrPipeline.cs:28` |
-| chunk 形态 | Unity Terrain（非 mesh），heightmap 513²，TerrainData ≈4.68MB | 产物事实 |
+| **地表渲染形态** | **GTS Mesh**（每 chunk 4 个 256m subTile），Terrain 只留碰撞，`drawHeightmap=false` | 见 §4.1 |
 | 流式实现 | SECTR `SECTR_RegionLoader` + `SECTR_Chunk`（`SceneManager.LoadSceneAsync`） | `SECTR_Chunk.cs:238` |
 | 资源入口 | **绕过 YooAsset**（SECTR 直接按场景路径加载） | 同上一行 |
 | 验证状态 | `Logs/Gaia/final-integrity.txt` = PASS | 工具输出 |
@@ -128,30 +128,62 @@
 
 ## 4. chunk 内部结构
 
-单个 chunk（如 `World_SECTR Terrain_0_0-20261109 - 162007 0-0-0 Sector.unity`，922 行）：
+单个 chunk（如 `World_SECTR Terrain_0_0-20261109 - 162007 0-0-0 Sector.unity`）：
 
 ```
 <场景名>                        (场景根)
 └── SECTR Terrain_..._Sector_Chunk   ← 挂 SECTR_ChunkRef / SECTR_Member，pos=(-1536,0,-1536)
-    ├── Terrain_..._Terrain          ← Terrain + TerrainCollider
+    ├── Terrain_..._Terrain          ← Terrain + TerrainCollider（drawHeightmap=false，只留碰撞）
+    │   └── GTS_Mesh                 ← 地表渲染（2026-11-09 新增）
+    │       ├── SubTile_00           ← MeshFilter + MeshRenderer + GTSMesh + GtsRuntimeDataBootstrap
+    │       ├── SubTile_10
+    │       ├── SubTile_20
+    │       └── SubTile_30
     └── Gaia_Spawns                  ← 4 个子物体（撒点物）
 ```
 
-关键参数（产物事实，72 个 chunk 全部一致）：
+Terrain 仍保留的关键参数（草/树/碰撞仍由它负责）：
 
 | 字段 | 值 | 影响 |
 |---|---|---|
+| `m_DrawHeightmap` | **0** | 地表不再由 TerrainRenderer 绘制，改由 GTS mesh |
+| `m_DrawInstanced` | **1** | 草/细节走 instanced（§6.6 调优后） |
+| `m_DetailObjectDistance` | 70 | 草可见距离（§6.6 调优后） |
+| `m_TreeDistance` | 600 | 树可见距离（§6.6 调优后） |
+| `m_TreeBillboardDistance` | 60 | 树切 billboard 距离（§6.6 调优后） |
+| `m_HeightmapPixelError` | 10 | |
+| `m_SplatMapDistance` | 512 | |
 | `m_TerrainData` | `World/TerrainSplits/Terrain_..._0-0-0.asset`（≈4.68MB） | 与主场景独立 |
-| `m_DrawInstanced` | **0** | 草/细节走非 instanced 路径，移动端 CPU 提交 |
-| `m_DetailObjectDistance` | 150 | 草可见距离 |
-| `m_TreeDistance` | 1000 | 树可见距离 |
-| `m_TreeBillboardDistance` | 90 | 树切 billboard 距离 |
-| `m_HeightmapPixelError` | 5 | |
-| `m_SplatMapDistance` | 1024 | |
-| `m_MaterialTemplate` | `Gaia/Settings/Materials/Pipeline Terrain Material UP.mat` | 所有 chunk 共享同一模板材质 → 可走 SRP Batcher |
 | TerrainData 内容 | 8 层 splat、13 树原型、7 细节原型、约 1.26 万树/块 | `Logs/Gaia/proto-materials.txt`、`rich-verify.txt` |
 
-**结论**：当前实现是"Unity Terrain 分块流式"，不是 AGENTS.md 里规划的"GTS Terrain→Mesh + BRG"。GTS 未参与。
+### 4.1 地表已切到 GTS Mesh（2026-11-09）
+
+**产物事实**：36 个 chunk 的地表全部改为 mesh 渲染，Terrain 退化为碰撞/植被载体。
+
+| 项 | 数值 |
+|---|---|
+| subTile 数 | 36 chunk × 4 = **144 个** |
+| 每 subTile 尺寸 | 256m × 256m（chunk 512m 再切 2×2） |
+| 每 subTile 顶点/三角 | 16641 / 32768（`saveResolution=Half`，513→257 边长） |
+| 三角总量 | 4,718,592（原 Terrain 1887 万的 **25%**） |
+| 常驻 4 块估算 | ≈52.4 万三角 |
+| GTS 资产体积 | **298 MB**（mesh 273.8MB + png 180 个 + mat 36 个） |
+| 材质 | 36 个（每 chunk 一个），共用 shader `PW/GTS_URP_Compiled` |
+| 每个 subTile 组件 | `MeshFilter` + `MeshRenderer` + `GTSMesh` + `GtsRuntimeDataBootstrap` |
+
+**为什么每 chunk 一个材质**：`_Control0/_Control1/_SplatmapIndex/_WorldNormalMap` 是 per-chunk
+的 splat 数据，绑在材质上，因此材质无法跨 chunk 共享。**SRP Batcher 仍能合批**——
+它按 CBUFFER 布局归并，不按材质对象归并（详见 [gts_srp_batcher](gts_srp_batcher.md)）。
+
+**渲染分工**（三者解耦，可单独回退）：
+
+| 内容 | 谁负责 |
+|---|---|
+| 地表外观（高度图 + splat 混合） | GTS mesh + `PW/GTS_URP_Compiled` |
+| 树 / 草 | Terrain（`drawTreesAndFoliage` 仍为 true） |
+| 碰撞 | `TerrainCollider` |
+
+生成链路与坑见 [gts_srp_batcher](gts_srp_batcher.md)（含 shader 改造、数据注入、worldSize 校正）。
 
 ## 5. 流式加载机制
 
@@ -282,6 +314,25 @@ Unity.exe -batchmode -projectPath <proj> \
   -executeMethod FinalIntegrity.Run -logFile Logs/Gaia/final.log
 ```
 
+### 7.1 地形转 GTS Mesh（2026-11-09 新增，④ 之后执行）
+
+```bash
+# ⑤ 逐块转 mesh —— 必须一进程一块。
+#    GTS 的 CreateTextureArrays → StartProfile → GetGTSComponents 会遍历当前进程内
+#    所有场景的 GTSComponent，单进程连续 OpenScene 必定 MissingReferenceException。
+#    首块加 -gtsFirst 1，负责生成全局纹理数组；其余块 -gtsFirst 0 复用。
+Unity.exe -batchmode -projectPath <proj> -executeMethod GtsConvertOne.Run \
+  -gtsChunk "<chunk 文件名>" -gtsFirst 1 -logFile Logs/Gaia/gts-one.log
+
+# ⑥ 把 mesh 挂进 chunk 场景（Terrain 保留碰撞，关掉 drawHeightmap）
+Unity.exe -batchmode -projectPath <proj> \
+  -executeMethod GtsApplyMeshToChunks.RunAll -logFile Logs/Gaia/gts-apply.log
+
+# ⑦ 补 GTSMesh 组件 + 校正 worldSize（视觉一致性的关键，见 gts_srp_batcher §8）
+Unity.exe -batchmode -projectPath <proj> \
+  -executeMethod GtsFixMeshRendering.RunAll -logFile Logs/Gaia/gts-fix.log
+```
+
 辅助入口：
 
 | 脚本 | 用途 |
@@ -293,11 +344,17 @@ Unity.exe -batchmode -projectPath <proj> \
 | `TerrainChunkTuning.ApplyMobile` | 应用移动端参数档（见 §6.6） |
 | `TerrainChunkTuning.RestoreDesktop` | 恢复 Gaia Desktop 原值，用于 A/B 对比 |
 | `ChunkRenderStats.Run` | 静态统计每块地形 pass 数 / 树 / 草实例量，写 `Logs/Gaia/chunk-render-stats.txt` |
+| `GtsConvertOne.Run` | 单块 Terrain→GTS Mesh（一进程一块，见 §7.1） |
+| `GtsApplyMeshToChunks.RunAll` | 把 GTS mesh 挂进 36 个 chunk 场景 |
+| `GtsFixMeshRendering.RunAll` | 补 GTSMesh 组件 + 写 worldSizeOverride（修视觉差异） |
 | `FishDemo.EditorTools.GaiaSetupTools.UpgradeMaterialsToURP` | Gaia 材质 BuiltIn→URP 迁移（先把 `m_currentRenderer` 改 Universal） |
 | `FishDemo.EditorTools.FixBiomeMaterials.Setup` | 按 GUID 把美术材质换到 URP shader |
 | `FishDemo.EditorTools.FixWaterMaterials.Setup` | 修 2 个水面残留 BuiltIn 材质 |
 
-> **重跑流水线会覆盖 §6.6 的调参结果**：`SectrPipeline` 重新切块会生成新 chunk 场景，参数回到 Gaia Desktop 预设。重跑后需再执行一次 `TerrainChunkTuning.ApplyMobile`。
+> **重跑流水线会覆盖 §6.6 的调参结果与 GTS mesh**：`SectrPipeline` 重新切块会生成全新 chunk 场景，
+> 参数回到 Gaia Desktop 预设、GTS mesh 节点消失。重跑后需依次执行
+> `TerrainChunkTuning.ApplyMobile` → `GtsConvertOne.Run`（逐块）→ `GtsApplyMeshToChunks.RunAll` → `GtsFixMeshRendering.RunAll`。
+> 另外 shader 改动在 `Assets/Procedural Worlds/.../GTS/Shaders/`，**重装 GTS 会被覆盖**，备份在 `Tools/gts-shader-backup/`。
 
 **验证证据**（`Logs/Gaia/final-integrity.txt`）：
 
@@ -315,12 +372,13 @@ Build Settings 重建为 37 个场景（含主场景），缺失 0
 
 | 规划（AGENTS.md §2） | 当前实现 | 差距 |
 |---|---|---|
-| GTS Terrain→Mesh 分块 | Unity Terrain 分块 | 未使用 GTS；无 mesh 合批 |
+| GTS Terrain→Mesh 分块 | **已落地**：144 个 subTile mesh，`saveResolution=Half` | ✅ 完成；LOD 链未生成（`lodCount=1`） |
+| 地形走 SRP Batcher | **已落地**：改 GTS shader 加 `UnityPerMaterial` CBUFFER | ✅ 完成，见 [gts_srp_batcher](gts_srp_batcher.md) |
 | SECTR 仅作"区域级"可选流式 | SECTR 承担全部 chunk 流式 | 粒度是 512m 场景，场景切换有固定开销 |
-| YooAsset 唯一资源入口 | SECTR 直接 LoadSceneAsync | 未接线 |
+| YooAsset 唯一资源入口 | SECTR 直接 LoadSceneAsync | 未接线；GTS mesh 也未进 bundle |
 | Crest Water 5 | Gaia Water (URP) | Crest 未安装（只在 `Reference/`） |
 | Enviro 3 | 无大气系统 | 未安装；主场景只有一个平行光 |
-| 自研 GPU instancing 草 | Terrain detail 草 | 未实现 |
+| 自研 GPU instancing 草 | Terrain detail 草（`drawInstanced=1`） | **未实现**，下一步 |
 | 夜晚光源 ≤ 6 + emissive | 无昼夜系统 | 未实现 |
 
 ## 9. 改动前必读
@@ -329,4 +387,8 @@ Build Settings 重建为 37 个场景（含主场景），缺失 0
 - 改海平面：同时处理 §6.1 的 5 个位置，否则运行时会被水面 transform 覆盖。
 - 改切块粒度：`SectorsPerSide` 在 `WorldPipeline.cs:43` 与 `SectrPipeline.cs:28` 各有一份，且 chunk/sector 数量（36）写死在 `WorldFinalize.cs:109`、`FinalIntegrity.cs:82`、`RichWorldVerify.cs:83`。
 - 改加载半径：`WorldFinalize.cs:29` 的 `LoadSizeXY`，改完跑 `StreamingVerify` 确认"单点最多 < 36 且全覆盖 36"。
+- **改 GTS mesh 相关**：先读 [gts_srp_batcher](gts_srp_batcher.md)。三个易踩点：
+  1. shader 改动在第三方目录，重装 GTS 会覆盖（备份在 `Tools/gts-shader-backup/`）
+  2. `GTSMesh` 组件的 `worldSize` 决定贴图 tiling，必须按实际 subTile 尺寸（256m）设置，不能用默认 1024
+  3. 真机必须靠 `GtsRuntimeDataBootstrap` 注入全局数组，`[ExecuteAlways]` 打包后不生效
 - 任何新增渲染内容：按 [rendering_rules](rendering_rules.md) 说明走哪条批处理路径。

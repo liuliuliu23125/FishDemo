@@ -73,31 +73,49 @@ TEXTURE2D(_MacroVariationMap);
 TEXTURE2D(_ColormapTex);
 TEXTURE2D(_ColormapNormalTex);
 
-float4 _TerrainPosSize;
-float _BlendFactor;
+// ── SRP Batcher 兼容改造（2026-11-09）────────────────────────────────
+// 原版把 17 个材质属性（_TerrainPosSize / _Resolution / _BlendFactor …）
+// 裸声明在全局作用域，不在 UnityPerMaterial CBUFFER 里。
+// SRP Batcher 的判定规则是：所有 per-material 属性必须落在名为
+// UnityPerMaterial 的 CBUFFER 内，否则整个 shader 被判定为不兼容
+// （原因码 1：property not in UnityPerMaterial），合批直接跳过。
+//
+// 注意：贴图不能进 CBUFFER（CBUFFER 只放数值）。贴图与材质数值无关，
+// 不同材质用不同贴图不影响合批 —— SRP Batcher 按 CBUFFER 布局归并，
+// 不按材质对象归并。所以这里只包数值，贴图声明保持原样。
+//
+// _DetailBlendData 与 _LayerST0..7 不属于材质属性（未在 Properties 声明，
+// 由 SetGlobalVector 全局传入），必须留在 CBUFFER 外，否则布局对不上，
+// 且全局设置的值会失效。
+CBUFFER_START(UnityPerMaterial)
+    float4 _TerrainPosSize;
+    float _BlendFactor;
+    float _Resolution;
+    float4 _DetailNearFarData;
 
-float _Resolution;
+    float4 _GeoNearData;
+    float4 _GeoFarData;
+    float4 _GeoLayerData0;
+    float4 _GeoLayerData1;
+    float4 _MacroVariationData;
 
+    float _TessellationMultiplier;
+    float4 _TerrainHeightmapRecipSize;
+
+    float4 _GlobalBlendData;
+
+    float _WorldAlignedUVs;
+    float4 _ObjectSpaceDataA;
+
+    float4 _ColormapNearFarData;
+    float4 _ColormapDataA;
+CBUFFER_END
+
+// ── 以下保持全局（非材质属性）──
 float4 _DetailBlendData;
-float4 _DetailNearFarData;
 
-float4 _GeoNearData;
-float4 _GeoFarData;
-float4 _GeoLayerData0;
-float4 _GeoLayerData1;
-float4 _MacroVariationData;
-
-float _TessellationMultiplier;
-float4 _TerrainHeightmapRecipSize;
-
-float4 _GlobalBlendData;
-
-float _WorldAlignedUVs;
-float4 _ObjectSpaceDataA;
-
-float4 _ColormapNearFarData;
-float4 _ColormapDataA;
-
+// _MOBILE_VR_ON 分支使用的层级 UV 缩放，由脚本 SetGlobalVector 下发，
+// 所有地形共用同一套；进 CBUFFER 会导致全局值读不到。
 float4 _LayerST0;
 float4 _LayerST1;
 float4 _LayerST2;
@@ -106,5 +124,7 @@ float4 _LayerST4;
 float4 _LayerST5;
 float4 _LayerST6;
 float4 _LayerST7;
+
+
 
 #endif

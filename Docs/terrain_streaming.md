@@ -197,6 +197,18 @@ public Vector3 LoadSize = new Vector3(20f, 10f, 20f);
 
 所以"chunk 之间能否合批"这个问题，在当前实现里**没有可挽救的对象**——不是 scene 挡住的，是 Terrain 本身不进合批管线。
 
+> **2026-11-09 更新（Mesh 化之后）**：地表已从 Terrain 换成 GTS mesh，
+> **现在能吃 SRP Batcher 了**。关键动作是给 GTS shader 补 `UnityPerMaterial` CBUFFER，
+> 详见 [gts_srp_batcher](gts_srp_batcher.md)。
+>
+> 也因此，本节开头"为了合批去做 prefab 化收益极小"的结论要限定范围：
+> - **合批不需要 prefab 化**——SRP Batcher 本来就跨 scene 生效，改 shader 即可
+> - prefab 化的真正价值是**走 YooAsset bundle**，不是合批
+>
+> 另一个纠正：静态合批与 SRP Batcher 会互相干扰（静态合批先合并成大 mesh，
+> 反而破坏 SRP Batcher 的按材质归并粒度）。subTile 目前标了 `isStatic`，
+> 是否移除以 Frame Debugger 实测为准。
+
 ## 10. chunk 为什么不能改成 prefab
 
 **SECTR 这一版只支持 scene 加载**（穷举 `SECTR_Chunk.cs`）：
@@ -218,9 +230,20 @@ public Vector3 LoadSize = new Vector3(20f, 10f, 20f);
 
 **所以 prefab 化是 Mesh 化的下游动作，不是替代方案。**
 
+> **2026-11-09 更新**：Mesh 化已完成（36 chunk × 4 = 144 个 subTile，地表改由
+> `PW/GTS_URP_Compiled` 绘制，Terrain 只留碰撞与植被）。但 chunk **仍是 scene**：
+> SECTR 的加载器只认 scene，且 chunk 里还留着 Terrain 组件（碰撞用）。
+> 下一步若要 prefab 化，需先解决碰撞载体（TerrainCollider → MeshCollider）与 SECTR 替换。
+> 实现细节见 [gts_srp_batcher](gts_srp_batcher.md) 与 [world_implementation](world_implementation.md) §4.1。
+
 ## 11. 当前 chunk 的真实性能构成
 
-| 项 | 数值 | 来源 |
+> **2026-11-09 更新**：下表是 **mesh 化之前**（Terrain 绘制）的数据，保留作对照。
+> 现状已变：地表不再走 TerrainRenderer 的 2 pass，改由 1 个 GTS mesh draw
+> （8 层 splat 靠 Texture2DArray + `_SplatmapIndex` 在单 pass 内完成）。
+> 草/树仍走 Terrain，数值不变。
+
+| 项 | 数值（mesh 化前） | 来源 |
 |---|---|---|
 | 每块 splat 层数 | 8 | `chunk-render-stats.txt` |
 | 每块地形 pass 数 | **2**（4 层/pass，超出走 `TerrainLitAdd`） | `TerrainLitAdd.shader:89` |
@@ -231,4 +254,14 @@ public Vector3 LoadSize = new Vector3(20f, 10f, 20f);
 | 36 块树总量 | 46.5 万 | 同上 |
 | 每块 TerrainData | ≈4.68MB | 文件大小 |
 
-→ 瓶颈排序：**草 > splat pass > 树 >> 普通 MeshRenderer**。前三条都与 scene/prefab 无关。
+**mesh 化后的地形几何**：
+
+| 项 | 数值 |
+|---|---|
+| subTile 数 | 144（36 chunk × 4） |
+| 每 subTile 顶点 / 三角 | 16641 / 32768 |
+| 三角总量 | 4,718,592（原 1887 万的 25%） |
+| 常驻 4 块三角 | ≈52.4 万 |
+| 地形 draw（每 chunk） | 1 个 GTS mesh（8 层 splat 单 pass） |
+
+→ 瓶颈排序（mesh 化后）：**草 > 树 > 地形 mesh**。草是下一步重点。

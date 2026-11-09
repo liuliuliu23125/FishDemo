@@ -113,8 +113,13 @@ public static class ChunkRenderStats
         W("===== 汇总 =====");
         W($"Terrain 数 = {terrainCount}，chunk 数 = {chunks.Count}");
         W($"splat 层数：平均 {totalLayers / Mathf.Max(1, terrainCount):F1}，最大 {maxLayers}");
-        int terrainPasses = terrainCount * Mathf.CeilToInt(Mathf.Max(1, maxLayers) / (float)LayersPerPass);
-        W($"地形 pass 数（全部 chunk）= {terrainPasses}（{maxLayers} 层 → 每块 {Mathf.CeilToInt(Mathf.Max(1, maxLayers) / (float)LayersPerPass)} pass）");
+
+        // mesh 化后地形本体不再由 TerrainRenderer 绘制，pass 数意义变了：
+        // 只有 drawHeightmap 仍为 true 的 Terrain 才计入地表 pass。
+        var meshRenderers = perChunk.Sum(p => p.mrs);
+        W($"MeshRenderer（含 GTS mesh 子物体）= {meshRenderers}");
+        W($"地形 pass 数（若仍走 Terrain 绘制）= {terrainCount * Mathf.CeilToInt(Mathf.Max(1, maxLayers) / (float)LayersPerPass)}");
+        W($"  → 仅对 drawHeightmap=true 的 Terrain 成立；本工程已关闭高度图绘制，见 chunk 明细");
 
         // 常驻按 RegionLoader 实测值：单点最多 4 块
         const int Resident = 4;
@@ -124,11 +129,27 @@ public static class ChunkRenderStats
         W($"树上界（全部）= {totalTrees}；常驻估算 ≈ {totalTrees * Resident / Mathf.Max(1, chunks.Count)}");
         W($"草实例（全密度全距离）= {totalDetailAll:N0}");
         W($"草实例（渲染密度+距离粗估）= {totalDetailVisible:N0}");
-        W($"MeshRenderer 总数 = {totalMeshRenderers + perChunk.Sum(p => p.mrs)}");
+
+        // GTS mesh 的三角总量：这是替代 TerrainRenderer 之后真正的几何负载
+        long gtsTris = 0; int gtsMeshes = 0;
+        string gtsRoot = "Assets/GTS User Data";
+        if (Directory.Exists(gtsRoot))
+        {
+            foreach (var m in Directory.GetFiles(gtsRoot, "*.mesh", SearchOption.AllDirectories))
+            {
+                var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(m.Replace('\\', '/'));
+                if (mesh == null) continue;
+                gtsTris += mesh.triangles.Length / 3;
+                gtsMeshes++;
+            }
+        }
+        W($"GTS mesh 数 = {gtsMeshes}，三角总量 = {gtsTris:N0}");
+        W($"  → 常驻 {Resident} 块估算三角 ≈ {gtsTris * Resident / Mathf.Max(1, chunks.Count):N0}");
 
         W("");
-        W("===== 对照（若 splat 降到 4 层）=====");
-        W($"地形 pass 将从 {terrainPasses} 降到 {terrainCount * 1}，即减半");
+        W("===== 说明 =====");
+        W("地形已切到 GTS mesh（Terrain.drawHeightmap=false），");
+        W("地表不再走 TerrainRenderer 的多 pass splat，而是单个 MeshRenderer + GTS shader。");
 
         Directory.CreateDirectory(Path.GetDirectoryName(ResultPath));
         File.WriteAllText(ResultPath, sb.ToString());
