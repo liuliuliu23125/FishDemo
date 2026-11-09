@@ -1,7 +1,7 @@
 # Assets/Procedural Worlds 规约（第三方 Gaia / GeNa / SECTR / GTS）
 
 > 本目录是**第三方插件资产**，不是自研代码。
-> 本文件约 81 行，改动或排查第三方问题时建议一次读完。
+> 本文件约 84 行，改动或排查第三方问题时建议一次读完。
 
 ## 1. 目录结构：Cache 与 Install 的区别
 
@@ -53,8 +53,11 @@ Crest Water 5、Enviro 3、Amplify Impostors、Animancer Pro、Shader Control、
 
    **原始文件备份在 `Tools/gts-shader-backup/`，重装/升级 GTS 会覆盖，需重新应用。**
    原理与验证方式见 [gts_srp_batcher](../../Docs/gts_srp_batcher.md)。
-3. **材质迁移有方向性**：`GaiaUtils.ProcessMaterialLibrary` 按 `GaiaSettings.m_currentRenderer` 决定迁移方向。若不是 `Universal`，它会把 URP 材质改回 BuiltIn。改之前先确认该字段。
-4. **SECTR 的 README 只写到 2019.0.3**，但代码里有 `#if UNITY_6000_0_OR_NEWER` 分支，说明被维护到新版本。判断兼容性看源码宏和 asmdef，不要看 README 版本号。
+4. **GTS Profile 的纹理数组已改 ASTC**：`compressed=true`、`ASTC_8x8`、2048×2048×8 层。
+   单数组 341MB → 21.3MB。**不要改成 `ASTC_6x6`**——GTS 枚举值 50 实际映射到
+   `ASTC_RGB_6x6`（无 alpha），而 albedo 的 alpha 是高度混合权重，会破坏材质过渡。
+5. **材质迁移有方向性**：`GaiaUtils.ProcessMaterialLibrary` 按 `GaiaSettings.m_currentRenderer` 决定迁移方向。若不是 `Universal`，它会把 URP 材质改回 BuiltIn。改之前先确认该字段。
+6. **SECTR 的 README 只写到 2019.0.3**，但代码里有 `#if UNITY_6000_0_OR_NEWER` 分支，说明被维护到新版本。判断兼容性看源码宏和 asmdef，不要看 README 版本号。
 
 ## 4. 排查入口
 

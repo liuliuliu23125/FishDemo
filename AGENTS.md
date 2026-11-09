@@ -16,12 +16,17 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | 项 | 值 |
 |---|---|
 | Unity / URP | 2022.3.62f2 / 14.0.12 |
-| 色彩空间 / 后端 / 压缩 | Linear / IL2CPP+ARM64 / ASTC |
+| 色彩空间 / 后端 / 压缩 | Linear / IL2CPP+ARM64 / **ASTC** |
 | 帧率 / 机型 | 30fps / iQOO 16 |
 | 同屏角色上限 | 20 |
 | 联网 | 将来需要，**当前不实现网络层**，只保证客户端表现可承载多人 |
+| 合批 | **SRP Batcher 唯一路径；静态合批已关闭**（二者互相干扰） |
 
 **2022.3 没有的东西**（不要假设存在）：GPUResidentDrawer、Forward+、内置体积雾/光、内置水体、RenderGraph。
+
+**ASTC 细节**（地形纹理数组已按此配置，见 [gts_srp_batcher](Docs/gts_srp_batcher.md) §8.5）：
+- 用 `ASTC_8x8`，**不要用 6x6**——GTS 枚举 `ASTC_6x6(50)` 实际映射到 `ASTC_RGB_6x6`，**无 alpha**
+- 地形的 albedo 数组 alpha 是高度混合权重，丢了会让材质过渡变硬
 
 ## 2. 模块与选型
 
@@ -33,7 +38,7 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | 地形生成 | Gaia Pro VS（已装） | 同 | [terrain_streaming](Docs/terrain_streaming.md) |
 | 地形细节雕琢 | 未接入 | GeNa Pro | 同上 |
 | **Terrain → Mesh 分块** | **GTS 已落地**：144 个 subTile，`saveResolution=Half` | 加 LOD 链、走 YooAsset | 同上 + [gts_srp_batcher](Docs/gts_srp_batcher.md) |
-| **地表合批** | **SRP Batcher 已生效**（改 GTS shader 加 CBUFFER） | 视 Frame Debugger 结果决定是否去 `isStatic` | [gts_srp_batcher](Docs/gts_srp_batcher.md) |
+| **地表合批** | **SRP Batcher 已生效**；静态合批已关；纹理数组 ASTC_8x8 | 草改 BRG 后再评估 | [gts_srp_batcher](Docs/gts_srp_batcher.md) |
 | 大世界流式 | **SECTR**（承担全部 chunk 加载） | SECTR 降为区域级，chunk 走 YooAsset | 同上 |
 | 水体 | **Gaia Water (URP)** | Crest Water 5 | [water](Docs/water.md) |
 | 昼夜/天气/大气雾 | **无**（仅一盏平行光） | Enviro 3 | [atmosphere](Docs/atmosphere.md) |
@@ -70,7 +75,7 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | [Assets/Scripts/Editor](Assets/Scripts/Editor/AGENTS.md) | 80 | 改 Gaia 世界生成工具链 |
 | [Assets/Scripts/Runtime](Assets/Scripts/Runtime/AGENTS.md) | 46 | 改资源层、接 YooAsset |
 | [Assets/Editor](Assets/Editor/AGENTS.md) | 122 | 改 SECTR 切块 / GTS 转换 / 验证脚本 |
-| [Assets/Procedural Worlds](Assets/Procedural%20Worlds/AGENTS.md) | 81 | 用第三方插件、排查 Gaia/SECTR/GTS 问题 |
+| [Assets/Procedural Worlds](Assets/Procedural%20Worlds/AGENTS.md) | 84 | 用第三方插件、排查 Gaia/SECTR/GTS 问题 |
 | [Assets/Scenes](Assets/Scenes/AGENTS.md) | 64 | 改场景、重跑世界生成 |
 | [Packages/com.tuyoogame.yooasset](Packages/com.tuyoogame.yooasset/AGENTS.md) | 90 | 改资源层代码前 |
 
@@ -90,8 +95,8 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 
 | 文档 | 何时读 |
 |---|---|
-| [gts_srp_batcher](Docs/gts_srp_batcher.md) | 改 GTS shader、排查地形合批（SRP Batcher）不生效、mesh 地形与 Terrain 视觉不一致。**173 行** |
-| [world_implementation](Docs/world_implementation.md) | 重跑世界生成、排查 chunk 加载、改世界尺寸/海平面、核对"场景怎么来的"。**394 行，只跳读需要的节** |
+| [gts_srp_batcher](Docs/gts_srp_batcher.md) | 改 GTS shader、排查地形合批（SRP Batcher）不生效、mesh 地形与 Terrain 视觉不一致。**212 行** |
+| [world_implementation](Docs/world_implementation.md) | 重跑世界生成、排查 chunk 加载、改世界尺寸/海平面、核对"场景怎么来的"。**396 行，只跳读需要的节** |
 | [terrain_streaming](Docs/terrain_streaming.md) | 做地形、流式加载、SECTR |
 | [water](Docs/water.md) | 做水体、水下、反射 |
 | [atmosphere](Docs/atmosphere.md) | 做昼夜、天气、体积雾光 |

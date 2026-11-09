@@ -1,6 +1,6 @@
 # GTS Shader SRP Batcher 改造记录
 
-> **本文件 173 行，改 GTS shader 或排查地形合批/视觉差异前读。**
+> **本文件 212 行，改 GTS shader 或排查地形合批/视觉差异前读。**
 > 改动对象是第三方资产，重装 GTS 会覆盖，需要重做。
 
 ## 1. 为什么改
@@ -103,8 +103,9 @@ SRP Batcher 没有公开的运行时查询 API（`ShaderUtil.GetSRPBatcherCompat
 
 ## 7. 待办
 
-- [ ] Frame Debugger 确认 SRP Batch 分组出现
-- [ ] 根据结果决定是否移除 subTile 的 static 标记
+- [x] Frame Debugger 确认 SRP Batch 分组出现（项目负责人已确认生效）
+- [x] 静态合批已关闭（见 §8.6）
+- [x] 纹理数组改 ASTC（见 §8.5）
 - [ ] 草（Terrain detail，136 万实例）改造——下一步
 
 ## 8. 视觉与 Terrain 不一致的修复（2026-11-09）
@@ -162,12 +163,50 @@ tiling = worldSize / layer.tileSize
 | `Assets/GTSRuntime/GtsRuntimeDataBootstrap.cs` | 运行时注入全局数组 |
 | `Assets/Procedural Worlds/Packages - Install/GTS/Scripts/Core/MonoBehaviours/GTSMesh.cs` | 已改 `worldSize` 实现（第三方源码，重装会覆盖） |
 
-### 8.5 纹理数组体积问题（待处理）
+### 8.5 纹理数组已改 ASTC 压缩（2026-11-09）
 
-Profile 的 `textureArraySettings`：`maxTextureSize=2048`、`compressed=false`（RGBA32）。
-实测单个数组 **341MB**，albedo + normal 合计 **682MB**。移动端不可接受。
+**改前**：`maxTextureSize=2048`、`compressed=false`（RGBA32），单数组 **341MB**，合计 **682MB**。
 
-待办：
-- [ ] 开启压缩（`compressed=true`，ASTC/ETC2）
-- [ ] 视需要降到 `Is1024MetersSq`
-- [ ] 重新 `CreateTextureArrays()` 并验证视觉无损
+**改后**：`compressed=true`、`compressionFormat=ASTC_8x8`，单数组 **21.3MB**，合计 **42.6MB**，省 **94%**。
+
+**为什么必须用带 alpha 的 ASTC**（关键，别踩）：
+
+albedo 数组的 **alpha 通道被当作高度混合权重**使用：
+```hlsl
+GTS_Functions.hlsl:591  float masks[] = { albedoA.a, albedoB.a, albedoC.a, albedoD.a };
+GTS_Functions.hlsl:592  float4 splatHeight = float4(masks[0..3]) * splatControl.rgba;
+```
+用 `ASTC_RGB_*`（无 alpha）会让高度混合失效，材质过渡变成硬边。
+
+**格式陷阱（实测确认）**：`GTSCompressionFormat` 的枚举值与 Unity `TextureFormat` 的映射不一致：
+
+| GTS 枚举 | 值 | 实际 TextureFormat | alpha |
+|---|---|---|---|
+| `ASTC_4x4` | 48 | `ASTC_4x4` | ✅ |
+| **`ASTC_6x6`** | **50** | **`ASTC_RGB_6x6`** | ❌ **无 alpha** |
+| `ASTC_8x8` | 51 | `ASTC_8x8` | ✅ |
+
+→ **避开 6x6**，用 `ASTC_8x8`。
+
+**体积对照**（2048×2048×8 层）：
+
+| 格式 | 单数组 | 双数组合计 |
+|---|---|---|
+| RGBA32（原） | 341 MB | 682 MB |
+| **ASTC_8x8（采用）** | **21.3 MB** | **42.6 MB** |
+
+**工具**：`Assets/Editor/GtsAstcCompress.cs`（`-executeMethod GtsAstcCompress.Run`）。
+它先打开一个 chunk 场景填充 `gtsLayers`，再改设置并重建数组。
+数组 GUID 不变（`CreateOrReplaceAsset` 复用原资产），材质绑定自动保持。
+
+**注意**：PC 编辑器 `SystemInfo.SupportsTextureFormat(ASTC_8x8)` 返回 **False**，
+但 `EditorUtility.CompressTexture` 仍能成功压缩并写入资产——这是编辑器侧无法采样，
+不影响 Android 真机。代价是**编辑器里预览地表可能异常**，需以真机为准。
+
+### 8.6 静态合批已关闭
+
+地形 subTile 原先标了 `isStatic`，会触发构建期静态合批。
+它把多个 mesh 合并成大 VBO，**破坏 SRP Batcher 的按材质归并粒度**，二者互相干扰。
+
+已由项目负责人在 Player Settings 中关闭静态合批（`m_BuildTargetBatching`）。
+SRP Batcher 成为地形唯一的合批路径。
