@@ -2,6 +2,14 @@
 
 > 分析对象：Amplify Impostors v1.1.0 / Shader Control v8.2.3
 > 目标环境：Unity 2022.3.62f2 + URP 14.0.12，Android 旗舰机，30fps
+>
+> **2026-11-09 更新**：草已确定改 **BRG（BatchRendererGroup）**，实施方案见
+> [grass_brg_plan](grass_brg_plan.md)。本文的选型结论（Amplify Impostors / Shader Control）
+> 仍然有效，草的具体实现以 grass_brg_plan 为准。
+>
+> **2026-11-11 更新**：草 BRG **已落地**（36 chunk / 1265 万实例 / Terrain detail 已关），
+> 状态与实测见 [grass_brg_progress](grass_brg_progress.md)。
+> **树仍未改动**，仍走 Terrain；树的分析结论见本文 §5。
 
 ## 结论速览
 
@@ -55,14 +63,16 @@ but you can stack them next to each other.
 
 ```
 近景（0-30m）
-  └─ 草：GPU instancing / BRG（位置来自 chunk ComputeBuffer）
-  └─ 树：LOD0 mesh
+  └─ 草：BRG（✅ 已落地，位置来自 GrassData/*.bytes）
+  └─ 树：Terrain 自带渲染，LOD0 mesh
 
 中景（30-80m）
-  └─ LOD1 简化 mesh
+  └─ 树 LOD1 简化 mesh
+  └─ 草切 LOD1 草簇（12 tri）
 
 远景（80-200m）
-  └─ Amplify Impostor（Octahedron）
+  └─ 草 LOD2 十字面片（4 tri）
+  └─ Amplify Impostor（Octahedron）— 未接入
 
 极远（200m+）
   └─ GTS 地形 splat 贴图
@@ -132,9 +142,63 @@ depth and keep early-z.
 - 修改 shader 源码的 keyword 声明，**升级包后需重跑**。
 - 裁剪过度会导致 keyword 缺失 → 材质变粉红。**必须真机验证**。
 
-## 待验证项
+## 5. 草：现状（2026-11-11，已落地）
+
+| 项 | 值 | 来源 |
+|---|---|---|
+| 路径 | BRG（`GrassBRGManager` + `GrassBRG.shader`） | 代码 |
+| 实例 | 36 chunk / **12,652,005** | `Logs/final-detail.log` |
+| 烘焙产物 | 386 MB，32B/实例 | `GrassData/*.bytes` |
+| 烘焙采样率 | `0.035`（≈0.82 株/m²） | `GrassBaker.cs:58` |
+| LOD | 3 级，阈值 100/25/8 px | `GrassBRGManager.cs` |
+| 剔除 | 32m 空间分块 + 块级距离剔除，21.9ms/帧 | `Logs/Grass/perf-probe.txt` |
+| Terrain detail | **已关**（`DetailObjectDistance=0`） | 36 个 chunk 场景 |
+| 内存 | ≈917 MB（全量常驻） | 同上 |
+
+**尚未做**：SECTR 流式、真机验证、阴影/透光/贴图、花的迁移。
+
+详见 [grass_brg_progress](grass_brg_progress.md)。
+
+## 6. 树：现状与分析（2026-11-11，未改动）
+
+**树仍走 Terrain 自带渲染**（`drawTreesAndFoliage=1`），由 TerrainRenderer 提交。
+这与草不同，不要混谈。
+
+| 项 | 值 | 依据 |
+|---|---|---|
+| 树原型 | 45 个 | `Logs/tree-variants.txt` |
+| 实例总数 | **464,843**（36 chunk 累加） | `Logs/Gaia/chunk-render-stats-mobile.txt` |
+| shader | **只有 1 个**：`PW_General_ShaderGraph_URP.shadergraph` | 同上，208 次引用 |
+| 材质 keyword | **全部为空**（每个材质 `m_ShaderKeywords` 都是 0 项） | 同上 |
+| 变体组合数 | **1**（单 shader + 无 keyword） | 同上 |
+| LOD | 每 prefab 1 个 LODGroup，3~4 级 | prefab YAML |
+
+### 关于「树被拆成很多批次」
+
+已查明**不是 keyword 差异导致的**：45 个原型、208 个材质引用，shader 与 keyword
+组合只有 1 种。批次数来自结构，是三处乘算的结果（实测 prefab 结构）：
+
+1. 每个 prefab **只有 1 个 LODGroup**，3 或 4 级（45 个里 15 个是 3 级、30 个是 4 级）；
+2. 每级 **1 个 MeshRenderer**，但该 renderer 的 mesh 有 **1~3 个材质槽**（树干/树叶/根部），
+   每槽一次 draw call（实测材质槽数分布：1 槽 62 个、2 槽 49 个、3 槽 19 个）；
+3. 36 个 chunk 各自独立提交。
+
+即 `Σ(原型 × LOD 级数 × 材质槽数) × 视野内 chunk 数`。
+
+**降批次只能改资产结构**（合并材质槽 / 减 LOD 级数 / 中远距离转 impostor），
+调 shader 或 keyword 无效。这也正是 §3 Amplify Impostors 的适用场景。
+
+### 为什么树没跟着草一起改 BRG
+
+`drawTreesAndFoliage` 同时管树和草，所以关草只能用 `detailObjectDistance=0` 单点关闭。
+树的 BRG 化需要自己的烘焙管线：`TreeInstance` 的序列化字段只有
+`position / widthScale / heightScale / rotation / color / lightmapColor / index`
+（TerrainData 实测），**没有法线**，草那套「贴合坡面」的做法不能直接复用；
+且 45 原型 × 3~4 LOD 的 mesh 组合远多于草的 7×3。当前未排期。
+
+## 7. 待验证项
 
 - Amplify Impostors 在移动端的 overdraw 表现
 - Octahedron vs Spherical 的选择
 - Shader Control 对 ShaderGraph 的裁剪效果
-- 自研草 GPU instancing 的实例数量上限
+- 树的材质槽能否合并（19 个 3 槽 prefab 是降批次的最大杠杆）

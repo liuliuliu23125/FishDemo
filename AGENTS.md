@@ -21,6 +21,12 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | 同屏角色上限 | 20 |
 | 联网 | 将来需要，**当前不实现网络层**，只保证客户端表现可承载多人 |
 | 合批 | **SRP Batcher 唯一路径；静态合批已关闭**（二者互相干扰） |
+| **Android 图形 API** | **仅 Vulkan，排除 GLES**（`m_APIs=15000000`，`m_Automatic=0`） |
+
+**Android 仅 Vulkan 的原因**：草改 BRG 后，BRG shader 需要 `#pragma target 4.5` +
+`#pragma exclude_renderers gles`（依据 URP 14 的 `BRGPicking.shader:31-32`）。
+若回落 GLES，草会消失。改这一项影响整个 Android 构建，不只草。
+工具：`Assets/Editor/GraphicsApiSetup.cs`。详见 [grass_brg_plan](Docs/grass_brg_plan.md) §1.1。
 
 **2022.3 没有的东西**（不要假设存在）：GPUResidentDrawer、Forward+、内置体积雾/光、内置水体、RenderGraph。
 
@@ -38,13 +44,14 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | 地形生成 | Gaia Pro VS（已装） | 同 | [terrain_streaming](Docs/terrain_streaming.md) |
 | 地形细节雕琢 | 未接入 | GeNa Pro | 同上 |
 | **Terrain → Mesh 分块** | **GTS 已落地**：144 个 subTile，`saveResolution=Half` | 加 LOD 链、走 YooAsset | 同上 + [gts_srp_batcher](Docs/gts_srp_batcher.md) |
-| **地表合批** | **SRP Batcher 已生效**；静态合批已关；纹理数组 ASTC_8x8 | 草改 BRG 后再评估 | [gts_srp_batcher](Docs/gts_srp_batcher.md) |
+| **地表合批** | **SRP Batcher 已生效**；静态合批已关；纹理数组 ASTC_8x8 | 维持 | [gts_srp_batcher](Docs/gts_srp_batcher.md) |
 | 大世界流式 | **SECTR**（承担全部 chunk 加载） | SECTR 降为区域级，chunk 走 YooAsset | 同上 |
 | 水体 | **Gaia Water (URP)** | Crest Water 5 | [water](Docs/water.md) |
 | 昼夜/天气/大气雾 | **无**（仅一盏平行光） | Enviro 3 | [atmosphere](Docs/atmosphere.md) |
 | 体积雾/光 | 未接入 | Fog Mist 2 / Light Beam 2 / Lights 2 | 同上 |
 | 后处理 | URP 内置（主场景无 Volume） | 同 | [postprocess](Docs/postprocess.md) |
-| 草 | Terrain detail（`drawInstanced=true`，可见实例约 136 万） | 自研 GPU instancing / BRG | [vegetation](Docs/vegetation.md) |
+| **草** | **BRG 已落地（M2.2）**：36 chunk 烘焙 **1265 万实例 / 387MB**；Terrain detail 已关（`DetailObjectDistance=0`）；单 shader `FishDemo/Grass/BRGMinimal` | 阴影/透光/贴图、SECTR 流式、真机 | [grass_brg_progress](Docs/grass_brg_progress.md) |
+| **树** | **仍走 Terrain**：45 原型 / **46.5 万实例**；单 shader `PW_General_ShaderGraph_URP`、单 keyword 组合；每 prefab 3~4 级 LODGroup | 后续单独处理（BRG / Impostor） | [grass_brg_plan](Docs/grass_brg_plan.md) §6 |
 | 植被 LOD | 未接入 | Amplify Impostors | 同上 |
 | Shader 变体裁剪 | 未接入 | Shader Control | 同上 |
 | 玩家动画 | 未接入 | Animancer Pro（CPU） | [character_animation](Docs/character_animation.md) |
@@ -53,7 +60,12 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 
 ## 3. 高频规则（写代码前必看）
 
-**批处理**：SRP Batcher（必须）→ GPU Instancing（必须）→ BRG（目标）。动态合批保持关闭。**任何新增渲染内容必须说明走哪条批处理路径**。
+**批处理**：SRP Batcher（地表/树/常规物体）→ GPU Instancing → **BRG（草，已落地）**。动态合批保持关闭。**任何新增渲染内容必须说明走哪条批处理路径**。
+
+**草与树是两条完全不同的路径，不要混谈**：
+- 草走 BRG（`GrassBRGManager` + `GrassBRG.shader`），不经过 SRP Batcher，也不受 Terrain 管理。
+- 树走 Terrain 自带渲染（`drawTreesAndFoliage=1`），由 TerrainRenderer 提交，SRP Batcher 覆盖。
+- 因为两者都在改「植被」，**改草时用 `detailObjectDistance`，不要用 `drawTreesAndFoliage`**——后者会把树一起关掉。
 
 **渲染分层**：Gameplay 层不得直接操作 `CommandBuffer` 或 `Graphics.*`。
 
@@ -71,12 +83,12 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 
 | 目录 | 行数 | 何时读 |
 |---|---|---|
-| [Assets/Scripts](Assets/Scripts/AGENTS.md) | 51 | 写任何自研代码前（程序集边界、命名空间约定） |
-| [Assets/Scripts/Editor](Assets/Scripts/Editor/AGENTS.md) | 80 | 改 Gaia 世界生成工具链 |
-| [Assets/Scripts/Runtime](Assets/Scripts/Runtime/AGENTS.md) | 46 | 改资源层、接 YooAsset |
-| [Assets/Editor](Assets/Editor/AGENTS.md) | 122 | 改 SECTR 切块 / GTS 转换 / 验证脚本 |
-| [Assets/Procedural Worlds](Assets/Procedural%20Worlds/AGENTS.md) | 84 | 用第三方插件、排查 Gaia/SECTR/GTS 问题 |
-| [Assets/Scenes](Assets/Scenes/AGENTS.md) | 64 | 改场景、重跑世界生成 |
+| [Assets/Scripts](Assets/Scripts/AGENTS.md) | 66 | 写任何自研代码前（程序集边界、命名空间约定） |
+| [Assets/Scripts/Editor](Assets/Scripts/Editor/AGENTS.md) | 112 | 改 Gaia 世界生成工具链、草烘焙与 BRG 验证 |
+| [Assets/Scripts/Runtime](Assets/Scripts/Runtime/AGENTS.md) | 79 | 改资源层、接 YooAsset、改 BRG 草运行时 |
+| [Assets/Editor](Assets/Editor/AGENTS.md) | 165 | 改 SECTR 切块 / GTS 转换 / 地形调参 / 验证脚本 |
+| [Assets/Procedural Worlds](Assets/Procedural%20Worlds/AGENTS.md) | 105 | 用第三方插件、排查 Gaia/SECTR/GTS/Pegasus 问题 |
+| [Assets/Scenes](Assets/Scenes/AGENTS.md) | 85 | 改场景、重跑世界生成、重接草/Pegasus |
 | [Packages/com.tuyoogame.yooasset](Packages/com.tuyoogame.yooasset/AGENTS.md) | 90 | 改资源层代码前 |
 
 ## 5. 文档索引
@@ -87,7 +99,7 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 
 | 文档 | 行数 | 何时读 |
 |---|---|---|
-| [rendering_rules](Docs/rendering_rules.md) | 73 | 写任何渲染代码前（含 SRP Batcher 实战结论） |
+| [rendering_rules](Docs/rendering_rules.md) | 84 | 写任何渲染代码前（批处理路径归属表 + SRP Batcher 实战结论） |
 | [performance_budget](Docs/performance_budget.md) | 42 | 评估性能、做验收 |
 | [Packages/…/AGENTS.md](Packages/com.tuyoogame.yooasset/AGENTS.md) | 90 | 改资源层代码前 |
 
@@ -95,6 +107,8 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 
 | 文档 | 何时读 |
 |---|---|
+| [grass_brg_plan](Docs/grass_brg_plan.md) | 做草改 BRG、排查草渲染/剔除、查 Vulkan 约束、采样率与烘焙规模。**628 行，只跳读需要的节** |
+| [grass_brg_progress](Docs/grass_brg_progress.md) | **改任何草相关代码前先读**：当前落地状态、实测数据、13 条「草消失且无报错」的踩坑、复现命令。**264 行** |
 | [gts_srp_batcher](Docs/gts_srp_batcher.md) | 改 GTS shader、排查地形合批（SRP Batcher）不生效、mesh 地形与 Terrain 视觉不一致。**212 行** |
 | [world_implementation](Docs/world_implementation.md) | 重跑世界生成、排查 chunk 加载、改世界尺寸/海平面、核对"场景怎么来的"。**396 行，只跳读需要的节** |
 | [terrain_streaming](Docs/terrain_streaming.md) | 做地形、流式加载、SECTR |
@@ -118,10 +132,15 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 
 - **Git LFS**：大世界资源必须配。
   ⚠️ 当前**尚未配置**（无 `.gitattributes`），而 `Assets/GTS User Data` 298MB、
-  `Assets/Gaia User Data` 657MB。提交前必须先配 LFS。
+  `Assets/Gaia User Data` 657MB、**`Assets/Scenes/World/GrassData` 387MB**（36 个 `.bytes`）。
+  提交前必须先配 LFS。
 - **目录**：`Assets/Scripts/Runtime/{Rendering,Streaming,Gameplay}`、`Assets/ThirdParty/`。
+  `Rendering/`（草 BRG）与 `Gameplay/`（Pegasus 巡游控制器）已存在；`Streaming/` 尚未创建。
 - **默认程序集目录**：`Assets/Editor/`（Editor 专用）、`Assets/GTSRuntime/`（运行时）。
   两者都**没有 asmdef**，因为它们要引用同样无 asmdef 的 SECTR / GTS。
   不要把运行时脚本放进 `Assets/Editor/`（打包后不存在），
   也不要放进有 asmdef 的 `Assets/Scripts/Runtime/`（引用不到 `Assembly-CSharp`）。
+- **Pegasus 同样无 asmdef**：`PegasusTourController.cs` 因此放在 `Assets/Scenes` 之外的
+  `Assets/Scripts/Runtime/Gameplay/`——该目录**没有 asmdef**，编进 `Assembly-CSharp`，
+  才能引用 Pegasus 类型。给 Gameplay 加 asmdef 会让这个脚本编不过。
 - **注释**：关键函数写中文注释，说明意图、约束、非显而易见的原因。

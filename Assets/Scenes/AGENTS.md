@@ -1,18 +1,29 @@
 # Assets/Scenes 规约
 
-> 本文件约 64 行，改场景或重跑世界生成前建议一次读完。
+> 本文件约 85 行，改场景或重跑世界生成前建议一次读完。
 
 ## 1. World.unity 是产物，不是手搭场景
 
 `Assets/Scenes/World.unity` 及其 `World/` 子目录全部由批处理脚本生成：
 
 ```
-Assets/Scenes/World.unity                    主场景（14 个根对象）
+Assets/Scenes/World.unity                    主场景（17 个根对象）
 Assets/Scenes/World/Chunks/*.unity           36 个 chunk 场景（按批次命名）
 Assets/Scenes/World/TerrainSplits/*.asset    36 份 chunk TerrainData
+Assets/Scenes/World/GrassData/*.bytes        36 份 BRG 草烘焙数据（387MB）
 ```
 
 **手改会在下次重跑时被覆盖。** 要改结果，改脚本参数后重跑，或改完立即提交并接受"重跑会丢"的代价。
+
+**重跑 WorldPipeline + SectrPipeline 后，这些手动步骤必须重做**（否则渲染结果全错）：
+
+| 步骤 | 工具 | 漏了会怎样 |
+|---|---|---|
+| 移动档参数 | `TerrainChunkTuning.ApplyMobile` | 退回 PC 档，草可见距离 150m、密 0.5 |
+| 关 Terrain 草 | `TerrainChunkTuning.DisableDetail` | 与 BRG 草重复绘制（同一处画两遍） |
+| GTS mesh | `GtsConvertOne` → `GtsApplyMeshToChunks` → `GtsFixMeshRendering` | 地表贴图/分层错乱 |
+| BRG 草接入 | `GrassBaker.RunAll` → `GrassSceneSetupM2` → `DetailBrgSetup` | 场景里没有 `GrassBRG (M1)` 或 LOD0 退回兜底 mesh |
+| Pegasus 巡游 | 菜单 `FishDemo/World/② 布置 Pegasus 环绕巡游` | 没有巡游路线 / POI 悬空 |
 
 生成链路与参数见 [world_implementation](../../Docs/world_implementation.md)。
 
@@ -34,14 +45,23 @@ World_SECTR Terrain_0_0-20261109 - 162007 0-1-0 Sector.unity
 
 | 根对象 | 说明 |
 |---|---|
-| `Main Camera` | 挂 `SECTR_RegionLoader`（加载中心） |
+| `Main Camera` | 挂 `SECTR_RegionLoader`（加载中心）；Pegasus 巡游也用它作 target |
 | `Directional Light` | 唯一光源 |
 | `Gaia Water` | 水面预制体实例，y=60 |
 | `Terrain_x_x` ×9 | 只有 Sector×4 + Portal×4，**无 Terrain 组件**（地形在 chunk 里） |
 | `Gaia Terrains` / `Gaia Runtime` / `Gaia Tools` | Gaia 运行时容器 |
 | `Alpine Meadow-*` ×10 | 撒点器，挂着空转的 Gaia `TerrainLoader` |
+| **`GrassBRG (M1)`** | 挂 `GrassBRGManager`（`FishDemo.Rendering`）。锚点 `(0, 329.6, -1151.8)`，`_grassDataDir=Assets/Scenes/World/GrassData`，`_instanceCount=12652005` |
+| **`Pegasus Tour`** | 挂 `PegasusManager`（16 个 POI 是它的子对象，不入根列表）+ `PegasusTourController` |
+
+**`GrassBRG (M1)` 名字里的 M1 是历史遗留**，它现在跑的是 M2.2 的全量烘焙数据
+（36 chunk / 1265 万实例），不是 M1 的 1000 个方阵实例。改名要连同
+`GrassSceneSetupM2` / `DetailBrgSetup` 里的 `NodeName` 常量一起改。
 
 **不要**往主场景加地形或静态大物件 —— 它们不会被 SECTR 分块，会常驻内存。可流式的内容应放进 chunk 或走资源层。
+
+**例外：BRG 草是全量常驻的**（917MB），不随 SECTR 流式。这是 M3 的待办，
+不是设计意图（[grass_brg_progress](../../Docs/grass_brg_progress.md) §6）。
 
 ## 4. Build Settings
 
@@ -60,5 +80,6 @@ World_SECTR Terrain_0_0-20261109 - 162007 0-1-0 Sector.unity
 | 文档 | 何时读 |
 |---|---|
 | [world_implementation](../../Docs/world_implementation.md) | 重跑生成、排查 chunk、查已知缺陷 |
+| [grass_brg_progress](../../Docs/grass_brg_progress.md) | 改草数据/场景接入、排查草消失 |
 | [../Editor/AGENTS.md](../Editor/AGENTS.md) | 切块/收尾/验证脚本的约定 |
 | [pooling_lod](../../Docs/pooling_lod.md) | chunk 加载与缓存策略 |

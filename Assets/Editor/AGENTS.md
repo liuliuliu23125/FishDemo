@@ -1,7 +1,7 @@
 # Assets/Editor 规约（SECTR + GTS 流水线）
 
 > 默认程序集 `Assembly-CSharp-Editor`（**没有 asmdef**）。
-> 本文件约 122 行，改这些脚本前建议一次读完。
+> 本文件约 165 行，改这些脚本前建议一次读完。
 
 ## 1. 为什么这个目录不能加 asmdef
 
@@ -26,8 +26,15 @@ SECTR 与 GTS 都没有自己的 asmdef，其编辑器 API（`SECTR_TerrainWindo
 | `FinalIntegrity.cs` | 重建 Build Settings + 全量校验 | `-executeMethod FinalIntegrity.Run` |
 | `RichWorldVerify.cs` | 抽样 4 块核对起伏/贴图层/树/草 | `-executeMethod RichWorldVerify.Run` |
 | `CleanupOrphanAssets.cs` | 按活跃批次清理孤儿 chunk / TerrainData / session | `-executeMethod CleanupOrphanAssets.Run` |
-| `TerrainChunkTuning.cs` | 批量改/还原 36 块 Terrain 渲染参数（可逆） | `Report` / `ApplyMobile` / `RestoreDesktop` |
+| `TerrainChunkTuning.cs` | 批量改/还原 36 块 Terrain 渲染参数（可逆）；`DisableDetail` 单独关草 | `Report` / `ApplyMobile` / `RestoreDesktop` / `DisableDetail` |
 | `ChunkRenderStats.cs` | 静态统计 pass 数 / 树 / 草实例量 | `-executeMethod ChunkRenderStats.Run` |
+| `GraphicsApiSetup.cs` | Android 图形 API 改为仅 Vulkan、关 Automatic | `-executeMethod GraphicsApiSetup.SetAndroidVulkanOnly` |
+| `TerrainDetailProbe.cs` | 逐个 chunk 打印 detail 原型 / 当前 detail 距离与密度 / 各层实例数 | `-executeMethod TerrainDetailProbe.Run` |
+| `DetailMeshProbe.cs` | 对比三条路径能否拿到 detail 原型 mesh（决定运行时怎么取） | `-executeMethod DetailMeshProbe.Run` |
+| `TreeRenderProbe.cs` | 诊断树的批次构成：原型 / LOD / 材质 / shader keyword | `-executeMethod TreeRenderProbe.Run` |
+| `GrassCloseupVerify.cs` | **需真实图形设备**：贴地视角验证草可见 + LOD 分层 + 落截图 | `-executeMethod GrassCloseupVerify.Run` |
+| `PegasusTourSetup.cs` | 布置环绕巡游路线（半径 1100m / 16 POI / 高度烘焙进 POI） | 菜单 `FishDemo/World/② 布置 Pegasus 环绕巡游` |
+| `PegasusTourVerify.cs` | 巡游运行时验收：驱动相机 / 环形半径 / SECTR 加载 / 贴地高度 / F 键切换 | `-executeMethod PegasusTourVerify.Run` |
 | `GtsConvertOne.cs` | 单块 Terrain→GTS Mesh（**一进程一块**） | `-gtsChunk "<名>" -gtsFirst 0/1` |
 | `GtsApplyMeshToChunks.cs` | 把 GTS mesh 挂进 chunk 场景 | `RunAll` / `RunOne -gtsChunk` |
 | `GtsFixMeshRendering.cs` | 补 GTSMesh 组件 + 写 worldSizeOverride | `-executeMethod GtsFixMeshRendering.RunAll` |
@@ -78,6 +85,7 @@ chunk 引用的 TerrainData 在 `World/TerrainSplits/`，与原始地形独立�
 
 ```
 TerrainChunkTuning.ApplyMobile
+  → TerrainChunkTuning.DisableDetail      （关 Terrain 草，否则与 BRG 草重复绘制）
   → GtsConvertOne.Run（逐块，一进程一块）
   → GtsApplyMeshToChunks.RunAll
   → GtsFixMeshRendering.RunAll
@@ -85,6 +93,19 @@ TerrainChunkTuning.ApplyMobile
 
 `GtsFixMeshRendering` 不只是"补组件"——它写入的 `m_worldSizeOverride`（256m）
 决定贴图 tiling，漏掉会让地表贴图密度错 4 倍。详见 [gts_srp_batcher](../../Docs/gts_srp_batcher.md)。
+
+### 3.5.1 关草用 `DisableDetail`，不要动 `drawTreesAndFoliage`
+
+草已迁到 BRG，Terrain 自带的 detail 渲染现在是**重复绘制**（同一块地表画两遍草，
+且 detail 各原型是独立 draw call，无法与 BRG 合批）。36 个 chunk 已用
+`TerrainChunkTuning.DisableDetail` 设成 `DetailObjectDistance=0` / `DetailObjectDensity=0`。
+
+- `detailObjectDistance = 0` 是 Unity 文档规定的「关闭 detail 渲染」方式，**不改 TerrainData 里的撒点数据**，随时可 `RestoreDesktop` 回滚。
+- **不要用 `drawTreesAndFoliage = false`**：它同时管树和草，会把 46.5 万棵树一起关掉。
+- 代价：CloverFlower / Daisy / Dandelions 这些花也是 detail 原型，一并消失。
+  要保留花，应把花也做成 BRG 实例，而不是恢复 detail 渲染。
+
+重跑 `SectrPipeline` 后 detail 参数会回到 Gaia Desktop 预设，必须再跑一次 `DisableDetail`。
 
 ### 3.6 数量断言硬编码了 36
 
@@ -111,11 +132,33 @@ TerrainChunkTuning.ApplyMobile
 - 重建 Build Settings 时整体覆盖而不是追加（`FinalIntegrity.cs:32-40`）；
 - 清理资产时按**当前场景实际引用的批次**判断，不要盲删目录（`CleanupOrphanAssets.cs:33-44`）。
 
+### 3.9 诊断脚本只写文件、不逐条打 Console
+
+`TreeRenderProbe` 这类逐原型诊断会产生几千行输出。**batchmode 下逐条 `Debug.Log`
+会触发 Unity 自己的日志缓冲崩溃**（实测 `EditorMonoConsole::LogToConsoleImplementation`
+处 `RaiseException`）。做法：明细全写文件，Console 只打汇总
+（`TreeRenderProbe.cs:36-41` 的 `W` / `C` 两个委托）。
+
+### 3.10 需要真实图形设备的验证不能加 `-nographics`
+
+BRG 的剔除回调在 `-nographics` 下不执行，`LastVisibleCount` 恒为 `-1`，
+「草没被画出来」和「草被正确剔除」无法区分。
+
+| 脚本 | 可否 `-nographics` |
+|---|---|
+| `PegasusTourVerify` | 可以（只验相机位移/半径/chunk 加载，不验像素） |
+| `GrassCloseupVerify` | **不行**，必须真实图形设备 |
+| `GrassMultiChunkVerify` / `GrassPerfProbe` / `GrassM*Verify` | **不行** |
+
+而且**批处理前必须关闭 Unity 编辑器**，否则报
+`HandleProjectAlreadyOpenInAnotherInstance` 并崩溃（这是另一进程占用项目锁，不是脚本问题）。
+
 ## 4. 相关文档
 
 | 文档 | 何时读 |
 |---|---|
 | [gts_srp_batcher](../../Docs/gts_srp_batcher.md) | 改 GTS 转换脚本、排查 mesh 地形合批/视觉不一致 |
+| [grass_brg_progress](../../Docs/grass_brg_progress.md) | 改草烘焙/验证脚本、排查草消失 |
 | [world_implementation](../../Docs/world_implementation.md) | 要重跑流水线、理解 chunk 结构、查已知缺陷 |
 | [terrain_streaming](../../Docs/terrain_streaming.md) | 评估 SECTR 的定位与限制 |
 | [pooling_lod](../../Docs/pooling_lod.md) | 设计 chunk 加载/卸载策略 |

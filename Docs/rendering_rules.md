@@ -1,6 +1,6 @@
 # 渲染与批处理规约
 
-> 写渲染代码前必读，全文约 80 行，建议一次读完。性能数值见 [performance_budget](performance_budget.md)。
+> 写渲染代码前必读，全文约 84 行，建议一次读完。性能数值见 [performance_budget](performance_budget.md)。
 
 ## 1. 架构分层
 
@@ -25,9 +25,17 @@ Gameplay → World Streaming（chunk + 流式）
 |---|---|---|
 | SRP Batcher | 所有材质 | 必须共享 shader + 相同 keyword 组合 + 相同 cbuffer 布局 |
 | GPU Instancing | 同 mesh 同材质的大量对象（植被、岩石、鱼群） | 走 `Graphics.DrawMeshInstancedIndirect` |
-| BRG | 大规模实例（2022.3 需手写） | culling 在 Job 里做 |
+| BRG | 大规模实例 | **草已落地**：`GrassBRGManager`，剔除在 Burst Job 里做 |
 | 静态合批 | 完全静态、不可剔除的小物件 | 会增大内存，大世界慎用 |
 | 动态合批 | — | **保持关闭**（SRP Batcher 下有害） |
+
+**当前各类内容走哪条路径**（排查批次问题先看这张表）：
+
+| 内容 | 路径 |
+|---|---|
+| 地表（GTS mesh） | SRP Batcher |
+| 树（Terrain 自带，46.5 万实例） | Terrain 渲染 + SRP Batcher |
+| **草（1265 万实例）** | **BRG**，不经过 SRP Batcher |
 
 **判定标准**：任何新增渲染内容，必须说明它走哪一条批处理路径。说不出来就是设计缺陷。
 
@@ -56,8 +64,11 @@ Gameplay → World Streaming（chunk + 流式）
 - ❌ 假设 URP 14 有 Forward+ / RenderGraph / 内置水体 / 内置体积雾。
 - ❌ 每帧无条件开水面反射相机。
 - ❌ 依赖 Terrain 自带 grass/detail 做大规模植被（CPU 提交）。
-  **现状例外**：草目前仍走 Terrain detail（`drawInstanced=1`，可见实例约 136 万），
-  是已知的下一步改造目标，不是最终方案。
+  **草已迁到 BRG（2026-11-11）**：36 chunk / 1265 万实例，Terrain detail 已关
+  （`DetailObjectDistance=0`）。见 [grass_brg_progress](grass_brg_progress.md)。
+  新增植被内容仍不得回到 Terrain detail。
+- ❌ 用 `drawTreesAndFoliage = false` 关草。它同时关树（46.5 万实例）。
+  关草只用 `detailObjectDistance = 0`。
 - ❌ 在 `Update` 里逐对象设材质属性（破坏 SRP Batcher）。
 - ❌ 用 `MaterialPropertyBlock` 传 per-object 数据（会拆 SRP Batcher 批次）。
 - ❌ 运行时逐像素算调色 / 大气散射。
