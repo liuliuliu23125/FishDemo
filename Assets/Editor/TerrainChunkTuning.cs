@@ -93,6 +93,28 @@ public static class TerrainChunkTuning
     }
 
     /// <summary>
+    /// 关闭 Terrain Detail（细节物体）渲染，只保留 BRG 草。
+    ///
+    /// 为什么需要：实测每个 chunk 的 TerrainData 登记了 7 种 detail 原型
+    /// （1 种草 404 万 + 3 种花约 170 万 + 枯草等，合计约 570 万/块），
+    /// 它们走 Terrain 的 detail 渲染路径，与 BRG 草（1265 万实例）叠在同一片地表
+    /// ——同一处地方被画两遍草，且 detail 那套各原型是独立 draw call，无法与 BRG 合批。
+    /// 设 DetailObjectDistance=0 是 Unity 文档规定的"关闭 detail 渲染"方式，
+    /// 不改 TerrainData 里的撒点数据，随时可用 RestoreDesktop 恢复。
+    ///
+    /// 代价：CloverFlower / Daisy / Dandelions 这些花也一并消失（它们都是 detail 原型）。
+    /// 若将来要保留花，应改为把花也做成 BRG 实例、并入同一套数据管线。
+    /// </summary>
+    public static void DisableDetail()
+    {
+        // 用复制构造 + 索引器覆盖（不能用 Add，同样的 key 会抛重复键异常）。
+        var targets = new Dictionary<string, float>(Mobile);
+        targets["DetailObjectDistance"] = 0f;   // 0 = 不渲染 detail
+        targets["DetailObjectDensity"] = 0f;
+        Run("disable-detail", targets, "terrain-tuning-disable-detail.txt");
+    }
+
+    /// <summary>
     /// 统一入口：targets 为 null 时只统计不修改。
     ///
     /// 为什么要逐个 OpenScene 而不是改主场景：chunk 是独立场景文件，
