@@ -50,7 +50,7 @@ public static class ChunkRenderStats
         W($"活跃 chunk = {chunks.Count}");
 
         long totalTrees = 0, totalDetailVisible = 0, totalDetailAll = 0;
-        int totalMeshRenderers = 0, totalLayers = 0, maxLayers = 0;
+        int totalLayers = 0, maxLayers = 0;
         int terrainCount = 0;
         var perChunk = new List<(string name, int layers, int passes, int trees, long detailAll, long detailVisible, int mrs, float detailDist, float density)>();
 
