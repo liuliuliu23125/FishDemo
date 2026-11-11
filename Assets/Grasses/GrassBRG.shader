@@ -1,12 +1,16 @@
-// 草 shader：BRG 链路 + 主光光照 + 顶点风摆。
+// 草 shader：BRG 链路 + 主光光照 + 顶点风摆 + albedo 贴图/裁剪。
 //
 // 演进：
 //   M1（原版）：纯色、无光照、无阴影、无风摆，目的只是验证 URP 14 + BRG 的
 //               DOTS_INSTANCING 链路能跑通。视觉上像塑料片。
-//   现在       ：加 Lambert 主光 + 半球环境光 + 顶点风摆。仍然是「无阴影、
-//               无贴图、无透光」的简化版，但已有明暗层次与摆动，
-//               足以支撑「贴地看草」的观察需求。
-//               阴影/透光/贴图仍属 M3（Docs/grass_brg_plan.md §6）。
+//   2026-11-11 早：加 Lambert 主光 + 半球环境光 + 顶点风摆。仍是「无阴影、
+//               无贴图、无透光」的简化版，但已有明暗层次与摆动。
+//   现在       ：加 albedo 贴图采样 + alpha 裁剪 + per-type tint。
+//               花的真实颜色（雏菊白瓣黄芯/三叶草粉/蒲公英黄）在图集像素里，
+//               纯 tint 造不出花色——图集是 RGBA、约一半像素透明背景，
+//               必须采样 + 裁剪。贴图按 LOD 差异化：LOD0（原型 mesh）有图，
+//               LOD1/2（程序化草簇/十字面片）无 UV 语义、走纯色渐变。
+//               阴影/透光仍属 M3（Docs/grass_brg_plan.md §6）。
 //
 // 为什么必须自写：URP 14 全包只有 BRGPicking / ObjectMotionVectors 两个 shader 带
 // DOTS_INSTANCING_ON，Lit/Unlit 系列都不支持 BRG（方案 §1.2）。
@@ -23,6 +27,16 @@ Shader "FishDemo/Grass/BRGMinimal"
         _AmbientTint ("Ambient Tint", Color) = (0.55, 0.60, 0.45, 1)
         _WindSpeed ("Wind Speed", Float) = 1.2
         _WindStrength ("Wind Strength (m)", Float) = 0.08
+        // 有贴图时走 albedo 采样（花的颜色在图集里）；为空时退回纯色渐变。
+        // 绑定的是 RGBA 图集，花/草各占一块 UV 区域，贴图本身即颜色来源。
+        [NoScaleOffset] _MainTex ("Albedo (RGB) A(Clip)", 2D) = "white" {}
+        _Cutoff ("Alpha Cutoff", Range(0,1)) = 0.5
+        [Toggle(_USE_ALBEDO_TEX)] _UseAlbedoTex ("Use Albedo Texture", Float) = 0
+        // per-类型染色。图集已是最终颜色，这里只做类型间轻微区分
+        // （如枯草块偏黄）。必须声明在 Properties 里，否则材质序列化与
+        // HasProperty 都不认它（代码 SetColor 虽能生效，但材质面板看不到、
+        // 存档也可能丢）。
+        _TypeTint ("Type Tint", Color) = (1,1,1,1)
         [HideInInspector] _GrassPos ("Grass Pos", Vector) = (0, 0, 0, 0)
         [HideInInspector] _GrassNormalScale ("Grass NormalScale", Vector) = (0, 1, 0, 1)
     }
@@ -31,8 +45,10 @@ Shader "FishDemo/Grass/BRGMinimal"
     {
         Tags
         {
-            "RenderType" = "Opaque"
-            "Queue" = "Geometry"
+            // 有贴图后花边缘靠 alpha 裁剪，必须声明 TransparentCutout，
+            // 否则 DepthPrepass/对象拾取等不裁 alpha 的 pass 会把透明区域画成实心块。
+            "RenderType" = "TransparentCutout"
+            "Queue" = "AlphaTest"
             "RenderPipeline" = "UniversalPipeline"
             "IgnoreProjector" = "True"
         }
@@ -46,8 +62,13 @@ Shader "FishDemo/Grass/BRGMinimal"
 
             // M1 用单面片，双面都画，省得排查背面剔除导致的"看不见"。
             Cull Off
+            // alpha 裁剪要求 ZWrite 保持 On（AlphaTest 队列不影响 early-z）。
             ZWrite On
             ZTest LEqual
+            // 刻意不开 AlphaToMask：工程 MSAA=1（Assets/Settings/UniversalRP.asset:28），
+            // 无 MSAA 时 alpha-to-coverage 退化成近似全裁，近景草被切成亮绿碎屑
+            // （实测截图确认）。关掉后靠 clip 硬边；这类像素风图集本来就硬边。
+            // 将来若把 MSAA 提到 4，可以再启用 A2M 换边缘抖动平滑。
 
             HLSLPROGRAM
 
@@ -65,6 +86,11 @@ Shader "FishDemo/Grass/BRGMinimal"
             // 雾必须有：远处草不被雾吞掉的话，地平线会出现一条生硬的绿色边界。
             #pragma multi_compile_fog
 
+            // 贴图开关。不用 multi_compile 是因为它只会产生「有/无」两态，
+            // 而材质上是否存在贴图由 Manager 按 LOD 决定（LOD0 有图、LOD1/2 无图），
+            // 用 shader_feature 让同一 shader 能以不同变体出现在不同材质上。
+            #pragma shader_feature_local _USE_ALBEDO_TEX
+
             #pragma vertex Vert
             #pragma fragment Frag
 
@@ -77,9 +103,28 @@ Shader "FishDemo/Grass/BRGMinimal"
                 float4 _BaseColor;
                 float4 _TipColor;
                 float4 _AmbientTint;
+                // per-类型染色：图集已是最终颜色，这里只做类型间轻微区分
+                // （如枯草块偏黄）。默认白 = 不改色。
+                //
+                // 为什么不做成 per-instance：batch 本来就按 detail 类型分段
+                // （一个 draw command 只能绑一个 mesh → 同 batch 必然同类型），
+                // 「不同 Type 不同 tint」用每类型一个材质即可实现，
+                // GPU buffer 保持 32B/实例不变，不增加上传带宽。
+                // 磁盘 GrassInstance.Color（RGBA8）字段保留未用——
+                // 将来要做逐实例 healthy/dry 颜色变化时再升级为第三段上传。
+                float4 _TypeTint;
                 float  _WindSpeed;
                 float  _WindStrength;
+                float  _Cutoff;
+                float  _UseAlbedoTex;
             CBUFFER_END
+
+            // ── 贴图 ──
+            // RGBA 图集：花瓣/花蕊的真实颜色都在图集像素里，
+            // alpha 通道是透明背景（实测约 49% alpha==0），必须裁剪。
+            // 为什么放在 CBUFFER 外：贴图声明不能进 UnityPerMaterial。
+            TEXTURE2D(_MainTex);
+            SAMPLER(sampler_MainTex);
 
             // ── per-instance 属性（BRG / DOTS instancing）──
             // 两个 float4 = 32B/实例，与磁盘 GrassInstance 的 32B 一一对应。
@@ -219,9 +264,24 @@ Shader "FishDemo/Grass/BRGMinimal"
             {
                 UNITY_SETUP_INSTANCE_ID(input);
 
-                // 根部深绿 → 尖端浅绿：没有贴图时，这个渐变是"看得出是草"
-                // 而非"一片绿"的关键。用 sqrt 让浅色集中在尖端。
-                half3 albedo = lerp(_BaseColor.rgb, _TipColor.rgb, sqrt(input.bladeT));
+                half3 albedo;
+                #ifdef _USE_ALBEDO_TEX
+                // ── 有贴图：花/草的真实颜色来自图集像素 ──
+                // albedo 图集是主草类型的颜色来源（雏菊白瓣黄芯、
+                // 三叶草粉花、蒲公英黄花都在图集里）。tint 做轻微的
+                // 实例间变化（默认白 = 不改色），不承担"造出花色"的职责。
+                half4 tex = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv);
+                // alpha 裁剪：图集约一半像素是透明背景，不裁会把透明区画成实心块。
+                // 硬边裁剪（未开 AlphaToMask，原因见 Pass 顶部注释）。
+                clip(tex.a - _Cutoff);
+                albedo = tex.rgb * _TypeTint;
+                #else
+                // ── 无贴图：根部深绿 → 尖端浅绿 ──
+                // 这个渐变是"看得出是草"而非"一片绿"的关键。
+                // 用 sqrt 让浅色集中在尖端。tint 乘在渐变上（LOD1/2、
+                // 以及未绑定贴图的类型）。默认 _TypeTint = 白 = 不改色。
+                albedo = lerp(_BaseColor.rgb, _TipColor.rgb, sqrt(input.bladeT)) * _TypeTint;
+                #endif
 
                 // ── 主光 Lambert ──
                 // 双面渲染（Cull Off），背面法线要翻转，否则从背面看是死黑。
