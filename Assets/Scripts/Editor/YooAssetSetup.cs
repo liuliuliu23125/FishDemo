@@ -85,8 +85,15 @@ namespace FishDemo.EditorTools
             group.Collectors.Add(new BundleCollector
             {
                 CollectPath = collectPath,
-                // 用文件名作为定位地址，稳定且可读
-                AddressRuleName = nameof(AddressByFileName),
+                // 用「文件夹名_文件名」而不是纯文件名。
+                //
+                // 原因：Assets/Scenes 下场景与烘焙数据同名——
+                //   World/Chunks/World_SECTR Terrain_0_0-… Sector.unity
+                //   World/GrassData/World_SECTR Terrain_0_0-… Sector.bytes
+                // 纯文件名会让两者得到同一个 Address，YooAsset 收集阶段直接抛
+                // "Address already exists"（BundleCollector.cs:226），模拟构建整体失败。
+                // 加文件夹前缀后地址唯一，且仍然可读、可从地址反推来源目录。
+                AddressRuleName = nameof(AddressByFolderAndFileName),
                 PackRuleName = packRule,
                 FilterRuleName = nameof(CollectAll),
             });
