@@ -33,7 +33,7 @@ MonoBehaviour:
       - CollectPath: Assets/Scenes
         CollectorGUID: 
         CollectorType: 0
-        AddressRuleName: AddressByFileName
+        AddressRuleName: AddressByFolderAndFileName
         PackRuleName: PackDirectory
         FilterRuleName: CollectAll
         AssetTags: 
