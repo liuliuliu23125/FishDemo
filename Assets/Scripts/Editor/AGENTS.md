@@ -1,7 +1,7 @@
 # Assets/Scripts/Editor 规约（Gaia 世界生成工具链）
 
 > 程序集 `FishDemo.Editor`，命名空间 `FishDemo.EditorTools`。
-> 本文件约 80 行，改这些脚本前建议一次读完。
+> 本文件约 112 行，改这些脚本前建议一次读完。
 
 ## 1. 这些脚本干什么
 
@@ -20,6 +20,35 @@
 | `YooAssetEditorBootstrap.cs` | 模拟构建 + 注入包根目录 | 菜单 `YooAsset/FishDemo/执行模拟构建并注入路径` |
 
 完整工序与参数见 [world_implementation)](../../../Docs/world_implementation.md)。
+
+## 1.1 草 BRG 工具链（菜单编号 `FishDemo/Rendering/①~⑮`）
+
+草改 BRG 后，本目录新增了一整套烘焙 + 验证工具。**正确用法与踩坑在
+[grass_brg_progress](../../../Docs/grass_brg_progress.md)，这里只列职责。**
+
+| 脚本 | 菜单 | 职责 |
+|---|---|---|
+| `GrassBaker.cs` | ⑧ | 读 36 chunk 的 TerrainData detail 层 → 烘焙 `.bytes`（`SamplingRate=0.035`） |
+| `DetailBrgSetup.cs` | ⑮ | 把 7 种 detail 原型的 LOD0 mesh 写进场景里的 `GrassBRGManager` |
+| `WorldProbe.cs` | ③ | 地表高度探测（烘焙 / 相机摆位要用） |
+| `GrassM1Verify.cs` | ① | BRG 链路端到端（离屏渲染 + 像素回读 + 负向剔除） |
+| `GrassLodVerify.cs` | ⑦ | LOD 分层正确性 + A/B 收益 |
+| `GrassM2Verify.cs` | ⑩ | 烘焙数据 → 渲染全链路 |
+| `GrassMultiChunkVerify.cs` | ⑬ | 36 个 chunk 逐个验证有草 |
+| `GrassVertexBudget.cs` | ⑫ | 真实规格相机下的顶点预算 |
+| `GrassPerfProbe.cs` | ⑭ | 剔除耗时 / 内存实测 |
+| `GrassSceneSetup.cs` / `GrassSceneSetupM2.cs` | ⑤ / ⑪ | 把草摆进 World 场景（M2 版加载全部 36 个 `.bytes`） |
+| `GrassBudgetProbe.cs` / `GrassMeshStats.cs` / `GrassBakeDiagnose.cs` | ④ / ② / ⑨ | 规模与地形数据诊断 |
+
+### 为什么 `DetailBrgSetup` 必须存在（不要在运行时改成按名字找）
+
+detail 原型的 FBX 只被 `TerrainData` 以子资源引用，运行时
+`Resources.FindObjectsOfTypeAll<Mesh>()` **实测 0 命中**，7 种植物会全部退回同一个程序化草簇
+（表现为 `LOD0 三角形 = 24`）。且 FBX 内 mesh 名带后缀（`PW_WildGrass_General_Lod1_E`），
+不是文件名。所以只能在编辑器期用 `AssetDatabase` 拿到确切引用、序列化进组件。
+
+**改过 detail 原型或重烘后要重跑 ⑮**，否则 LOD0 会退回兜底 mesh
+（正确值是 `LOD0 三角形 = 128`，见 `Logs/detail-brg-v11.log`）。
 
 ## 2. 铁律
 
@@ -67,14 +96,17 @@
 
 ## 3. 新增脚本放哪
 
-- 只依赖 Gaia / URP / YooAsset → 放这里，进 `FishDemo.Editor`。
+- 只依赖 Gaia / URP / YooAsset / `FishDemo.Rendering` → 放这里，进 `FishDemo.Editor`。
 - 需要调 SECTR（`SECTR_TerrainWindow`、`SECTR_StreamExport`、`SECTR_Sector` 的编辑器 API）→ **必须放 `Assets/Editor/`**，否则编译失败。
+- 需要调 Pegasus（`PegasusManager`、`PegasusPoi`）→ **也必须放 `Assets/Editor/`**，理由同上：Pegasus 无 asmdef。
+- 引用了 `FishDemo.Rendering` 的脚本，**asmdef 里必须有这条引用**（已加）。漏了会报类型找不到。
 
 ## 4. 相关文档
 
 | 文档 | 何时读 |
 |---|---|
+| [grass_brg_progress](../../../Docs/grass_brg_progress.md) | 改草烘焙/验证工具、排查草消失 |
 | [world_implementation)](../../../Docs/world_implementation.md) | 要重跑世界生成、排查 chunk 问题、核对参数 |
 | [terrain_streaming)](../../../Docs/terrain_streaming.md) | 做地形选型、流式方案对比 |
 | [../AGENTS.md](../AGENTS.md) | 程序集边界、命名空间约定 |
-| [../../Editor/AGENTS.md](../../Editor/AGENTS.md) | 改 SECTR 那一半流水线 |
+| [../../Editor/AGENTS.md](../../Editor/AGENTS.md) | 改 SECTR / Pegasus 那一半流水线 |
