@@ -119,6 +119,6 @@ Material:
     - _GlobalBlendData: {r: 0.00001, g: 1, b: 0, a: 0}
     - _MacroVariationData: {r: 0.01, g: 0.001, b: 0.0001, a: 0.5}
     - _ObjectSpaceDataA: {r: 0, g: 0, b: 0, a: 0}
-    - _TerrainHeightmapRecipSize: {r: 0.0019493178, g: 0.0019493178, b: 0.001953125, a: 0.001953125}
-    - _TerrainPosSize: {r: -1536, g: -1536, b: 512, a: 512}
+    - _TerrainHeightmapRecipSize: {r: 0.0009765625, g: 0.0009765625, b: 0.0009775171, a: 0.0009775171}
+    - _TerrainPosSize: {r: -1536, g: -1536, b: 1024, a: 1024}
   m_BuildTextureStacks: []
