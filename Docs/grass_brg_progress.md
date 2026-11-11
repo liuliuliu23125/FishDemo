@@ -18,7 +18,8 @@
 | 关闭 Terrain 自带草 | ✅ 完成（2026-11-11） | 36 个 chunk 场景 `m_DetailObjectDistance: 0` |
 | 真实 detail 原型 mesh | ✅ 完成（2026-11-11） | `Logs/Grass/detail-brg-setup.txt`，`LOD0=128 tri` |
 | shader 主光 + 环境光 + 风摆 | ✅ 完成（2026-11-11） | `Assets/Grasses/GrassBRG.shader:1-9` |
-| M3 真机 + 阴影/透光/贴图 + 流式 | ⬜ 未开始 | — |
+| **花显色（albedo 图集 + tint）** | ✅ 完成并验证（2026-11-11） | `Logs/grass-closeup.txt` PASS；`LOD0=45` 实例带图集渲染 |
+| M3 真机 + 阴影/透光/贴图细节 + 流式 | ⬜ 未开始 | — |
 
 **当前状态**：36 个 chunk 全部烘焙并可渲染，1265 万实例，单帧剔除 21.9ms（编辑器 D3D11），
 M1/LOD/M2/多 chunk 四项验证全 PASS，0 运行时异常。Terrain detail 已关，
@@ -29,7 +30,8 @@ M1/LOD/M2/多 chunk 四项验证全 PASS，0 运行时异常。Terrain detail �
 - ❌ 阴影/透光/贴图（当前是 Lambert + 常量环境光 + 顶点风摆，无贴图无投影）
 - ❌ SECTR 流式加载未接（当前全量常驻 917MB）
 - ❌ 移动端性能未测
-- ❌ 花（CloverFlower / Daisy / Dandelions）随 detail 关闭一起消失，未迁到 BRG
+- ❌ 花（CloverFlower / Daisy / Dandelions）随 detail 关闭一起消失；
+  **已迁到 BRG 且代码层面支持显色（albedo 图集 + tint），待验证**（见 §2.2.1）
 
 ## 2. 交付物
 
@@ -47,13 +49,42 @@ M1/LOD/M2/多 chunk 四项验证全 PASS，0 运行时异常。Terrain detail �
 - `#pragma target 4.5` + `#pragma exclude_renderers gles`
 - 读 32B 语义数据（`_GrassPos` / `_GrassNormalScale`），shader 内重建变换
 - **Lambert 主光 + 常量半球环境光 + 顶点风摆**（2026-11-11 加）
-- 仍缺：阴影、透光、贴图、LOD crossfade（M3）
+- **albedo 图集采样 + alpha 裁剪 + per-type tint**（2026-11-11 晚加，花的显色）：
+  - `_USE_ALBEDO_TEX`（shader_feature）：LOD0 材质启用，走
+    `SAMPLE_TEXTURE2D(_MainTex) + clip(a - _Cutoff)`；LOD1/2 材质不启用，走纯色渐变
+  - `_TypeTint`：per-类型染色，乘在 albedo/渐变上。**不是 per-instance**——
+    batch 按类型分段，每类型一个材质即可，GPU buffer 保持 32B 不变
+  - RenderType 改 `TransparentCutout`、Queue 改 `AlphaTest`
+  - **不开 `AlphaToMask`**：工程 MSAA=1，alpha-to-coverage 会退化并把叶片切成碎屑（踩坑 #16）
+- 仍缺：阴影、透光、LOD crossfade（M3）
+
+### 2.2.1 花为什么必须用图集而不是 tint（实测结论，别再走弯路）
+
+花的颜色（雏菊白瓣黄芯、三叶草粉、蒲公英黄）**在图集像素里，不在 tint 里**：
+
+| 事实 | 证据 |
+|---|---|
+| 7 个原型只用 2 张 RGBA 图集（Wild 4096²、Lawn 2048²，实测 `AssetDatabase` 加载结果）：lawn 系（枯草/三叶草/雏菊/蒲公英）共用 `PW_LawnGrass_00_D`，wild 系（主草/林下叶/枯枝）共用 `PW_WildGrass_00_D` | 解析 7 个 FBX 内嵌贴图引用 + `PW_Detail_Lawn/WildGrass.mat` 的 `_BaseMap` guid |
+| FBX **无顶点色**（`LayerElementColor` 0 处） | FBX 二进制解析 |
+| 图集透明背景占比高（Lawn 49% / Wild 37% 的像素 alpha==0），不裁剪会画出实心色块 | PNG 解码采样 |
+| 原 `PW_Details_Foliage_URP` shadergraph 的贴图节点 `useTilingAndOffset: false`，即**直接用网格 UV 采样、不缩放** | shadergraph JSON |
+| 磁盘 32B 格式的 `Color` 字段恒写 `0xFFFFFFFF` 且从未上传 GPU | `GrassBaker.cs:267`、`UploadInstanceData` 只有 2 段 |
+
+所以「给不同 Type 传不同 tint」单独做是**显不出花色的**——必须同时给 shader
+加图集采样与 alpha 裁剪。tint 只做类型间的轻微区分（如枯草块偏黄），
+不承担造色职责。磁盘 `Color` 字段保留，将来做逐实例 healthy/dry 时再启用第三段上传。
+
+**为什么 tint 走材质而不是 per-instance**：batch 已按「类型 × 16MB」分段，
+一个 draw command 只能绑一个 materialID → 同 batch 必然同类型。
+每类型一个材质即可表达「不同 Type 不同 tint」，GPU buffer 保持 32B/实例、
+上传带宽不变。材质最多 8 个（7 个带图 LOD0 + 1 个共享纯色），同 shader。
 
 ### 2.3 编辑器工具（`Assets/Scripts/Editor/`，程序集 `FishDemo.Editor`）
 
 | 工具 | 菜单 | 用途 |
 |---|---|---|
 | `GrassBaker` | ⑧ | 烘焙 36 chunk → `.bytes` |
+| `DetailBrgSetup` | ⑮ | 注入 7 个原型 mesh **+ 2 张 albedo 图集 + 类型 tint** |
 | `GrassM1Verify` | ① | BRG 链路端到端（离屏渲染 + 像素回读 + 负向剔除） |
 | `GrassLodVerify` | ⑦ | LOD 分层正确性 + A/B 收益 |
 | `GrassM2Verify` | ⑩ | 烘焙数据 → 渲染全链路 |
@@ -209,13 +240,17 @@ BRG 单 batch 的 raw buffer 上限 16MB（`EntitiesGraphicsSystem.cs:1156`）�
 | 11 | 运行时按名字找 detail 原型 mesh | `Resources.FindObjectsOfTypeAll<Mesh>()` 实测 0 命中，7 种植物长一样，`LOD0 三角形 = 24` | 编辑器期用 `AssetDatabase` 拿引用、序列化进组件（`DetailBrgSetup`）；且 FBX 内 mesh 名带 `_E` 后缀 |
 | 12 | 与 Terrain detail 重复绘制 | 同一处画两遍草，且 detail 无法与 BRG 合批 | `DetailObjectDistance = 0`；**不要用 `drawTreesAndFoliage=false`**（会关掉 46.5 万棵树） |
 | 13 | 打包后草消失 | `Assets/` 不存在，`File.ReadAllBytes` 失败 → 静默回退合成方阵 | 正式版改走 YooAsset（M3） |
+| 14 | `[Toggle]` 属性设了但没 EnableKeyword | `shader_feature` 变体不切换：LOD0 花仍是绿色、无 alpha 裁剪，**静默失效** | 代码里必须显式 `mat.EnableKeyword("_USE_ALBEDO_TEX")`，`SetFloat` 只影响属性值不影响变体 |
+| 15 | 只传 tint 不给贴图 | 花仍是纯绿（tint 乘在绿色渐变上，乘什么都是绿） | 花色在图集里，必须采样 + `clip(a - _Cutoff)` |
+| 16 | **MSAA=1 时开 `AlphaToMask On`** | alpha-to-coverage 退化，近景草被切成亮绿碎屑、前景出现大块纯色（实测截图） | 工程 `Assets/Settings/UniversalRP.asset:28` 的 `m_MSAA: 1`，**不要开 A2M**；靠 `clip` 硬边即可 |
+| 17 | 编辑器脚本里连续调两个 setter | 各重建一次 BRG，每次 1265 万实例分块排序 → 整脚本超 60 秒被截断，连保存都走不到 | 用 `ApplyDetailPrototypeSetup(..., rebuild:false)` 一次写入；编辑器期只写字段，下次打开场景自然重建 |
 
 ## 6. 下一步（M3，未开始）
 
 按依赖顺序：
 
 1. **SECTR 流式加载草数据**——按相机位置加载/卸载 chunk，解决 917MB 常驻（**当前第一优先级**）
-2. **shader 加阴影/透光/贴图**（当前只有 Lambert 主光 + 常量环境光）
+2. **shader 加阴影/透光**（当前有 Lambert 主光 + 常量环境光 + albedo 图集裁剪）
 3. **花迁到 BRG**——CloverFlower / Daisy / Dandelions 随 detail 关闭一起消失，
    要把它们做成 BRG 实例并入同一套数据管线
 4. **剔除并行化**（`IJobParallelFor`）——21.9ms 仍占 33ms 预算的 2/3

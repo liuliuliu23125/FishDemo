@@ -193,12 +193,49 @@ namespace FishDemo.Rendering
         [Tooltip("7 种 detail 原型的 LOD0 mesh（索引 = detail 层）。由 DetailBrgSetup 写入。")]
         [SerializeField] private Mesh[] _detailPrototypeMeshes = new Mesh[kDetailTypeCount];
 
+        /// <summary>
+        /// 各类型 LOD0 用的 albedo 图集（索引 = detail 层）。
+        ///
+        /// 为什么需要：花的颜色在图集像素里（雏菊白瓣黄芯/三叶草粉/蒲公英黄），
+        /// 纯 tint 造不出花色。7 个原型实际只用 2 张 RGBA 图集（Wild 4096² / Lawn 2048²）：
+        /// lawn 系（DeadPatch/CloverFlower/Daisy/Dandelions）共用
+        /// PW_LawnGrass_00_D，wild 系（主草/Foliage/Sticks）共用
+        /// PW_WildGrass_00_D。alpha 是透明背景（实测约 49% alpha==0），
+        /// shader 里 clip 裁剪。
+        /// 由 DetailBrgSetup 编辑期用 AssetDatabase 写入（同 mesh 的原因：
+        /// 运行时按名字找实测 0 命中）。
+        /// </summary>
+        [Tooltip("各类型 LOD0 的 albedo 图集（索引 = detail 层）。由 DetailBrgSetup 写入。")]
+        [SerializeField] private Texture2D[] _detailPrototypeTextures = new Texture2D[kDetailTypeCount];
+
+        /// <summary>
+        /// 各类型的染色 tint（索引 = detail 层），写入各类型 LOD0 材质的 _TypeTint。
+        /// 默认全白 = 不改色。图集本身已是最终颜色，tint 只做轻微的类型区分
+        /// （例如让枯草块偏黄）。LOD1/2 无贴图，共用一个纯色材质，不按类型区分
+        /// ——远处本来就分辨不出种类，省 6 个材质与变体。
+        /// </summary>
+        [Tooltip("各类型的 tint（Color 属性）。默认全白。")]
+        [SerializeField] private Color[] _detailPrototypeTints =
+        {
+            Color.white, Color.white, Color.white, Color.white,
+            Color.white, Color.white, Color.white,
+        };
+
         /// <summary>是否已尝试过从 _grassDataDir 自动加载（避免每帧重试）。</summary>
         private bool _triedAutoLoad;
 
         private BatchRendererGroup _brg;
         private BatchRendererGroup.OnPerformCulling _performCulling;
+
+        /// <summary>
+        /// LOD1/2 共享的纯色材质 ID（无贴图，走 shader 的纯色渐变分支）。
+        /// </summary>
         private BatchMaterialID _materialID;
+
+        /// <summary>
+        /// 各类型 LOD0 的带图材质 ID。索引 = 类型；Null = 该类型无图，回落 _materialID。
+        /// </summary>
+        private readonly BatchMaterialID[] _typeLod0MaterialIDs = new BatchMaterialID[kDetailTypeCount];
 
         /// <summary>
         /// 各类型 × 各 LOD 的 mesh 与注册 ID。索引 [type, lod]。
@@ -211,6 +248,12 @@ namespace FishDemo.Rendering
         private readonly int[] _lodTriangleCounts = new int[kLodCount];
 
         private Material _runtimeMaterial;
+
+        /// <summary>
+        /// 各类型 LOD0 的带图材质（本类创建，Shutdown 时销毁）。
+        /// 索引 = 类型；null = 该类型无图（draw command 回落 _materialID）。
+        /// </summary>
+        private readonly Material[] _typeLod0Materials = new Material[kDetailTypeCount];
 
         /// <summary>CPU 侧实例位置，剔除 Job 用（GPU buffer 里只有矩阵）。</summary>
         private NativeArray<float3> _positions;
@@ -261,7 +304,37 @@ namespace FishDemo.Rendering
 
             BuildLodMeshes();
 
+            // LOD1/2 共享材质（无贴图，纯色渐变）。
             _materialID = _brg.RegisterMaterial(mat);
+
+            // ── 各类型 LOD0 材质：绑定图集 + 写 tint ──
+            //
+            // 为什么每类型一个材质而不是 per-instance tint：
+            // batch 按「类型 × 16MB」分段，一个 draw command 只能绑一个
+            // materialID → 同 batch 必然同类型。每类型一个材质即可实现
+            // 「不同 Type 不同 tint」，GPU buffer 保持 32B 不变。
+            // 材质最多 7 个，都来自同一个 shader，只是 _MainTex/_TypeTint 不同。
+            for (int t = 0; t < kDetailTypeCount; t++)
+            {
+                _typeLod0MaterialIDs[t] = BatchMaterialID.Null;   // 默认无效：无图回落共享材质
+                var tex = _detailPrototypeTextures != null && t < _detailPrototypeTextures.Length
+                    ? _detailPrototypeTextures[t] : null;
+                if (tex == null)
+                    continue;   // 该类型无图，LOD0 也走纯色材质
+
+                var m = new Material(mat) { hideFlags = HideFlags.DontSave };
+                m.SetTexture("_MainTex", tex);
+                // shader_feature 的开关由 keyword 决定，不是属性值——
+                // 只 SetFloat 不 EnableKeyword 的话，编译进来的还是无贴图变体，
+                // 表现为 LOD0 花依旧是绿色渐变且无 alpha 裁剪（静默失效）。
+                m.SetFloat("_UseAlbedoTex", 1f);
+                m.EnableKeyword("_USE_ALBEDO_TEX");
+                var tint = _detailPrototypeTints != null && t < _detailPrototypeTints.Length
+                    ? _detailPrototypeTints[t] : Color.white;
+                m.SetColor("_TypeTint", tint);
+                _typeLod0Materials[t] = m;
+                _typeLod0MaterialIDs[t] = _brg.RegisterMaterial(m);
+            }
 
             BuildInstances();
 
@@ -448,6 +521,18 @@ namespace FishDemo.Rendering
                 _runtimeMaterial = null;
             }
 
+            // 各类型 LOD0 的带图材质是本类 new 出来的，必须一并销毁。
+            // 贴图本身是资产引用（DetailBrgSetup 注入），不能 Destroy。
+            for (int t = 0; t < kDetailTypeCount; t++)
+            {
+                if (_typeLod0Materials[t] != null)
+                {
+                    DestroyRuntimeObject(_typeLod0Materials[t]);
+                    _typeLod0Materials[t] = null;
+                }
+                _typeLod0MaterialIDs[t] = BatchMaterialID.Null;
+            }
+
             if (_positions.IsCreated)
                 _positions.Dispose();
             if (_visibleCount.IsCreated)
@@ -520,6 +605,53 @@ namespace FishDemo.Rendering
             _detailPrototypeMeshes = meshes;
 
             // 重建以应用新 mesh。Initialize 内部会先 Shutdown（若已就绪）。
+            if (_ready) Shutdown();
+            Initialize();
+        }
+
+        /// <summary>
+        /// 一次性写入原型 mesh、albedo 图集与 tint，**只重建一次**。
+        ///
+        /// 为什么需要这个批量接口：DetailBrgSetup 原来连续调
+        /// SetDetailPrototypeMeshes + SetDetailPrototypeTextures，各自重建一次，
+        /// 而每次 Initialize → BuildInstances 要处理 1265 万实例（分块排序 ~1~2 秒）。
+        /// 实测两次重建会让编辑器脚本跑过 60 秒被截断，连保存都走不到。
+        ///
+        /// rebuild=false 的用途：编辑器期只写字段并让场景保存即可，
+        /// 下次打开场景时 OnEnable 自然重建一次。避免在保存阶段白跑一遍
+        /// 1265 万实例的分块排序。
+        /// </summary>
+        public void ApplyDetailPrototypeSetup(Mesh[] meshes, Texture2D[] textures, Color[] tints,
+            bool rebuild = true)
+        {
+            if (meshes != null && meshes.Length == kDetailTypeCount)
+                _detailPrototypeMeshes = meshes;
+            if (textures != null && textures.Length == kDetailTypeCount)
+                _detailPrototypeTextures = textures;
+            if (tints != null && tints.Length == kDetailTypeCount)
+                _detailPrototypeTints = tints;
+
+            if (!rebuild)
+                return;
+
+            if (_ready) Shutdown();
+            Initialize();
+        }
+
+        /// <summary>
+        /// 注入各类型 LOD0 的 albedo 图集与 tint（由 DetailBrgSetup 编辑期调用）。
+        ///
+        /// 为什么纹理单独注入而不是运行时按名字找：图集只被原型 FBX 的材质引用，
+        /// 运行时 Resources.FindObjectsOfTypeAll&lt;Texture&gt; 实测与 mesh 同样 0 命中
+        /// （同一根因：只被 TerrainData 子资源引用的资产不会被自动加载）。
+        /// </summary>
+        public void SetDetailPrototypeTextures(Texture2D[] textures, Color[] tints)
+        {
+            _detailPrototypeTextures = textures;
+            if (tints != null && tints.Length == kDetailTypeCount)
+                _detailPrototypeTints = tints;
+
+            // 重建以应用新材质（Initialize 会重新 RegisterMaterial）。
             if (_ready) Shutdown();
             Initialize();
         }
@@ -1500,16 +1632,21 @@ namespace FishDemo.Rendering
             //
             // meshID 取 [该 batch 的类型, lod]：这是「7 种原型各用各自 mesh」的落点。
             // 同一类型的不同 batch（大类型被 16MB 切成多段）共用同一组 meshID。
+            //
+            // materialID 同样按类型区分：LOD0 用该类型自己的带图材质
+            // （花的颜色在图集里 + 类型 tint），LOD1/2 用共享纯色材质。
+            // 带图材质未注册（类型无图）时 Null → 回落 _materialID。
             for (int b = 0; b < batchCount; b++)
             {
                 var slice = _batches[b];
                 int batchType = _batchType[b];
+                BatchMaterialID lod0Mat = _typeLod0MaterialIDs[batchType];
                 for (int lod = 0; lod < kLodCount; lod++)
                 {
                     commands[b * kLodCount + lod] = new BatchDrawCommand
                     {
                         batchID = slice.BatchID,
-                        materialID = _materialID,
+                        materialID = (lod == 0 && lod0Mat != BatchMaterialID.Null) ? lod0Mat : _materialID,
                         meshID = _typeLodMeshIDs[batchType, lod],
                         submeshIndex = 0,
                         // 相机视图只有一个 split，bit0 = 1。写成 0 会导致整批被丢弃。

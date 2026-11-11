@@ -45476,6 +45476,22 @@ MonoBehaviour:
   - {fileID: 4915879899225136738, guid: cd765b8fa2a2daa40a70a096f4a10e5c, type: 3}
   - {fileID: 882413725814213159, guid: b221d9a78cf4dd34b9d50bbf2e118a1e, type: 3}
   - {fileID: -3136707271445398252, guid: 85869f1960ba785469a5aa6bcb2753d5, type: 3}
+  _detailPrototypeTextures:
+  - {fileID: 2800000, guid: 486e6a4e4440fc341a5b6840210704d2, type: 3}
+  - {fileID: 2800000, guid: ac47fd0550f44e24fa30ccceb5e81eb8, type: 3}
+  - {fileID: 2800000, guid: 486e6a4e4440fc341a5b6840210704d2, type: 3}
+  - {fileID: 2800000, guid: 486e6a4e4440fc341a5b6840210704d2, type: 3}
+  - {fileID: 2800000, guid: ac47fd0550f44e24fa30ccceb5e81eb8, type: 3}
+  - {fileID: 2800000, guid: ac47fd0550f44e24fa30ccceb5e81eb8, type: 3}
+  - {fileID: 2800000, guid: ac47fd0550f44e24fa30ccceb5e81eb8, type: 3}
+  _detailPrototypeTints:
+  - {r: 1, g: 1, b: 1, a: 1}
+  - {r: 1, g: 0.92, b: 0.8, a: 1}
+  - {r: 1, g: 1, b: 1, a: 1}
+  - {r: 1, g: 1, b: 1, a: 1}
+  - {r: 1, g: 1, b: 1, a: 1}
+  - {r: 1, g: 1, b: 1, a: 1}
+  - {r: 1, g: 1, b: 1, a: 1}
 --- !u!4 &1173028441
 Transform:
   m_ObjectHideFlags: 0
