@@ -26,6 +26,9 @@
 # Unity YAML 文本（.unity/.mat/.prefab/.asset/.anim/.controller）刻意不进 LFS，
 # 保留 diff 与合并能力。只有真二进制走 LFS。
 # 注意：对已提交的历史文件无效——LFS 只影响此后新增/修改的对象。
+# Pegasus 的 Demo.asset 实测是二进制（非 YAML），单独走 LFS。
+# 其它 .asset 仍是文本，不加通配规则。
+"Assets/Procedural Worlds/Pegasus/Demo/DemoAssets/Demo.asset" filter=lfs diff=lfs merge=lfs -text
 /Assets/Settings/Lit2DSceneTemplate.scenetemplate filter=lfs diff=lfs merge=lfs -text
 /Assets/GPUECSAnimationBaker/GPU[[:space:]]ECS[[:space:]]Animation[[:space:]]Baker[[:space:]]Manual.pdf filter=lfs diff=lfs merge=lfs -text
 /Assets/GPUECSAnimationBaker/Samples/Characters/Ch09/Animations/Gangnam[[:space:]]Style.anim filter=lfs diff=lfs merge=lfs -text
