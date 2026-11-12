@@ -45453,7 +45453,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 12f1c7d47586e1b44b0c763177f9ed9f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _instanceCount: 12652005
+  _instanceCount: 4350225
   _spacing: 0.6
   _cullRadius: 0.6
   _material: {fileID: 0}
@@ -45484,6 +45484,52 @@ MonoBehaviour:
   - {fileID: 2800000, guid: ac47fd0550f44e24fa30ccceb5e81eb8, type: 3}
   - {fileID: 2800000, guid: ac47fd0550f44e24fa30ccceb5e81eb8, type: 3}
   - {fileID: 2800000, guid: ac47fd0550f44e24fa30ccceb5e81eb8, type: 3}
+  _detailPrototypeUvRects:
+  - serializedVersion: 2
+    x: 0.6982
+    y: 0.2334
+    width: 0.1534
+    height: 0.1553
+  - serializedVersion: 2
+    x: 0.6357
+    y: 0.248
+    width: 0.1426
+    height: 0.1094
+  - serializedVersion: 2
+    x: 0.4277
+    y: 0.8457
+    width: 0.1035
+    height: 0.127
+  - serializedVersion: 2
+    x: 0.6914
+    y: 0.751
+    width: 0.0732
+    height: 0.0888
+  - serializedVersion: 2
+    x: 0.8662
+    y: 0.4756
+    width: 0.1143
+    height: 0.2402
+  - serializedVersion: 2
+    x: 0.0098
+    y: 0.877
+    width: 0.1006
+    height: 0.1054
+  - serializedVersion: 2
+    x: 0.1152
+    y: 0.7666
+    width: 0.0733
+    height: 0.0762
+  _detailPrototypeScales:
+  - {x: 1.5, y: 1.5, z: 0.2994052}
+  - {x: 6.5, y: 6.5, z: 0.06491392}
+  - {x: 3.5, y: 3.5, z: 0.062149704}
+  - {x: 1.5, y: 1.5, z: 0.031448144}
+  - {x: 2.5, y: 2.5, z: 0.17842238}
+  - {x: 2.5, y: 3, z: 0.15434682}
+  - {x: 2.5, y: 3, z: 0.09737864}
+  _billboardMedium: {fileID: 2779211755937322356, guid: 463b5469d8711734d871d49b38545710, type: 3}
+  _billboardLow: {fileID: -8773976906554603990, guid: 141f2d4e85a533044825206e7bbf07ea, type: 3}
   _detailPrototypeTints:
   - {r: 1, g: 1, b: 1, a: 1}
   - {r: 1, g: 0.92, b: 0.8, a: 1}
