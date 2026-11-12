@@ -52,10 +52,15 @@ namespace FishDemo.EditorTools
         /// 0.14 株/m²（577万 × 0.35 × 距离占比），高了近 58 倍。
         /// 用户实测相机内 1000 万顶点，确认过密。
         ///
-        /// 0.035 → 0.82 株/m²，配合「每实例一簇草」（48 顶点，见 BuildClumpMesh）
-        /// 视觉上仍饱满，但顶点数降一个数量级。
+        /// 0.035 → 单 chunk 35.2 万实例 / 全域 1265 万 / 386MB，实测仍偏密
+        /// （用户 2026-11-12 反馈「目前的量过多了，可以再减一半」）。
+        /// 0.0175 = 0.035 的一半 → 单 chunk 约 17.6 万 / 全域约 630 万 / 约 193MB。
+        ///
+        /// 只调采样率、不动 <see cref="SparseKeepChance"/>：实际保留量 ≈
+        /// Σ(round(n×rate) + 稀疏格保底)，两者是乘法关系，改一个即等比缩放。
+        /// 最终数量以重烘后 Logs/Grass/bake-report.txt 的实测值为准。
         /// </summary>
-        private const float SamplingRate = 0.035f;
+        private const float SamplingRate = 0.0175f;
 
         /// <summary>稀疏处保底放 1 个的概率，避免整片空洞。</summary>
         private const float SparseKeepChance = 0.30f;
