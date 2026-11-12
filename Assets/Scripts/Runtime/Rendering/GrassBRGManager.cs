@@ -82,11 +82,43 @@ namespace FishDemo.Rendering
         [Tooltip("低于该像素高度直接剔除（LOD2 之外）。")]
         [SerializeField] private float _cullPixelHeight = 8f;
 
-        [Tooltip("草在世界里的标称高度（米）。用于把屏幕像素反算成距离。")]
+        [Tooltip("草在世界里的标称高度（米）。用于把屏幕像素反算成距离。" +
+                 "有类型尺寸数据时会被自动推导值覆盖（见 EffectiveNominalHeight）。")]
         [SerializeField] private float _nominalHeight = 1f;
 
         [Tooltip("关掉 LOD 时只用 LOD0，用于 A/B 对比验证。")]
         [SerializeField] private bool _enableLod = true;
+
+        /// <summary>
+        /// LOD 换算用的有效标称高度（米）。
+        ///
+        /// 为什么要自动推导而不是用 _nominalHeight 固定值：
+        /// 接入 Gaia 真实尺寸后，各类型真实高度差一个量级
+        /// （主草原型 0.30m、雏菊 0.15m、枯草块 0.06m，见 Logs/detail-brg-setup.txt）。
+        /// 若仍按 1m 换算，LOD0/LOD1 的切换距离会被高估 2~3 倍，
+        /// 结果是「已经在远处了还在画原型 mesh」，顶点预算白超。
+        ///
+        /// 取各类型「网格高度 × 竖直倍率」的最大值：LOD 阈值本来就是保守量，
+        /// 用最大值保证最高的那类不会被过早降级（矮的提前降级视觉上无所谓）。
+        /// 没有尺寸数据时退回 _nominalHeight。
+        /// </summary>
+        private float EffectiveNominalHeight
+        {
+            get
+            {
+                float h = 0f;
+                if (_detailPrototypeScales != null)
+                {
+                    for (int i = 0; i < _detailPrototypeScales.Length && i < kDetailTypeCount; i++)
+                    {
+                        var s = _detailPrototypeScales[i];
+                        if (s.y > 1e-4f && s.z > 1e-4f)
+                            h = Mathf.Max(h, s.y * s.z);
+                    }
+                }
+                return h > 1e-4f ? h : _nominalHeight;
+            }
+        }
 
         /// <summary>诊断：打印前 N 次剔除的内部状态（0 = 关闭）。排查用，正常应为 0。</summary>
         [SerializeField] private int _debugCullShots = 0;
@@ -209,7 +241,46 @@ namespace FishDemo.Rendering
         [SerializeField] private Texture2D[] _detailPrototypeTextures = new Texture2D[kDetailTypeCount];
 
         /// <summary>
-        /// 各类型的染色 tint（索引 = detail 层），写入各类型 LOD0 材质的 _TypeTint。
+        /// 各类型在图集里的精灵格（UV 矩形，xy=左下角，wh=宽高），索引 = detail 层。
+        ///
+        /// 为什么必须显式给：一张图集里平铺着几十个互不相关的图案
+        /// （雏菊、蒲公英、草簇、枯枝、甚至纯色测试条）。原型 mesh 的 UV 恰好指向
+        /// 自己的那一格，但 LOD1/LOD2 的交叉片是我们程序化生成的，
+        /// 必须自己知道该采哪一格，否则采到相邻图案（花会变成褐色噪点）。
+        ///
+        /// 由 DetailBrgSetup 在编辑期用图集的连通域分析结果写入。
+        /// </summary>
+        [Tooltip("各类型在图集里的精灵格（UV 矩形）。由 DetailBrgSetup 写入。")]
+        [SerializeField] private Rect[] _detailPrototypeUvRects = new Rect[kDetailTypeCount];
+
+        /// <summary>
+        /// 各类型的基础尺寸倍率，索引 = detail 层；xyz = 水平倍率, 竖直倍率, 网格高度(米)。
+        ///
+        /// 为什么需要：Gaia 的 detailPrototype 给每类定了 min/max 宽高，差异极大
+        /// （枯草块 5~8 倍、雏菊 1~4 倍、主草 1~2 倍，见 Logs/terrain-detail-probe.txt）。
+        /// 烘焙产物每实例只有一个 8 位缩放，装不下「类型倍率 × 个体抖动」两个维度，
+        /// 所以把类型倍率放材质（一类型一份，零带宽），个体抖动留在 GPU buffer。
+        /// z 存网格真实高度，shader 用它归一化 bladeT（雏菊网格只有 0.15m 高）。
+        /// </summary>
+        [Tooltip("各类型基础尺寸（xz 倍率, y 倍率, 网格高度m）。由 DetailBrgSetup 写入。")]
+        [SerializeField] private Vector3[] _detailPrototypeScales = new Vector3[kDetailTypeCount];
+
+        /// <summary>
+        /// LOD1 用的通用 billboard：Gaia 的 PW_DetailCrossPlanes（120 tri）。
+        /// 所有类型共用这一个真实资产；采哪一格靠构建期把 UV 重写进 mesh 副本。
+        /// 由 DetailBrgSetup 在编辑期用 AssetDatabase 注入。
+        /// </summary>
+        [Tooltip("LOD1 通用 billboard（Gaia PW_DetailCrossPlanes）。由 DetailBrgSetup 写入。")]
+        [SerializeField] private Mesh _billboardMedium;
+
+        /// <summary>
+        /// LOD2 用的通用 billboard：Gaia 的 PW_DetailQuad（8 tri）。
+        /// </summary>
+        [Tooltip("LOD2 通用 billboard（Gaia PW_DetailQuad）。由 DetailBrgSetup 写入。")]
+        [SerializeField] private Mesh _billboardLow;
+
+        /// <summary>
+        /// 各类型的染色 tint（索引 = detail 层），写入各类型材质的 _TypeTint。
         /// 默认全白 = 不改色。图集本身已是最终颜色，tint 只做轻微的类型区分
         /// （例如让枯草块偏黄）。LOD1/2 无贴图，共用一个纯色材质，不按类型区分
         /// ——远处本来就分辨不出种类，省 6 个材质与变体。
@@ -233,9 +304,10 @@ namespace FishDemo.Rendering
         private BatchMaterialID _materialID;
 
         /// <summary>
-        /// 各类型 LOD0 的带图材质 ID。索引 = 类型；Null = 该类型无图，回落 _materialID。
+        /// 各类型的带图材质 ID。索引 = 类型；Null = 该类型无图，回落 _materialID。
+        /// 三层 LOD 共用同一份类型材质（2026-11-12 起）。
         /// </summary>
-        private readonly BatchMaterialID[] _typeLod0MaterialIDs = new BatchMaterialID[kDetailTypeCount];
+        private readonly BatchMaterialID[] _typeMaterialIDs = new BatchMaterialID[kDetailTypeCount];
 
         /// <summary>
         /// 各类型 × 各 LOD 的 mesh 与注册 ID。索引 [type, lod]。
@@ -250,10 +322,10 @@ namespace FishDemo.Rendering
         private Material _runtimeMaterial;
 
         /// <summary>
-        /// 各类型 LOD0 的带图材质（本类创建，Shutdown 时销毁）。
+        /// 各类型的带图材质（本类创建，Shutdown 时销毁）。三层 LOD 共用。
         /// 索引 = 类型；null = 该类型无图（draw command 回落 _materialID）。
         /// </summary>
-        private readonly Material[] _typeLod0Materials = new Material[kDetailTypeCount];
+        private readonly Material[] _typeMaterials = new Material[kDetailTypeCount];
 
         /// <summary>CPU 侧实例位置，剔除 Job 用（GPU buffer 里只有矩阵）。</summary>
         private NativeArray<float3> _positions;
@@ -304,36 +376,50 @@ namespace FishDemo.Rendering
 
             BuildLodMeshes();
 
-            // LOD1/2 共享材质（无贴图，纯色渐变）。
+            // 无类型专用图集时的共享材质（纯色渐变分支）。
             _materialID = _brg.RegisterMaterial(mat);
 
-            // ── 各类型 LOD0 材质：绑定图集 + 写 tint ──
+            // ── 各类型专用材质：绑定该类型图集 + 精灵格 + tint + 基础尺寸 ──
             //
             // 为什么每类型一个材质而不是 per-instance tint：
             // batch 按「类型 × 16MB」分段，一个 draw command 只能绑一个
             // materialID → 同 batch 必然同类型。每类型一个材质即可实现
-            // 「不同 Type 不同 tint」，GPU buffer 保持 32B 不变。
-            // 材质最多 7 个，都来自同一个 shader，只是 _MainTex/_TypeTint 不同。
+            // 「不同 Type 不同贴图/tint/尺寸」，GPU buffer 保持 32B 不变。
+            //
+            // 2026-11-12 起这套材质**三层 LOD 都用**（旧版只有 LOD0 用）。
+            // 原因见 BuildLodMeshes 注释：LOD1/LOD2 曾经是纯色程序化几何，
+            // 导致 99.8% 的可见草没有花色。
             for (int t = 0; t < kDetailTypeCount; t++)
             {
-                _typeLod0MaterialIDs[t] = BatchMaterialID.Null;   // 默认无效：无图回落共享材质
+                _typeMaterialIDs[t] = BatchMaterialID.Null;   // 默认无效：无图回落共享材质
                 var tex = _detailPrototypeTextures != null && t < _detailPrototypeTextures.Length
                     ? _detailPrototypeTextures[t] : null;
                 if (tex == null)
-                    continue;   // 该类型无图，LOD0 也走纯色材质
+                    continue;   // 该类型无图，三层都走纯色材质
 
                 var m = new Material(mat) { hideFlags = HideFlags.DontSave };
                 m.SetTexture("_MainTex", tex);
                 // shader_feature 的开关由 keyword 决定，不是属性值——
                 // 只 SetFloat 不 EnableKeyword 的话，编译进来的还是无贴图变体，
-                // 表现为 LOD0 花依旧是绿色渐变且无 alpha 裁剪（静默失效）。
+                // 表现为花依旧是绿色渐变且无 alpha 裁剪（静默失效）。
                 m.SetFloat("_UseAlbedoTex", 1f);
                 m.EnableKeyword("_USE_ALBEDO_TEX");
                 var tint = _detailPrototypeTints != null && t < _detailPrototypeTints.Length
                     ? _detailPrototypeTints[t] : Color.white;
                 m.SetColor("_TypeTint", tint);
-                _typeLod0Materials[t] = m;
-                _typeLod0MaterialIDs[t] = _brg.RegisterMaterial(m);
+
+                // 类型尺寸：Gaia 的 min/max 宽高换算结果（DetailBrgSetup 写入）。
+                // 无配置时退化为等比 1.0，至少不改变几何。
+                var sc = _detailPrototypeScales != null && t < _detailPrototypeScales.Length
+                    ? _detailPrototypeScales[t] : Vector3.zero;
+                if (sc.x <= 1e-4f || sc.y <= 1e-4f)
+                    sc = new Vector3(1f, 1f, 1f);
+                if (sc.z <= 1e-4f)
+                    sc.z = 1f;
+                m.SetVector("_TypeScaleBase", new Vector4(sc.x, sc.y, sc.z, 0f));
+
+                _typeMaterials[t] = m;
+                _typeMaterialIDs[t] = _brg.RegisterMaterial(m);
             }
 
             BuildInstances();
@@ -521,16 +607,16 @@ namespace FishDemo.Rendering
                 _runtimeMaterial = null;
             }
 
-            // 各类型 LOD0 的带图材质是本类 new 出来的，必须一并销毁。
+            // 各类型的带图材质是本类 new 出来的，必须一并销毁。
             // 贴图本身是资产引用（DetailBrgSetup 注入），不能 Destroy。
             for (int t = 0; t < kDetailTypeCount; t++)
             {
-                if (_typeLod0Materials[t] != null)
+                if (_typeMaterials[t] != null)
                 {
-                    DestroyRuntimeObject(_typeLod0Materials[t]);
-                    _typeLod0Materials[t] = null;
+                    DestroyRuntimeObject(_typeMaterials[t]);
+                    _typeMaterials[t] = null;
                 }
-                _typeLod0MaterialIDs[t] = BatchMaterialID.Null;
+                _typeMaterialIDs[t] = BatchMaterialID.Null;
             }
 
             if (_positions.IsCreated)
@@ -622,7 +708,8 @@ namespace FishDemo.Rendering
         /// 1265 万实例的分块排序。
         /// </summary>
         public void ApplyDetailPrototypeSetup(Mesh[] meshes, Texture2D[] textures, Color[] tints,
-            bool rebuild = true)
+            Rect[] spriteUvRects = null, Vector3[] typeScales = null,
+            Mesh billboardMedium = null, Mesh billboardLow = null, bool rebuild = true)
         {
             if (meshes != null && meshes.Length == kDetailTypeCount)
                 _detailPrototypeMeshes = meshes;
@@ -630,6 +717,14 @@ namespace FishDemo.Rendering
                 _detailPrototypeTextures = textures;
             if (tints != null && tints.Length == kDetailTypeCount)
                 _detailPrototypeTints = tints;
+            if (spriteUvRects != null && spriteUvRects.Length == kDetailTypeCount)
+                _detailPrototypeUvRects = spriteUvRects;
+            if (typeScales != null && typeScales.Length == kDetailTypeCount)
+                _detailPrototypeScales = typeScales;
+            if (billboardMedium != null)
+                _billboardMedium = billboardMedium;
+            if (billboardLow != null)
+                _billboardLow = billboardLow;
 
             if (!rebuild)
                 return;
@@ -943,8 +1038,8 @@ namespace FishDemo.Rendering
 
                 // AABB 用实例的真实范围，而不是网格的理论范围——
                 // 边缘块往往只占网格的一部分，用真实范围能紧很多。
-                // 竖直方向额外加草高余量（草从根部向上长 _nominalHeight*scale）。
-                float grassH = _nominalHeight * _scaleMultiplier;
+                // 竖直方向额外加草高余量（草从根部向上长 高度×scale）。
+                float grassH = EffectiveNominalHeight * _scaleMultiplier;
                 blocks.Add(new GrassBlock
                 {
                     Start = start,
@@ -1336,31 +1431,31 @@ namespace FishDemo.Rendering
         /// <summary>
         /// 构建并注册各类型 × 各 LOD 的 mesh。
         ///
-        /// ── 设计 ──
-        /// 7 种 detail 原型各有自己的 mesh（草、三叶草花、雏菊、蒲公英…），
-        /// 每种类型 × 3 层 LOD = 21 个 mesh，全部注册进 BRG。
+        /// ── 为什么 LOD1/LOD2 必须按类型区分（2026-11-12 重做）──
+        /// 旧版 LOD1/LOD2 是「所有类型共用一个程序化草簇/十字片」，UV 铺满 0..1，
+        /// 采样图集等于随机取像素，所以只能走纯色渐变分支。实测后果：
+        /// 可见 14,029 个实例里 LOD0 只有 28 个（0.2%，见 Logs/grass-closeup.txt），
+        /// **99.8% 的草是纯色**，花只在 9.4m 内存在 ≈ 看不见。
         ///
-        /// LOD 策略（用户确认：原型 mesh 不做额外 LOD）：
-        ///   LOD0 = 原型 mesh 本体（近处，能看到花/叶的真实形状）
-        ///   LOD1 = 程序化草簇（中距，原型 mesh 的直接降级会明显穿帮，
-        ///          用统一草簇更省顶点；远处本来就分辨不出花的形状）
-        ///   LOD2 = 十字面片（远距，4 tri）
+        /// 现在改为「每类型一个采样自己图集格的精灵交叉片」：
+        ///   LOD0 = 原型 mesh 本体（各类型真实形状，近处）
+        ///   LOD1 = 3 面径向交叉片（6 tri，采样该类型图集格）
+        ///   LOD2 = 2 面十字片（4 tri，采样该类型图集格）
+        /// 三层都带图集贴图，花在中远距离也保留颜色与轮廓，只是几何变简。
         ///
-        /// 为什么 LOD1/2 不按类型区分：远处不可辨，统一草簇/面片反而省顶点与
-        /// draw command 数量（同类型才需要不同 mesh，中远距所有类型看起来一样）。
-        /// 代价：中距离时花会变成普通草簇——这是有意的取舍，不是遗漏。
+        /// 三角形反而比旧版更省：旧 LOD1 是 6 叶草簇 12 tri，新 LOD1 只有 6 tri。
+        ///
+        /// 精灵片的高度直接取原型 mesh 的包围盒高度，这样三层视觉尺寸天然一致；
+        /// 再乘 _TypeScaleBase（Gaia detailPrototype 的 min/max 宽高）作为统一倍率。
         ///
         /// 为什么不走 LODGroup：BRG 的 LOD 是每条 draw command 指定不同 meshID，
         /// 实例数据只存一份，切换 LOD 只换 meshID，不复制数据、不需要 LODGroup 组件。
         /// </summary>
         private void BuildLodMeshes()
         {
-            // 中/远两层的共享 mesh（所有类型共用）。
-            var midClump = BuildClumpMesh(blades: 6);
-            var farCross = BuildCrossMesh();
-
             int registered = 0;
             int missing = 0;
+            int spriteMissing = 0;
 
             for (int t = 0; t < kDetailTypeCount; t++)
             {
@@ -1376,13 +1471,49 @@ namespace FishDemo.Rendering
                 if (proto == null)
                 {
                     missing++;
-                    // 兜底：原型缺失时用近距草簇，至少不丢实例。
-                    proto = BuildClumpMesh(blades: 12);
+                    // 原型缺失：LOD0 也退回精灵片（下面会建），不要用程序化草簇
+                    // ——那种几何的 UV 铺满 0..1，采样图集等于随机取像素。
+                    proto = null;
                 }
 
-                _typeLodMeshes[t, 0] = proto;
-                _typeLodMeshes[t, 1] = midClump;
-                _typeLodMeshes[t, 2] = farCross;
+                // ── LOD1/LOD2 用 Gaia 自带的真实 billboard mesh ──
+                //
+                // 为什么不再程序化生成交叉片：
+                // Gaia 提供了 PW_DetailCrossPlanes / PW_DetailQuad 两个通用 billboard
+                // （90 顶点/120 tri 与 10 顶点/8 tri），本来就是 detail 系统的中远距几何。
+                // 它们的 UV 是「图集平铺」语义，所以在构建期把 UV 重写到该类型的
+                // 精灵格（BuildScaledBillboard），一份真实资产即可服务全部类型。
+                //
+                // ── 为什么要把顶点缩放到原型尺寸 ──
+                // 这两个 billboard 的包围盒是 1×1，而原型 mesh 只有 0.03~0.30m 高。
+                // 材质是三层共用的（_TypeScaleBase 只有一份），若不平移尺寸，
+                // 同一个倍率会把 billboard 放大 3~30 倍。所以在注册时按类型把
+                // billboard 顶点缩放到「原型高度 × 精灵宽高比」，三层尺寸天然对齐。
+                // 每类型 2 份、共 14 个小 mesh（90/10 顶点），代价可忽略。
+                Rect cell = GetSpriteCell(t);
+                spriteMissing += (_detailPrototypeUvRects == null
+                                  || t >= _detailPrototypeUvRects.Length
+                                  || _detailPrototypeUvRects[t].width <= 1e-5f) ? 1 : 0;
+
+                // 目标世界尺寸：高度取原型 bbox 高，宽度按精灵格宽高比。
+                // 两张图集都是正方形，归一化 UV 的宽高比即真实像素宽高比。
+                float h = proto != null ? Mathf.Max(0.01f, proto.bounds.size.y) : 1f;
+                float aspect = cell.height > 1e-5f ? cell.width / cell.height : 1f;
+                float w = Mathf.Max(0.01f, h * aspect);
+
+                _typeLodMeshes[t, 1] = BuildScaledBillboard(_billboardMedium, w, h, cell);
+                _typeLodMeshes[t, 2] = BuildScaledBillboard(_billboardLow, w, h, cell);
+
+                // 兜底：billboard 未注入时（验证脚本自己 new 组件、
+                // 或忘记跑 DetailBrgSetup）用程序化交叉片，避免**整片草消失**。
+                // 这类几何的 UV 同样烘焙到精灵格，所以颜色也是对的。
+                if (_typeLodMeshes[t, 1] == null)
+                    _typeLodMeshes[t, 1] = BuildFallbackCrossMesh(w, h, cell, planes: 3);
+                if (_typeLodMeshes[t, 2] == null)
+                    _typeLodMeshes[t, 2] = BuildFallbackCrossMesh(w, h, cell, planes: 2);
+
+                // 原型缺失时 LOD0 用中距几何顶上，避免整类型丢实例。
+                _typeLodMeshes[t, 0] = proto != null ? proto : _typeLodMeshes[t, 1];
 
                 for (int lod = 0; lod < kLodCount; lod++)
                 {
@@ -1399,6 +1530,7 @@ namespace FishDemo.Rendering
 
             Debug.Log($"[GrassBRG] 注册 {registered} 个 mesh（{kDetailTypeCount} 类型 × {kLodCount} LOD）" +
                       (missing > 0 ? $"，{missing} 个原型缺失已用兜底 mesh" : "") +
+                      (spriteMissing > 0 ? $"，{spriteMissing} 个类型无精灵格位（按整张图集采样，花色可能错）" : "") +
                       $"；LOD0 三角形 = {string.Join("/", _lodTriangleCounts)}");
         }
 
@@ -1431,126 +1563,127 @@ namespace FishDemo.Rendering
         private static Dictionary<string, Mesh> _meshCache;
 
         /// <summary>
-        /// 程序化草簇：blades 片叶子绕 Y 轴散开、各自向外倾斜，原点在根部。
-        ///
-        /// 为什么叶片要倾斜而不是全竖直：
-        /// 竖直平行面片从正上方看会叠成一条线，且侧面看像栅栏。
-        /// 向外倾斜（顶部散开、根部收拢）才是草丛的自然形态，
-        /// 也让任意视角都有足够的面片朝向相机。
-        ///
-        /// 叶片分布用黄金角 + 确定性伪随机（不用 Random，保证每次构建结果一致，
-        /// 否则烘焙数据与渲染网格的对应关系会在重启后变化，难以复现问题）。
+        /// 取第 t 个类型的图集精灵格（UV 矩形）。未配置时返回整张图集 [0,1]²。
         /// </summary>
-        private static Mesh BuildClumpMesh(int blades)
+        private Rect GetSpriteCell(int t)
         {
-            const float height = 1.0f;
-            const float baseRadius = 0.04f;   // 根部收拢半径
-            const float topRadius = 0.22f;    // 顶部散开半径
-            const float halfWidth = 0.035f;   // 单片叶宽的一半
-
-            int vertCount = blades * 4;
-            var vertices = new Vector3[vertCount];
-            var normals = new Vector3[vertCount];
-            var uvs = new Vector2[vertCount];
-            var triangles = new int[blades * 6];
-
-            for (int s = 0; s < blades; s++)
+            if (_detailPrototypeUvRects != null && t < _detailPrototypeUvRects.Length)
             {
-                // 黄金角分布 + 高度/倾斜的确定性抖动
-                float angle = s * 2.39996323f; // 黄金角，rad
-                float jitter = Frac(Mathf.Sin(s * 12.9898f) * 43758.5453f);
+                var r = _detailPrototypeUvRects[t];
+                if (r.width > 1e-5f && r.height > 1e-5f)
+                    return r;
+            }
+            return new Rect(0f, 0f, 1f, 1f);
+        }
 
-                float bladeHeight = height * (0.65f + 0.35f * jitter);
-                float tilt = 0.25f + 0.35f * Frac(jitter * 7.31f); // 外倾程度
+        /// <summary>
+        /// 兜底交叉片：billboard 资产未注入时使用（验证脚本自建组件、漏跑 DetailBrgSetup）。
+        ///
+        /// 与正式路径的唯一差别是几何来自程序而非 Gaia 资产；UV 同样烘焙到精灵格，
+        /// 所以颜色是对的。存在的意义是「宁可草形粗糙，也不要整片草消失」
+        /// —— 实测漏注入 billboard 会导致 LOD1/LOD2 的 meshID 全为无效值，
+        /// 剔除时整批被丢弃，画面 0 根草。
+        /// </summary>
+        private static Mesh BuildFallbackCrossMesh(float w, float h, Rect cell, int planes)
+        {
+            planes = Mathf.Max(2, planes);
+            var vertices = new Vector3[planes * 4];
+            var normals = new Vector3[planes * 4];
+            var uvs = new Vector2[planes * 4];
+            var triangles = new int[planes * 6];
+            float hw = w * 0.5f;
 
-                var dir = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle));
-                // 叶片面法线：与径向垂直（叶面朝外）
-                var normal = new Vector3(-dir.z, 0f, dir.x);
-                // 叶宽方向：沿切向
-                var right = new Vector3(dir.z, 0f, -dir.x);
+            for (int p = 0; p < planes; p++)
+            {
+                float ang = p * Mathf.PI / planes;
+                var dir = new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang));
+                var nrm = new Vector3(-dir.z, 0f, dir.x);
+                int v = p * 4;
+                vertices[v + 0] = -dir * hw;
+                vertices[v + 1] = dir * hw;
+                vertices[v + 2] = dir * hw + Vector3.up * h;
+                vertices[v + 3] = -dir * hw + Vector3.up * h;
+                for (int k = 0; k < 4; k++) normals[v + k] = nrm;
 
-                Vector3 rootPos = dir * baseRadius;
-                Vector3 topPos = dir * (baseRadius + topRadius * tilt) + Vector3.up * bladeHeight;
+                uvs[v + 0] = new Vector2(cell.xMin, cell.yMin);
+                uvs[v + 1] = new Vector2(cell.xMax, cell.yMin);
+                uvs[v + 2] = new Vector2(cell.xMax, cell.yMax);
+                uvs[v + 3] = new Vector2(cell.xMin, cell.yMax);
 
-                int v = s * 4;
-                vertices[v + 0] = rootPos - right * halfWidth;
-                vertices[v + 1] = rootPos + right * halfWidth;
-                vertices[v + 2] = topPos + right * halfWidth;
-                vertices[v + 3] = topPos - right * halfWidth;
-
-                for (int k = 0; k < 4; k++)
-                {
-                    normals[v + k] = normal;
-                    uvs[v + k] = new Vector2(k == 1 || k == 2 ? 1f : 0f, k >= 2 ? 1f : 0f);
-                }
-
-                int t = s * 6;
-                triangles[t + 0] = v + 0; triangles[t + 1] = v + 2; triangles[t + 2] = v + 1;
-                triangles[t + 3] = v + 0; triangles[t + 4] = v + 3; triangles[t + 5] = v + 2;
+                int ti = p * 6;
+                triangles[ti + 0] = v + 0; triangles[ti + 1] = v + 2; triangles[ti + 2] = v + 1;
+                triangles[ti + 3] = v + 0; triangles[ti + 4] = v + 3; triangles[ti + 5] = v + 2;
             }
 
-            var mesh = new Mesh { name = $"GrassBRG_Clump_{blades}" };
+            var mesh = new Mesh { name = $"GrassBRG_Fallback{planes}_{w:F2}x{h:F2}" };
             mesh.SetVertices(vertices);
             mesh.SetNormals(normals);
             mesh.SetUVs(0, uvs);
             mesh.SetTriangles(triangles, 0);
-            // 包围盒要覆盖顶部散开的范围（topRadius），否则远处会被过早剔除
-            float r = baseRadius + topRadius + halfWidth;
-            mesh.bounds = new Bounds(new Vector3(0f, height * 0.5f, 0f),
-                new Vector3(r * 2f, height, r * 2f));
+            float r = Mathf.Max(hw, 0.01f);
+            mesh.bounds = new Bounds(new Vector3(0f, h * 0.5f, 0f),
+                new Vector3(r * 2f, h, r * 2f));
             mesh.UploadMeshData(true);
             return mesh;
         }
 
-        /// <summary>取小数部分，用于确定性伪随机（不依赖 UnityEngine.Random 的全局状态）。</summary>
-        private static float Frac(float v) => v - Mathf.Floor(v);
-
         /// <summary>
-        /// M1 的草片：两张十字交叉的竖直面片（8 顶点 / 4 三角形），原点在根部。
-        /// 用十字而不是单面片，是因为单面片在某些 yaw 下会侧对相机，
-        /// 看不出「旋转是否正确应用」，验证会失真。
-        /// LOD2 远层直接复用它。
+        /// 复制一份 Gaia 通用 billboard，缩放到目标世界尺寸 (w, h)，并把 UV
+        /// 重写到该类型的图集精灵格。
+        ///
+        /// 为什么必须复制并烘焙缩放：
+        /// 三层 LOD 共用同一个类型材质，材质里只有一份 _TypeScaleBase。
+        /// 原型 mesh 高 0.03~0.30m、billboard 高 1.0m，同一倍率不可能同时正确。
+        /// 在 mesh 层面把 billboard 缩到原型尺寸，三层就共享同一套缩放语义。
+        ///
+        /// 为什么把 UV 也烘焙进 mesh：
+        /// Gaia billboard 的 UV 是「0..1 图集平铺」语义（每个面片占图集一个子块），
+        /// 直接采样会采到整张图集。而 LOD0 的原型 mesh 的 UV 本来就指向自己的格。
+        /// 把 billboard 的 UV 在构建期重写进格位，材质上就不用区分 LOD，
+        /// 也就避免了「同一份材质要按 lod 给不同 UV 参数」这个不可能的需求。
+        ///
+        /// 每类型 2 份 × 7 类型 = 14 个小 mesh（90 / 10 顶点），内存代价可忽略。
         /// </summary>
-        private static Mesh BuildCrossMesh()
+        private static Mesh BuildScaledBillboard(Mesh src, float w, float h, Rect cell)
         {
-            const float halfWidth = 0.2f;
-            const float height = 1.0f;
+            if (src == null)
+                return null;
 
-            var vertices = new Vector3[8];
-            var normals = new Vector3[8];
-            var uvs = new Vector2[8];
-            var triangles = new int[12];
+            var mesh = UnityEngine.Object.Instantiate(src);
+            mesh.name = $"GrassBRG_BB_{src.name}_{w:F2}x{h:F2}";
+            mesh.hideFlags = HideFlags.DontSave;
 
-            // 面片 A（法线 +Z）
-            vertices[0] = new Vector3(-halfWidth, 0f, 0f);
-            vertices[1] = new Vector3(halfWidth, 0f, 0f);
-            vertices[2] = new Vector3(halfWidth, height, 0f);
-            vertices[3] = new Vector3(-halfWidth, height, 0f);
-            // 面片 B（法线 +X）
-            vertices[4] = new Vector3(0f, 0f, -halfWidth);
-            vertices[5] = new Vector3(0f, 0f, halfWidth);
-            vertices[6] = new Vector3(0f, height, halfWidth);
-            vertices[7] = new Vector3(0f, height, -halfWidth);
+            var verts = mesh.vertices;
+            var bounds = src.bounds;
+            float srcW = Mathf.Max(1e-4f, bounds.size.x);
+            float srcH = Mathf.Max(1e-4f, bounds.size.y);
+            float kx = w / srcW;
+            float ky = h / srcH;
+            // 包围盒底面对齐到 y=0（草从地面长出来），顶点从根部开始长
+            float baseY = bounds.min.y;
 
-            for (int i = 0; i < 8; i++)
+            for (int i = 0; i < verts.Length; i++)
             {
-                normals[i] = Vector3.up; // M1 无光照，仅占位
-                uvs[i] = new Vector2((i & 1), (i >= 2 && i < 4) || (i >= 6) ? 1f : 0f);
+                var p = verts[i];
+                verts[i] = new Vector3(p.x * kx, (p.y - baseY) * ky, p.z * kx);
+            }
+            mesh.vertices = verts;
+
+            // ── UV 重写到精灵格 ──
+            // 源 UV 是 0..1 的图集平铺坐标，按 [0,1] → cell 线性映射。
+            // billboard 的 UV 布局是多个面片各占 0..1 的一个子块，
+            // 所以整段映射后每个面片都落到该类型自己的精灵格。
+            var uvs = mesh.uv;
+            if (uvs != null && uvs.Length > 0)
+            {
+                float uMin = cell.xMin, uSpan = cell.width;
+                float vMin = cell.yMin, vSpan = cell.height;
+                for (int i = 0; i < uvs.Length; i++)
+                    uvs[i] = new Vector2(uMin + uvs[i].x * uSpan, vMin + uvs[i].y * vSpan);
+                mesh.uv = uvs;
             }
 
-            triangles[0] = 0; triangles[1] = 2; triangles[2] = 1;
-            triangles[3] = 0; triangles[4] = 3; triangles[5] = 2;
-            triangles[6] = 4; triangles[7] = 6; triangles[8] = 5;
-            triangles[9] = 4; triangles[10] = 7; triangles[11] = 6;
-
-            var mesh = new Mesh { name = "GrassBRG_Cross" };
-            mesh.SetVertices(vertices);
-            mesh.SetNormals(normals);
-            mesh.SetUVs(0, uvs);
-            mesh.SetTriangles(triangles, 0);
-            mesh.bounds = new Bounds(new Vector3(0f, height * 0.5f, 0f),
-                new Vector3(halfWidth * 2f, height, halfWidth * 2f));
-            // 上传后释放 CPU 侧副本：BRG 只需要 GPU 上的顶点/索引数据。
+            mesh.RecalculateBounds();
             mesh.UploadMeshData(true);
             return mesh;
         }
@@ -1633,20 +1766,21 @@ namespace FishDemo.Rendering
             // meshID 取 [该 batch 的类型, lod]：这是「7 种原型各用各自 mesh」的落点。
             // 同一类型的不同 batch（大类型被 16MB 切成多段）共用同一组 meshID。
             //
-            // materialID 同样按类型区分：LOD0 用该类型自己的带图材质
-            // （花的颜色在图集里 + 类型 tint），LOD1/2 用共享纯色材质。
-            // 带图材质未注册（类型无图）时 Null → 回落 _materialID。
+            // materialID 同样按类型区分，且**三层 LOD 都用该类型的带图材质**：
+            // 花的颜色与轮廓在 LOD1/LOD2 也要保留，否则中远距离整片退回纯色
+            // （2026-11-12 之前的表现：可见 14,029 实例里只有 28 个带图）。
+            // 带图材质未注册（类型无图）时 Null → 回落共享纯色材质。
             for (int b = 0; b < batchCount; b++)
             {
                 var slice = _batches[b];
                 int batchType = _batchType[b];
-                BatchMaterialID lod0Mat = _typeLod0MaterialIDs[batchType];
+                BatchMaterialID typeMat = _typeMaterialIDs[batchType];
                 for (int lod = 0; lod < kLodCount; lod++)
                 {
                     commands[b * kLodCount + lod] = new BatchDrawCommand
                     {
                         batchID = slice.BatchID,
-                        materialID = (lod == 0 && lod0Mat != BatchMaterialID.Null) ? lod0Mat : _materialID,
+                        materialID = typeMat != BatchMaterialID.Null ? typeMat : _materialID,
                         meshID = _typeLodMeshIDs[batchType, lod],
                         submeshIndex = 0,
                         // 相机视图只有一个 split，bit0 = 1。写成 0 会导致整批被丢弃。
@@ -1720,7 +1854,7 @@ namespace FishDemo.Rendering
                 VisibleCountDebug = (int*)NativeArrayUnsafeUtility.GetUnsafePtr(_visibleCount),
                 LodCountsDebug = (int*)NativeArrayUnsafeUtility.GetUnsafePtr(_lodCounts),
                 CameraPosition = new float3(camPos.x, camPos.y, camPos.z),
-                LodPixelScale = _nominalHeight * _scaleMultiplier * pixelHeight / (2f * Mathf.Tan(fov * 0.5f * Mathf.Deg2Rad)),
+                LodPixelScale = EffectiveNominalHeight * _scaleMultiplier * pixelHeight / (2f * Mathf.Tan(fov * 0.5f * Mathf.Deg2Rad)),
                 Lod0PixelHeight = _enableLod ? _lod0PixelHeight : 0f,
                 Lod1PixelHeight = _enableLod ? _lod1PixelHeight : 0f,
                 CullPixelHeight = _enableLod ? _cullPixelHeight : 0f,
@@ -1732,7 +1866,7 @@ namespace FishDemo.Rendering
                 // 块级距离剔除上限：与逐实例的像素阈值同一套换算。
                 // 关 LOD 时不做距离剔除（0 = 不限），保持「画全部」的语义。
                 MaxVisibleDistance = _enableLod && _cullPixelHeight > 0f
-                    ? _nominalHeight * _scaleMultiplier * pixelHeight
+                    ? EffectiveNominalHeight * _scaleMultiplier * pixelHeight
                       / (2f * Mathf.Tan(fov * 0.5f * Mathf.Deg2Rad)) / _cullPixelHeight
                     : 0f,
             };
