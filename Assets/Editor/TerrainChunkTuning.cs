@@ -48,6 +48,7 @@ public static class TerrainChunkTuning
         { "TreeDistance", 1000f },
         { "TreeBillboardDistance", 90f },
         { "TreeMaximumFullLODCount", 50f },
+        { "TreeCrossFadeLength", 50f },
         { "HeightmapPixelError", 5f },
         { "SplatMapDistance", 1024f },
     };
@@ -112,6 +113,46 @@ public static class TerrainChunkTuning
         targets["DetailObjectDistance"] = 0f;   // 0 = 不渲染 detail
         targets["DetailObjectDensity"] = 0f;
         Run("disable-detail", targets, "terrain-tuning-disable-detail.txt");
+    }
+
+    /// <summary>
+    /// 树的同屏开销档位：不动世界里的树数量，只压"同屏要画多少"。
+    ///
+    /// ── 为什么不减树的数量 ──
+    /// Unity 的 Terrain 树**没有任何运行时密度参数**（不像草有 detailObjectDensity）。
+    /// 降数量只能改写占 TerrainData.treeInstances 或改 Gaia 撒点规则重跑世界生成，
+    /// 后者会连带重做 GTS 转换、草 BRG 烘焙、Pegasus 挂点，代价极大。
+    /// 所以这里只压渲染期参数，全部可逆。
+    ///
+    /// ── 取值依据 ──
+    /// chunk 边长 512m，而 TreeDistance 原来是 600m —— 比块还大，
+    /// 意味着**一块之内的树无论多远都要画**，这个设置等于没做距离裁剪。
+    ///
+    /// TreeDistance 取 450m（实测对比后确定，不是拍脑袋）：
+    ///   600m → 约 54,762 棵可见；450m → 约 30,803 棵（降 44%）。
+    ///   更激进的值（320m/260m）能降到 72%/81%，但会被目视验收抓出来：
+    ///   高空/远眺机位能直接看到 treeDistance 处"树突然没有"的秃边界。
+    ///   450m 贴近地形视距边缘，地面平视时基本看不出断带，是收益与观感的平衡点。
+    ///   TreeBillboardDistance 60→35：更早切末级，减少完整 mesh 数量。
+    ///   TreeMaximumFullLODCount 32→16：每块最多 16 棵用完整 LOD0~2，其余直接末级。
+    ///   TreeCrossFadeLength 50→20：过渡带收窄，减少"两个 LOD 同时画"的区间。
+    /// </summary>
+    public static void ApplyTreeLight()
+    {
+        // 必须沿用 DisableDetail 的两个 0，而不是 Mobile 的 70/0.35：
+        // Terrain detail 草已经由 BRG 草完全接管（GrassBRGManager，435 万实例）。
+        // 若这里回填 70，Terrain 会把 detail 草重新打开 → 同一片地表画两遍草，
+        // 且 Terrain detail 那条路是逐原型提交、无法与 BRG 合批，等于白搭开销。
+        var targets = new Dictionary<string, float>(Mobile)
+        {
+            ["DetailObjectDistance"] = 0f,
+            ["DetailObjectDensity"] = 0f,
+            ["TreeDistance"] = 450f,
+            ["TreeBillboardDistance"] = 35f,
+            ["TreeMaximumFullLODCount"] = 16f,
+            ["TreeCrossFadeLength"] = 20f,
+        };
+        Run("tree-light", targets, "terrain-tuning-tree-light.txt");
     }
 
     /// <summary>
@@ -224,6 +265,7 @@ public static class TerrainChunkTuning
         Add("TreeDistance", t.treeDistance);
         Add("TreeBillboardDistance", t.treeBillboardDistance);
         Add("TreeMaximumFullLODCount", t.treeMaximumFullLODCount);
+        Add("TreeCrossFadeLength", t.treeCrossFadeLength);
         Add("HeightmapPixelError", t.heightmapPixelError);
         Add("SplatMapDistance", t.basemapDistance > 0 ? t.basemapDistance : 0f);
     }
@@ -248,6 +290,7 @@ public static class TerrainChunkTuning
         SetIf("TreeDistance", v => t.treeDistance = v, () => t.treeDistance);
         SetIf("TreeBillboardDistance", v => t.treeBillboardDistance = v, () => t.treeBillboardDistance);
         SetIf("TreeMaximumFullLODCount", v => t.treeMaximumFullLODCount = (int)v, () => t.treeMaximumFullLODCount);
+        SetIf("TreeCrossFadeLength", v => t.treeCrossFadeLength = v, () => t.treeCrossFadeLength);
         SetIf("HeightmapPixelError", v => t.heightmapPixelError = v, () => t.heightmapPixelError);
         SetIf("SplatMapDistance", v => t.basemapDistance = v, () => t.basemapDistance);
 

@@ -855,10 +855,10 @@ Terrain:
   m_Enabled: 1
   serializedVersion: 6
   m_TerrainData: {fileID: 15600000, guid: 34179a616909d894f82acf0681ba9b72, type: 2}
-  m_TreeDistance: 600
-  m_TreeBillboardDistance: 60
-  m_TreeCrossFadeLength: 50
-  m_TreeMaximumFullLODCount: 32
+  m_TreeDistance: 450
+  m_TreeBillboardDistance: 35
+  m_TreeCrossFadeLength: 20
+  m_TreeMaximumFullLODCount: 16
   m_DetailObjectDistance: 0
   m_DetailObjectDensity: 0
   m_HeightmapPixelError: 10
