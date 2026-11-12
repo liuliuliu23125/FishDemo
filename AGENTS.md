@@ -51,8 +51,8 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | 体积雾/光 | 未接入 | Fog Mist 2 / Light Beam 2 / Lights 2 | 同上 |
 | 后处理 | URP 内置（主场景无 Volume） | 同 | [postprocess](Docs/postprocess.md) |
 | **草** | **BRG 已落地**：36 chunk 烘焙 **435 万实例 / 133MB**；Terrain detail 已关（`DetailObjectDistance=0`）；单 shader `FishDemo/Grass/BRGMinimal`，**三层 LOD 全部采 albedo 图集精灵格**（花在中远距也有色） | 阴影/透光、SECTR 流式、真机 | [grass_brg_progress](Docs/grass_brg_progress.md) |
-| **树** | **仍走 Terrain**：45 原型 / **46.5 万实例**；单 shader `PW_General_ShaderGraph_URP`、单 keyword 组合；每 prefab 3~4 级 LODGroup | 后续单独处理（BRG / Impostor） | [grass_brg_plan](Docs/grass_brg_plan.md) §6 |
-| 植被 LOD | 未接入 | Amplify Impostors | 同上 |
+| **树** | **Terrain 渲染 + Impostor**：实际用 **7 原型**（4 个云杉占 99.99%）；实例已降 **1/10 → 4.6 万**；每 prefab **2 级 LOD**（LOD0 原 mesh / LOD1 = Amplify Impostor 8v6t）；`TreeDistance=450`、`maxFullLOD=16`；材质 keyword 组合 **2 种**（树干 `WIND` / 针叶 `ALPHATEST+SSS+WIND+WORLDMAP`） | 阴影/透光、BRG 化、真机 | [vegetation](Docs/vegetation.md) §6 |
+| 植被 LOD | **Amplify Impostors 1.1.0 已接入**（4 个云杉原型，URP14 分支） | 其余 41 个原型未烘 | [vegetation](Docs/vegetation.md) §6.6 |
 | Shader 变体裁剪 | 未接入 | Shader Control | 同上 |
 | 玩家动画 | 未接入 | Animancer Pro（CPU） | [character_animation](Docs/character_animation.md) |
 | NPC / 远程玩家动画 | 未接入 | GPU ECS Animation Baker（VAT） | 同上 |
@@ -66,6 +66,24 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 - 草走 BRG（`GrassBRGManager` + `GrassBRG.shader`），不经过 SRP Batcher，也不受 Terrain 管理。
 - 树走 Terrain 自带渲染（`drawTreesAndFoliage=1`），由 TerrainRenderer 提交，SRP Batcher 覆盖。
 - 因为两者都在改「植被」，**改草时用 `detailObjectDistance`，不要用 `drawTreesAndFoliage`**——后者会把树一起关掉。
+- **树有运行时密度参数吗？没有**。草有 `detailObjectDensity`（可逆），树的实例数只能改
+  `TerrainData.treeInstances` 或重跑 Gaia 撒点。别照草的经验去找树的 density 字段。
+
+**树改动的四条硬约束**（2026-11-12 全部踩过）：
+1. **一个材质槽缺失 = 整批树放弃 GPU instancing**。日志会报
+   `The tree X couldn't be instanced because one of the materials is missing.`。
+   查"树批次暴增"先 grep 这条，别先怀疑 keyword。
+2. **keyword 不能强行统一**。它跟 `_PW_ShaderMode` 严格对应：树干(`WIND`) /
+   树叶(`ALPHATEST+SSS+WIND+WORLDMAP`) / 远景(+`BILLBOARD`)。树干开 `ALPHATEST`
+   会透明，树叶关会丢镂空。只有 `_PW_SF_COVER_ON` 是空转（`progress=0` 时无任何输出），已清除。
+3. **改材质 keyword 必须直接改 .mat 文本**。`Material.DisableKeyword` 对 ShaderGraph
+   材质不持久——`m_ValidKeywords` 会在重编译时写回。
+4. **Terrain 树能吃 impostor**。Terrain 渲染树时沿用 prefab 的 LODGroup renderer，
+   改 prefab 即可，不需要把树导出成 GameObject。`m_lodReplacement` 只在烘焙时生效，
+   已烘过但要改结构必须手动改 LODGroup。
+
+**验收相机一律用玩家视角**（人眼 1.7m、平视、FOV 60°）。高空俯瞰看不出玩家真实观感，
+曾因此误判密度和 LOD 跳变。
 
 **草的显色靠 albedo 图集，不是 tint**（2026-11-12 踩过）：
 花的颜色（雏菊白瓣黄芯/三叶草粉/蒲公英黄）在 `PW_LawnGrass_00_D` / `PW_WildGrass_00_D`
@@ -100,7 +118,7 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | [Assets/Scripts](Assets/Scripts/AGENTS.md) | 66 | 写任何自研代码前（程序集边界、命名空间约定） |
 | [Assets/Scripts/Editor](Assets/Scripts/Editor/AGENTS.md) | 124 | 改 Gaia 世界生成工具链、草烘焙与 BRG 验证 |
 | [Assets/Scripts/Runtime](Assets/Scripts/Runtime/AGENTS.md) | 96 | 改资源层、接 YooAsset、改 BRG 草运行时 |
-| [Assets/Editor](Assets/Editor/AGENTS.md) | 166 | 改 SECTR 切块 / GTS 转换 / 地形调参 / 验证脚本 |
+| [Assets/Editor](Assets/Editor/AGENTS.md) | 166 | 改 SECTR 切块 / GTS 转换 / 地形调参 / 树的密度与 LOD / 验证脚本 |
 | [Assets/Procedural Worlds](Assets/Procedural%20Worlds/AGENTS.md) | 105 | 用第三方插件、排查 Gaia/SECTR/GTS/Pegasus 问题 |
 | [Assets/Scenes](Assets/Scenes/AGENTS.md) | 85 | 改场景、重跑世界生成、重接草/Pegasus |
 | [Packages/com.tuyoogame.yooasset](Packages/com.tuyoogame.yooasset/AGENTS.md) | 90 | 改资源层代码前 |
@@ -128,7 +146,7 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | [terrain_streaming](Docs/terrain_streaming.md) | 做地形、流式加载、SECTR |
 | [water](Docs/water.md) | 做水体、水下、反射 |
 | [atmosphere](Docs/atmosphere.md) | 做昼夜、天气、体积雾光 |
-| [vegetation](Docs/vegetation.md) | 做植被、LOD、Shader 变体裁剪 |
+| [vegetation](Docs/vegetation.md) | 做植被、树的密度/LOD/impostor/keyword、Shader 变体裁剪。**改树之前先读 §6** |
 | [postprocess](Docs/postprocess.md) | 调色、后处理 |
 | [character_animation](Docs/character_animation.md) | 玩家动画、NPC GPU 动画 |
 | [pooling_lod](Docs/pooling_lod.md) | 资源缓存、对象池、chunk 加载策略 |
@@ -144,10 +162,11 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 
 ## 6. 工程约定
 
-- **Git LFS**：大世界资源必须配。
-  ⚠️ 当前**尚未配置**（无 `.gitattributes`），而 `Assets/GTS User Data` 298MB、
-  `Assets/Gaia User Data` 657MB、**`Assets/Scenes/World/GrassData` 133MB**（36 个 `.bytes`）。
-  提交前必须先配 LFS。
+- **Git LFS**：已配置（`.gitattributes`，2026-11-11）。规则是**目录限定 + 精确扩展名**，
+  不要改成全局通配（会让 2000+ 历史裸二进制立刻显示为"已修改"，等于顺带做一次全库迁移）。
+  Unity 的 YAML 文本（`.unity/.mat/.prefab/.asset`）刻意不进 LFS，保留 diff 能力。
+  当前走 LFS 的：`GrassData/**/*.bytes`、Pegasus 的 fbx/psd/bmp/png/tga、
+  **`Assets/PW_Tree_*_Impostor_*.tga|exr`（2026-11-12 新增，114MB）**。
 - **目录**：`Assets/Scripts/Runtime/{Rendering,Streaming,Gameplay}`、`Assets/ThirdParty/`。
   `Rendering/`（草 BRG）与 `Gameplay/`（Pegasus 巡游控制器）已存在；`Streaming/` 尚未创建。
 - **默认程序集目录**：`Assets/Editor/`（Editor 专用）、`Assets/GTSRuntime/`（运行时）。

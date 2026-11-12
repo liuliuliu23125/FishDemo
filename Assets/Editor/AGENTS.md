@@ -160,7 +160,36 @@ BRG 的剔除回调在 `-nographics` 下不执行，`LastVisibleCount` 恒为 `-
 |---|---|
 | [gts_srp_batcher](../../Docs/gts_srp_batcher.md) | 改 GTS 转换脚本、排查 mesh 地形合批/视觉不一致 |
 | [grass_brg_progress](../../Docs/grass_brg_progress.md) | 改草烘焙/验证脚本、排查草消失 |
+| [vegetation](../../Docs/vegetation.md) §6 | **改任何树相关的脚本/资产前必读**：树的表现、批次、密度、impostor |
 | [world_implementation](../../Docs/world_implementation.md) | 要重跑流水线、理解 chunk 结构、查已知缺陷 |
 | [terrain_streaming](../../Docs/terrain_streaming.md) | 评估 SECTR 的定位与限制 |
 | [pooling_lod](../../Docs/pooling_lod.md) | 设计 chunk 加载/卸载策略 |
 | [../Scripts/Editor/AGENTS.md](../Scripts/Editor/AGENTS.md) | 另一半（Gaia）流水线 |
+
+## 5. 树相关脚本（2026-11-12 新增）
+
+改树之前先看 [vegetation](../../Docs/vegetation.md) §6。这批脚本按用途分四组，
+**全部有备份与还原入口**，出问题按表中「还原」列回滚。
+
+| 脚本 | 用途 | 还原 |
+|---|---|---|
+| `TreeMaterialAudit` | 运行时审计：地形实际在用哪些原型、每槽 shader/贴图/keyword | 只读 |
+| `TreeMaterialFix` | 补齐 Spruce 材质丢失的 albedo/normal/metallic 引用 | `RestoreAll`（`Tools/tree-material-backup/`） |
+| `TreeEndingMaterialFix` | 重建丢失的 `PW_Tree_Ending.mat`（复用原 guid） | 删该 .mat |
+| `TreeKeywordCleanup` | 清掉空转的 `_PW_SF_COVER_ON` | `RestoreAll`（`Tools/tree-keyword-backup/`） |
+| `TreeImpostorSampleBake` | 单棵树 impostor 烘焙验证 | — |
+| `TreeImpostorAllBake` | 4 个在用云杉批量烘 impostor + LOD 压成 2 级 | prefab 见 `Tools/tree-prefab-backup/` |
+| `TreeImpostorCompare` | 真树 vs impostor 并排渲染对比 | 只读 |
+| `TreeDensityReduce` | 树实例数按比例削减（`Apply10` / `Apply5` / `Apply3`） | `RestoreAll`（`Tools/tree-instance-backup/`） |
+| `TreeVisibleCount` | 按机位算距离裁剪后的可见树量 | 只读 |
+| `TreeMeshStats` | 逐 LOD 的顶点/面数统计 | 只读 |
+| `TreeRenderVerify` | 近景玩家视角渲染验收（偏粉检测） | 只读 |
+| `TreeDistanceVisualCheck` | 玩家视角远景验收（秃边界检测） | 只读 |
+
+**验收相机一律玩家视角**（人眼 1.7m、平视、FOV 60°）。高空俯瞰看不到真实观感，
+曾因此误判密度和 LOD 跳变。
+
+**两个环境坑**：
+- `Temp/UnityLockfile` 在 Unity 崩溃/被 kill 后不会自动清理，会挡住后续批处理，需手动删；
+- batchmode 下 Profiler 的 `Batches Count` / `Draw Calls Count` **恒为 0**，
+  draw call 数只能在编辑器 Frame Debugger 或真机上看。
