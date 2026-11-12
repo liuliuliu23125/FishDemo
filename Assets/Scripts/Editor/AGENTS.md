@@ -59,7 +59,7 @@ detail 原型的 FBX 只被 `TerrainData` 以子资源引用，运行时
 | 1 枯草块 / 4 三叶草花 / 5 雏菊 / 6 蒲公英（lawn 系） | `PW_LawnGrass_00_D`（2048²） |
 
 **⑮ 用 `ApplyDetailPrototypeSetup(..., rebuild:false)` 一次写入，不要连续调两个 setter**：
-每次 `Initialize → BuildInstances` 要处理 1265 万实例（分块排序 1~2 秒），
+每次 `Initialize → BuildInstances` 要处理数百万实例（分块排序 1~2 秒），
 原来调两个 setter 会重建两次，实测整个脚本跑过 60 秒被截断、连场景保存都走不到。
 
 ## 2. 铁律

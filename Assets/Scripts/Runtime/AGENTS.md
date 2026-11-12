@@ -58,17 +58,26 @@ Gameplay 层不得直接操作 `CommandBuffer` / `Graphics.*`（[rendering_rules
 
 `BatchDrawCommand.materialID` 可以逐条命令指定，所以：
 
-| LOD | 材质 | 说明 |
+| LOD | 几何 | 材质 |
 |---|---|---|
-| LOD0 | **每类型一个**（`_typeLod0Materials[t]`） | 绑该类型的 albedo 图集，启用 `_USE_ALBEDO_TEX`，带类型 `_TypeTint` |
-| LOD1 / LOD2 | 共享一个纯色材质 | 程序化草簇/面片无 UV 语义，走 shader 纯色渐变分支 |
+| LOD0 | 各类型原型 mesh | **每类型一个**（`_typeMaterials[t]`） |
+| LOD1 | Gaia `PW_DetailCrossPlanes`（每类型一份定制副本） | 同上，**三层共用** |
+| LOD2 | Gaia `PW_DetailQuad`（同上） | 同上 |
 
-- **tint 走材质属性而不是 per-instance**：batch 已按类型分段，每类型一个材质即可
-  表达「不同 Type 不同 tint」，GPU buffer 保持 32B/实例、不增加上传带宽。
+三层共用同一份类型材质（2026-11-12 起）。**曾经只有 LOD0 用带图材质、LOD1/2 走纯色，
+导致 99.8% 的草没有花色**——改这里时务必确认三层都绑了 `_USE_ALBEDO_TEX`。
+
+Gaia billboard 的 UV 是「0..1 图集平铺」语义，所以 `BuildScaledBillboard` 会把
+UV 重写到该类型的精灵格、并把顶点缩放到原型尺寸（材质只有一份 `_TypeScaleBase`）。
+
+- **tint / 类型尺寸走材质属性而不是 per-instance**：batch 已按类型分段，每类型一个材质
+  即可表达「不同 Type 不同 tint/尺寸」，GPU buffer 保持 32B/实例、不增加上传带宽。
 - 磁盘 `GrassInstance.Color`（RGBA8）**当前恒为白色且未上传 GPU**（`UploadInstanceData`
   只传 2 段）。要逐实例染色才需升级为第三段。
 - `shader_feature` 的开关是 **keyword**：`new Material` 后必须 `EnableKeyword("_USE_ALBEDO_TEX")`，
   只 `SetFloat` 不会切换变体（表现为花仍是绿的、无 alpha 裁剪，静默失效）。
+- 竖直面片**不能用地表法线做 Lambert**（实例法线朝上，低太阳角下会全黑），
+  要朝相机混合 + 包裹光照，见 `GrassBRG.shader` 的 Frag。
 - 不要开 `AlphaToMask`：工程 MSAA=1，alpha-to-coverage 会退化并把草切成碎屑。
 
 **数据加载是临时通路**：`TryAutoLoadChunkData()` 用 `System.IO.File.ReadAllBytes` 直读
