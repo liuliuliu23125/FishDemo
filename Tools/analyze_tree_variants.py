@@ -74,12 +74,20 @@ def parse_renderers(text):
 
 
 def parse_material(text):
-    """返回 (shader guid, [keywords])"""
+    """返回 (shader guid, [keywords])
+
+    注意：Unity 2022.3 的材质 keyword 序列化字段是 m_ValidKeywords。
+    旧版本用 m_ShaderKeywords，解析它在本工程会永远读到 0 项，
+    从而得出「所有材质 keyword 都为空」的错误结论（2026-11-12 踩过）。
+    m_InvalidKeywords 是"材质上残留但 shader 不再声明"的废弃项，不算有效 keyword。
+    """
     sh = re.search(r"m_Shader: \{fileID: -?\d+, guid: ([0-9a-f]{32})", text)
-    kw = re.search(r"m_ShaderKeywords: ?(.*)", text)
     keywords = []
-    if kw and kw.group(1).strip():
-        keywords = kw.group(1).split()
+    m = re.search(r"m_ValidKeywords:\s*(.*?)(?=\n  m_[A-Z]|\n  disabled|\Z)", text, re.S)
+    if m:
+        keywords = [ln.strip().lstrip("- ").strip()
+                    for ln in m.group(1).splitlines()
+                    if ln.strip().startswith("-")]
     return (sh.group(1) if sh else None), keywords
 
 
