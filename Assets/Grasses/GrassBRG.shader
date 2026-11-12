@@ -37,6 +37,13 @@ Shader "FishDemo/Grass/BRGMinimal"
         // HasProperty 都不认它（代码 SetColor 虽能生效，但材质面板看不到、
         // 存档也可能丢）。
         _TypeTint ("Type Tint", Color) = (1,1,1,1)
+        // per-类型基础尺寸（由 Gaia detailPrototype 的 min/max 宽高换算）。
+        //   x = 水平倍率  y = 竖直倍率  z = 网格原始高度（米，用于归一化 bladeT）
+        // 为什么放在材质而不是 per-instance：7 种类型的真实尺寸差 10 倍以上
+        // （枯草块 5~8 倍、雏菊 1~4 倍，见 Logs/terrain-detail-probe.txt），
+        // 而 GPU buffer 只有 8 位的统一缩放抖动。类型尺寸天然是「一类型一份」，
+        // 材质本来就按类型分段，不增加任何带宽。
+        _TypeScaleBase ("Type Scale Base (xz, y, meshHeight, unused)", Vector) = (1,1,1,0)
         [HideInInspector] _GrassPos ("Grass Pos", Vector) = (0, 0, 0, 0)
         [HideInInspector] _GrassNormalScale ("Grass NormalScale", Vector) = (0, 1, 0, 1)
     }
@@ -113,6 +120,8 @@ Shader "FishDemo/Grass/BRGMinimal"
                 // 磁盘 GrassInstance.Color（RGBA8）字段保留未用——
                 // 将来要做逐实例 healthy/dry 颜色变化时再升级为第三段上传。
                 float4 _TypeTint;
+                // x=水平倍率 y=竖直倍率 z=网格原始高度（米）
+                float4 _TypeScaleBase;
                 float  _WindSpeed;
                 float  _WindStrength;
                 float  _Cutoff;
@@ -230,21 +239,39 @@ Shader "FishDemo/Grass/BRGMinimal"
                 right = rightLen > 1e-4f ? right / rightLen : float3(1, 0, 0);
                 float3 fwd = cross(up, right);
 
-                float3 local = input.positionOS.xyz * s;
+                // ── 类型尺寸 ──
+                // Gaia 的 detailPrototype 给了每类的 min/max 宽高（枯草块 5~8 倍、
+                // 主草 1~2 倍、雏菊 1~4 倍）。烘焙时无法逐实例存两份尺寸
+                // （GPU buffer 只有 8 位 scale），所以按类型拆成「基础倍率 ×
+                // 逐实例抖动」：基础倍率走材质属性（一类型一份，零带宽），
+                // 抖动仍用现有的 ScaleQ。
+                //
+                // 水平/竖直分开：花与草簇的宽高比差别很大，等比缩放会把花拉变形。
+                // 网格原始高度从 _TypeScaleBase.z 取，bladeT 归一化必须用它而不是
+                // 硬编码 1m——雏菊网格只有 0.15m 高，按 1m 算的话 bladeT 永远接近 0，
+                // 根部色的渐变就等于没生效。
+                float scaleXZ = s * max(1e-4f, _TypeScaleBase.x);
+                float scaleY  = s * max(1e-4f, _TypeScaleBase.y);
+                float meshH   = max(1e-4f, _TypeScaleBase.z);
+
+                float3 local = float3(input.positionOS.x * scaleXZ,
+                                      input.positionOS.y * scaleY,
+                                      input.positionOS.z * scaleXZ);
 
                 // ── 风摆 ──
-                // 权重取叶片在网格上的归一化高度（顶点 y / 标称 1m）。
+                // 权重取叶片在网格上的归一化高度（顶点 y / 网格真实高度）。
                 // 根部不动、越靠尖摆得越多，否则整株草会像刚体一样平移。
                 //
                 // 相位用实例世界位置做偏移，避免整片草同频同步摆动
                 // （那样看起来像一块布在呼吸，非常假）。取 x+z 的点积即可，
                 // 不同位置的草相位自然错开。
-                float bladeT = saturate(input.positionOS.y);
+                float bladeT = saturate(input.positionOS.y / meshH);
                 float phase = (pos.x + pos.z) * 0.35f;
                 float t = _Time.y * _WindSpeed + phase;
                 // 两个不同频率叠加，避免纯正弦的机械感
                 float sway = sin(t) * 0.7f + sin(t * 2.3f + 1.7f) * 0.3f;
-                float3 windOffset = hint * (sway * _WindStrength * bladeT * bladeT);
+                // 位移要按竖直倍率同步放大，否则大个的枯草块根部会晃到土里
+                float3 windOffset = hint * (sway * _WindStrength * bladeT * bladeT * scaleY);
                 local += windOffset;
 
                 float3 world = pos.xyz + right * local.x + up * local.y + fwd * local.z;
@@ -254,6 +281,8 @@ Shader "FishDemo/Grass/BRGMinimal"
                 // 草面片本身没有有意义的网格法线（是十字面片），
                 // 直接用实例携带的地表法线：坡面上的草会随坡面明暗变化。
                 output.normalWS = up;
+                // UV 直接用网格自带的：精灵格映射已在构建 mesh 时烘焙进 UV
+                // （见 GrassBRGManager.BuildScaledBillboard），运行时不需要再变换。
                 output.uv = input.uv;
                 output.bladeT = bladeT;
                 output.fogFactor = ComputeFogFactor(output.positionCS.z);
@@ -289,7 +318,27 @@ Shader "FishDemo/Grass/BRGMinimal"
                 if (!front_facing) n = -n;
 
                 Light mainLight = GetMainLight();
-                float ndotl = saturate(dot(n, mainLight.direction));
+
+                // ── 叶片光照：不要用平面法线做 Lambert ──
+                //
+                // 为什么：草/花的几何是竖直面片（十字交叉），而这里传入的
+                // normalWS 是**地表法线（朝上）**。用 dot(up, lightDir) 意味着
+                // 太阳越低整片草越黑——实测俯角 25° 的场景里草只剩 20% 亮度，
+                // 花有颜色但暗得看不见。真实草叶是薄片，光从侧面来也会透，
+                // 物理上近似「半球漫反射」而不是平面 Lambert。
+                //
+                // 做法：混入一个「面向相机」的方向，让叶子在任意视角都拿到
+                // 合理的光照量。权重 0.6 是经验值：完全朝相机会失去明暗层次，
+                // 完全朝上又会在低太阳角下过暗。
+                float3 viewDirWS = normalize(_WorldSpaceCameraPos.xyz - input.positionWS);
+                float3 lightDir = normalize(mainLight.direction);
+                // 把法线往「朝向相机」偏，并夹到上半球，避免朝下的法线拿到负光
+                float3 leafNormal = normalize(lerp(n, viewDirWS, 0.6));
+                leafNormal = normalize(leafNormal + float3(0, 0.5, 0));
+                float ndotl = saturate(dot(leafNormal, lightDir));
+                // 抬高下界的「包裹光照」：叶片背光面不应全黑，真实草叶会透光。
+                // 这是「草看起来有生命」的关键，比纯 Lambert 更接近参考效果。
+                ndotl = ndotl * 0.75f + 0.25f;
                 half3 direct = albedo * mainLight.color * ndotl * mainLight.distanceAttenuation;
 
                 // ── 环境光 ──
