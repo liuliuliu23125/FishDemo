@@ -1,7 +1,7 @@
 # Assets/Editor 规约（SECTR + GTS 流水线）
 
 > 默认程序集 `Assembly-CSharp-Editor`（**没有 asmdef**）。
-> 本文件约 165 行，改这些脚本前建议一次读完。
+> 本文件约 166 行，改这些脚本前建议一次读完。
 
 ## 1. 为什么这个目录不能加 asmdef
 
@@ -31,6 +31,7 @@ SECTR 与 GTS 都没有自己的 asmdef，其编辑器 API（`SECTR_TerrainWindo
 | `GraphicsApiSetup.cs` | Android 图形 API 改为仅 Vulkan、关 Automatic | `-executeMethod GraphicsApiSetup.SetAndroidVulkanOnly` |
 | `TerrainDetailProbe.cs` | 逐个 chunk 打印 detail 原型 / 当前 detail 距离与密度 / 各层实例数 | `-executeMethod TerrainDetailProbe.Run` |
 | `DetailMeshProbe.cs` | 对比三条路径能否拿到 detail 原型 mesh（决定运行时怎么取） | `-executeMethod DetailMeshProbe.Run` |
+| `DetailUvProbe.cs` | 打印 7 个原型的 UV 范围 / subMesh 数 / 图集尺寸（排查贴图采样错位） | `-executeMethod DetailUvProbe.Run` |
 | `TreeRenderProbe.cs` | 诊断树的批次构成：原型 / LOD / 材质 / shader keyword | `-executeMethod TreeRenderProbe.Run` |
 | `GrassCloseupVerify.cs` | **需真实图形设备**：贴地视角验证草可见 + LOD 分层 + 落截图 | `-executeMethod GrassCloseupVerify.Run` |
 | `PegasusTourSetup.cs` | 布置环绕巡游路线（半径 1100m / 16 POI / 高度烘焙进 POI） | 菜单 `FishDemo/World/② 布置 Pegasus 环绕巡游` |
