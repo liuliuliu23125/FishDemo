@@ -2,7 +2,7 @@
 
 > 三个子目录，**两套程序集**：`Resources/`（`FishDemo.Resources`）、
 > `Rendering/`（`FishDemo.Rendering`）、`Gameplay/`（**无 asmdef**，编进 `Assembly-CSharp`）。
-> 本文件约 79 行，建议一次读完。
+> 本文件约 96 行，建议一次读完。
 
 ## 1. 目录与程序集
 
@@ -41,7 +41,7 @@ Pegasus 没有 asmdef、编在 `Assembly-CSharp`。asmdef 程序集引用不到�
 
 | 文件 | 职责 |
 |---|---|
-| `Rendering/GrassBRGManager.cs` | 实例构建、32m 空间分块、多 batch（16MB/批）、Burst 剔除 Job、3 级距离 LOD |
+| `Rendering/GrassBRGManager.cs` | 实例构建、32m 空间分块、多 batch（16MB/批）、Burst 剔除 Job、3 级距离 LOD、按类型分配材质 |
 | `Rendering/GrassInstance.cs` | 32B 磁盘格式 + `GrassChunkData.Read`（魔数/版本/大小校验） |
 
 **它属于 Render Data 层**，可以碰 `BatchRendererGroup` / `GraphicsBuffer`；
@@ -53,6 +53,23 @@ Gameplay 层不得直接操作 `CommandBuffer` / `Graphics.*`（[rendering_rules
 2. 单个 batch 的 raw buffer 上限 16MB → **32B/实例 = 524,288 实例/批**。超限表现是「全黑且无任何报错」。
 3. `OnPerformCulling` 的输出数组必须 `UnsafeUtility.Malloc(..., Allocator.TempJob)`，由引擎释放。
    Job 内**不能** `Dispose()` native container，字段要加 `[DeallocateOnJobCompletion]`。
+
+### 3.1 材质按「类型 × LOD」分配（花显色的落点）
+
+`BatchDrawCommand.materialID` 可以逐条命令指定，所以：
+
+| LOD | 材质 | 说明 |
+|---|---|---|
+| LOD0 | **每类型一个**（`_typeLod0Materials[t]`） | 绑该类型的 albedo 图集，启用 `_USE_ALBEDO_TEX`，带类型 `_TypeTint` |
+| LOD1 / LOD2 | 共享一个纯色材质 | 程序化草簇/面片无 UV 语义，走 shader 纯色渐变分支 |
+
+- **tint 走材质属性而不是 per-instance**：batch 已按类型分段，每类型一个材质即可
+  表达「不同 Type 不同 tint」，GPU buffer 保持 32B/实例、不增加上传带宽。
+- 磁盘 `GrassInstance.Color`（RGBA8）**当前恒为白色且未上传 GPU**（`UploadInstanceData`
+  只传 2 段）。要逐实例染色才需升级为第三段。
+- `shader_feature` 的开关是 **keyword**：`new Material` 后必须 `EnableKeyword("_USE_ALBEDO_TEX")`，
+  只 `SetFloat` 不会切换变体（表现为花仍是绿的、无 alpha 裁剪，静默失效）。
+- 不要开 `AlphaToMask`：工程 MSAA=1，alpha-to-coverage 会退化并把草切成碎屑。
 
 **数据加载是临时通路**：`TryAutoLoadChunkData()` 用 `System.IO.File.ReadAllBytes` 直读
 `Assets/Scenes/World/GrassData/*.bytes`（编辑器/开发期）。打包后 `Assets/` 不存在，

@@ -1,7 +1,7 @@
 # Assets/Scripts/Editor 规约（Gaia 世界生成工具链）
 
 > 程序集 `FishDemo.Editor`，命名空间 `FishDemo.EditorTools`。
-> 本文件约 112 行，改这些脚本前建议一次读完。
+> 本文件约 124 行，改这些脚本前建议一次读完。
 
 ## 1. 这些脚本干什么
 
@@ -29,7 +29,7 @@
 | 脚本 | 菜单 | 职责 |
 |---|---|---|
 | `GrassBaker.cs` | ⑧ | 读 36 chunk 的 TerrainData detail 层 → 烘焙 `.bytes`（`SamplingRate=0.035`） |
-| `DetailBrgSetup.cs` | ⑮ | 把 7 种 detail 原型的 LOD0 mesh 写进场景里的 `GrassBRGManager` |
+| `DetailBrgSetup.cs` | ⑮ | 把 7 种 detail 原型的 **LOD0 mesh + albedo 图集 + tint** 写进场景里的 `GrassBRGManager` |
 | `WorldProbe.cs` | ③ | 地表高度探测（烘焙 / 相机摆位要用） |
 | `GrassM1Verify.cs` | ① | BRG 链路端到端（离屏渲染 + 像素回读 + 负向剔除） |
 | `GrassLodVerify.cs` | ⑦ | LOD 分层正确性 + A/B 收益 |
@@ -45,10 +45,22 @@
 detail 原型的 FBX 只被 `TerrainData` 以子资源引用，运行时
 `Resources.FindObjectsOfTypeAll<Mesh>()` **实测 0 命中**，7 种植物会全部退回同一个程序化草簇
 （表现为 `LOD0 三角形 = 24`）。且 FBX 内 mesh 名带后缀（`PW_WildGrass_General_Lod1_E`），
-不是文件名。所以只能在编辑器期用 `AssetDatabase` 拿到确切引用、序列化进组件。
+不是文件名。图集同理：只被原型 FBX 的材质引用，运行时同样找不到。
+所以只能在编辑器期用 `AssetDatabase` 拿到确切引用、序列化进组件。
 
 **改过 detail 原型或重烘后要重跑 ⑮**，否则 LOD0 会退回兜底 mesh
 （正确值是 `LOD0 三角形 = 128`，见 `Logs/detail-brg-v11.log`）。
+
+图集映射（实测，别再逐个 FBX 去猜）：
+
+| 类型 | 图集 |
+|---|---|
+| 0 主草 / 2 林下叶 / 3 林下枯枝（wild 系） | `PW_WildGrass_00_D`（4096²） |
+| 1 枯草块 / 4 三叶草花 / 5 雏菊 / 6 蒲公英（lawn 系） | `PW_LawnGrass_00_D`（2048²） |
+
+**⑮ 用 `ApplyDetailPrototypeSetup(..., rebuild:false)` 一次写入，不要连续调两个 setter**：
+每次 `Initialize → BuildInstances` 要处理 1265 万实例（分块排序 1~2 秒），
+原来调两个 setter 会重建两次，实测整个脚本跑过 60 秒被截断、连场景保存都走不到。
 
 ## 2. 铁律
 

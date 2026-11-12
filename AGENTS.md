@@ -50,7 +50,7 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | 昼夜/天气/大气雾 | **无**（仅一盏平行光） | Enviro 3 | [atmosphere](Docs/atmosphere.md) |
 | 体积雾/光 | 未接入 | Fog Mist 2 / Light Beam 2 / Lights 2 | 同上 |
 | 后处理 | URP 内置（主场景无 Volume） | 同 | [postprocess](Docs/postprocess.md) |
-| **草** | **BRG 已落地（M2.2）**：36 chunk 烘焙 **1265 万实例 / 387MB**；Terrain detail 已关（`DetailObjectDistance=0`）；单 shader `FishDemo/Grass/BRGMinimal` | 阴影/透光/贴图、SECTR 流式、真机 | [grass_brg_progress](Docs/grass_brg_progress.md) |
+| **草** | **BRG 已落地（M2.2）**：36 chunk 烘焙 **1265 万实例 / 387MB**；Terrain detail 已关（`DetailObjectDistance=0`）；单 shader `FishDemo/Grass/BRGMinimal`，LOD0 采 albedo 图集 + alpha 裁剪 | 阴影/透光、SECTR 流式、真机 | [grass_brg_progress](Docs/grass_brg_progress.md) |
 | **树** | **仍走 Terrain**：45 原型 / **46.5 万实例**；单 shader `PW_General_ShaderGraph_URP`、单 keyword 组合；每 prefab 3~4 级 LODGroup | 后续单独处理（BRG / Impostor） | [grass_brg_plan](Docs/grass_brg_plan.md) §6 |
 | 植被 LOD | 未接入 | Amplify Impostors | 同上 |
 | Shader 变体裁剪 | 未接入 | Shader Control | 同上 |
@@ -66,6 +66,15 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 - 草走 BRG（`GrassBRGManager` + `GrassBRG.shader`），不经过 SRP Batcher，也不受 Terrain 管理。
 - 树走 Terrain 自带渲染（`drawTreesAndFoliage=1`），由 TerrainRenderer 提交，SRP Batcher 覆盖。
 - 因为两者都在改「植被」，**改草时用 `detailObjectDistance`，不要用 `drawTreesAndFoliage`**——后者会把树一起关掉。
+
+**草的显色靠 albedo 图集，不是 tint**（2026-11-12 踩过）：
+花的颜色（雏菊白瓣黄芯/三叶草粉/蒲公英黄）在 `PW_LawnGrass_00_D` / `PW_WildGrass_00_D`
+两张 RGBA 图集的像素里，**传 tint 显不出花色**（tint 乘在绿色渐变上，乘什么都是绿）。
+- LOD0 材质启用 `_USE_ALBEDO_TEX`：`SAMPLE_TEXTURE2D` + `clip(a - _Cutoff)`，图集约一半像素 alpha==0。
+- `shader_feature` 必须显式 `EnableKeyword`，只 `SetFloat` 不切换变体（静默失效）。
+- **不要开 `AlphaToMask`**：工程 `Assets/Settings/UniversalRP.asset` 是 `m_MSAA: 1`，
+  无 MSAA 时 alpha-to-coverage 退化，近景草会被切成亮绿碎屑。
+- tint 走**材质属性**（每类型一个材质）而非 per-instance 数据，GPU buffer 保持 32B/实例。
 
 **渲染分层**：Gameplay 层不得直接操作 `CommandBuffer` 或 `Graphics.*`。
 
@@ -84,9 +93,9 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | 目录 | 行数 | 何时读 |
 |---|---|---|
 | [Assets/Scripts](Assets/Scripts/AGENTS.md) | 66 | 写任何自研代码前（程序集边界、命名空间约定） |
-| [Assets/Scripts/Editor](Assets/Scripts/Editor/AGENTS.md) | 112 | 改 Gaia 世界生成工具链、草烘焙与 BRG 验证 |
-| [Assets/Scripts/Runtime](Assets/Scripts/Runtime/AGENTS.md) | 79 | 改资源层、接 YooAsset、改 BRG 草运行时 |
-| [Assets/Editor](Assets/Editor/AGENTS.md) | 165 | 改 SECTR 切块 / GTS 转换 / 地形调参 / 验证脚本 |
+| [Assets/Scripts/Editor](Assets/Scripts/Editor/AGENTS.md) | 124 | 改 Gaia 世界生成工具链、草烘焙与 BRG 验证 |
+| [Assets/Scripts/Runtime](Assets/Scripts/Runtime/AGENTS.md) | 96 | 改资源层、接 YooAsset、改 BRG 草运行时 |
+| [Assets/Editor](Assets/Editor/AGENTS.md) | 166 | 改 SECTR 切块 / GTS 转换 / 地形调参 / 验证脚本 |
 | [Assets/Procedural Worlds](Assets/Procedural%20Worlds/AGENTS.md) | 105 | 用第三方插件、排查 Gaia/SECTR/GTS/Pegasus 问题 |
 | [Assets/Scenes](Assets/Scenes/AGENTS.md) | 85 | 改场景、重跑世界生成、重接草/Pegasus |
 | [Packages/com.tuyoogame.yooasset](Packages/com.tuyoogame.yooasset/AGENTS.md) | 90 | 改资源层代码前 |
