@@ -12,7 +12,7 @@ Material:
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords:
-  - d_Dithering
+  - d_Crest_NoMaskDepth
   m_InvalidKeywords: []
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
@@ -39,7 +39,7 @@ Material:
     m_Floats:
     - CREST_FLOW: 0
     - _CREST_FLOW_LOD: 0
-    - _Crest_AmbientTerm: 1
+    - _Crest_AmbientTerm: 0.35
     - _Crest_Anisotropy: 0.5
     - _Crest_CausticsDepthOfField: 6
     - _Crest_CausticsDistortionScale: 250
@@ -51,7 +51,7 @@ Material:
     - _Crest_CausticsStrength: 3.2
     - _Crest_CausticsTextureAverage: 0.07
     - _Crest_CausticsTextureScale: 50
-    - _Crest_DirectTerm: 1
+    - _Crest_DirectTerm: 0.4
     - _Crest_DitheringIntensity: 1
     - _Crest_ExtinctionMultiplier: 1
     - _Crest_OutScatteringExtinctionFactor: 0.2
@@ -59,6 +59,6 @@ Material:
     - _Crest_ShadowsAffectsAmbientFactor: 0.5
     - _Crest_SunBoost: 2
     m_Colors:
-    - _Crest_AbsorptionColor: {r: 0.42, g: 0.75, b: 0.88, a: 0.035}
-    - _Crest_Scattering: {r: 0.1, g: 0.42, b: 0.5, a: 1}
+    - _Crest_AbsorptionColor: {r: 0.62, g: 0.86, b: 0.92, a: 0.016}
+    - _Crest_Scattering: {r: 0.012, g: 0.026, b: 0.036, a: 1}
   m_BuildTextureStacks: []

@@ -72,6 +72,38 @@ public static class LakeCrestSetup
     public static void Remove() { Run("remove"); }
     public static void Report() { Run("report"); }
 
+    /// <summary>
+    /// 只重写水面材质的光学参数，不动场景节点。调水色时用它，比 Apply 快得多
+    /// （Apply 会销毁重建 Crest 节点，还会重跑 URP 前置检查与全量校验）。
+    /// </summary>
+    public static void Retune()
+    {
+        var sb = new StringBuilder();
+        void W(string s) { Debug.Log($"{Tag} {s}"); sb.AppendLine(s); }
+        try
+        {
+            var waterMat = AssetDatabase.LoadAssetAtPath<Material>(WaterMatPath);
+            var volumeMat = AssetDatabase.LoadAssetAtPath<Material>(VolumeMatPath);
+            if (waterMat == null || volumeMat == null)
+            {
+                W($"FAIL：找不到材质（water={waterMat}, volume={volumeMat}）");
+                Flush(sb, 2);
+                return;
+            }
+
+            ApplyWaterColor(waterMat, volumeMat, W);
+            W(DescribeOptics(waterMat));
+            W("==== 结论：PASS ====");
+            Flush(sb, 0);
+        }
+        catch (Exception ex)
+        {
+            W($"异常：{ex}");
+            W("==== 结论：FAIL ====");
+            Flush(sb, 1);
+        }
+    }
+
     private static void Run(string mode)
     {
         var sb = new StringBuilder();
@@ -338,19 +370,45 @@ public static class LakeCrestSetup
     }
 
     /// <summary>
-    /// 把 Crest 默认的 Absorption / Scattering 颜色写进材质，避免水面渲染成纯黑。
-    /// 默认值取自 AbsorptionLod.s_DefaultColor / ScatteringLod.s_DefaultColor（代码事实）。
+    /// 把 Crest 的 Absorption / Scattering 消光系数写进材质，决定水体的透明程度。
+    ///
+    /// ── 为什么"透明度"由这两个系数决定（代码事实）──
+    /// `Fragment.hlsl:625-670`：
+    ///     o_Emission *= 1 - volumeOpacity;          // 场景色（折射采样）被衰减
+    ///     o_Emission += volumeLight * volumeOpacity; // 补上水体自身的散射光
+    /// 其中 `VolumeLighting.hlsl:22-25`：
+    ///     volumeOpacity = 1 - exp(-extinction * 视线在水中的长度)
+    ///     extinction    = absorption + scattering
+    /// 所以 **extinction 越大越不透明**，与材质的 alpha 通道无关
+    /// （`CREST_SIMPLE_TRANSPARENCY (0)`，见 `Settings.Crest.Default.hlsl:23`，
+    ///  非 SimpleTransparency 路径下 `o_Alpha` 恒为 1，走的是折射合成而非 alpha 混合）。
+    ///
+    /// ── 2026-11-13 的参数为什么必须改 ──
+    /// 上一版 absorption=(0.194,0.064,0.029) + scattering=(0.10,0.42,0.50)
+    /// → extinction≈(0.29,0.48,0.53)/m → 5m 处只剩 exp(-2.4)≈9%，
+    /// 等于下水就看不见底，观感就是"一块不透明的蓝板"。
+    /// 现按"岸边看得见水底、湖心 30m 渐变成深青"反推：
+    ///   目标 extinction ≈(0.061,0.041,0.045)/m → 1/e 深度 16/24/22m
+    ///   → 3m 处保留 83% 场景色（能看见底），30m 处 16%（深水区自然是深色）。
+    ///
+    /// ── 颜色怎么反推成系数 ──
+    /// `WaterRenderer.UpdateAbsorptionFromColor`（WaterRenderer.cs:519-527）：
+    ///     absorption = -color.a * 32/5 * ln(color.rgb)
+    /// 即 color.a 是"密度"，color.rgb 是"透过水看到的颜色"。
+    /// 所以 alpha 越小越清澈；rgb 越接近白，各通道衰减越均衡（越不偏色）。
+    ///
+    /// ── scattering 为什么 R 要压得很低 ──
+    /// 体积光的颜色 = `scatteringAmount * 入射光`，而
+    /// `scatteringAmount = scattering / extinction`（VolumeLighting.hlsl:78）。
+    /// 上一版 scattering=(0.034,0.046,0.050) 让三通道比值接近 1，
+    /// 入射光一乘就趋近白 —— 实测水下画面均值 (118,131,139)，雾是白的。
+    /// 现取 (0.012,0.026,0.036) → scatteringAmount≈(0.20,0.63,0.80)，
+    /// 雾色明显偏青蓝，这才是湖水该有的水下观感。
     /// </summary>
     private static void ApplyWaterColor(Material waterMat, Material volumeMat, Action<string> W)
     {
-        // ── 湖泊调色（实测截图 2026-11-13）──
-        // Crest 默认的深海色（absorption 密度 0.102）配 30m 深的湖盆，
-        // 渲染出来是近黑的深蓝（实测像素 (0,3,17)），看不见水。
-        // 湖要明亮得多：把吸收密度降到 ~1/3（alpha 0.035 → 每米吸收弱），
-        // 散射色提到明亮的青绿（浅水湖的视觉主色）。
-        // 深浅梯度仍由 Depth 仿真保留：岸边浅亮、湖心略深。
-        var absorptionColor = new Color(0.42f, 0.75f, 0.88f, 0.035f);
-        var scatteringColor = new Color(0.10f, 0.42f, 0.50f, 1f);
+        var absorptionColor = new Color(0.62f, 0.86f, 0.92f, 0.016f);
+        var scatteringColor = new Color(0.012f, 0.026f, 0.036f, 1f);
 
         var absorption = WaterRenderer.CalculateAbsorptionValueFromColor(absorptionColor);
         var scattering = new Vector4(scatteringColor.r, scatteringColor.g, scatteringColor.b, scatteringColor.a);
@@ -362,12 +420,71 @@ public static class LakeCrestSetup
             m.SetVector("_Crest_Absorption", absorption);
             m.SetVector("_Crest_Scattering", scattering);
             EditorUtility.SetDirty(m);
-            W($"  {label}: _Crest_Absorption=({absorption.x:F3},{absorption.y:F3},{absorption.z:F3},{absorption.w:F3})");
         }
 
         Set(waterMat, "Water.mat");
         Set(volumeMat, "Water Volume.mat");
+
+        // 水下雾的密度倍率。`Underwater.hlsl:244-245` 把 absorption/scattering 乘上它，
+        // 所以它只影响**水下**观感，不改水面透明度。
+        // shader 里声明为 Range(0,1)（Underwater.shader:8），**只能调淡不能调浓**，
+        // 故取 1（沿用材质原值），靠 absorption 本身的青蓝偏色形成水下色偏。
+        if (volumeMat != null && !Mathf.Approximately(volumeMat.GetFloat("_Crest_ExtinctionMultiplier"), 1f))
+        {
+            volumeMat.SetFloat("_Crest_ExtinctionMultiplier", 1f);
+            EditorUtility.SetDirty(volumeMat);
+        }
+
+        // ── 水下体积光的入射光权重 ──
+        // `UnderwaterShared.hlsl:288-303` 把这两个值传给 VolumeLighting 的
+        // ambientTerm / directTerm，缩放"环境光 / 阳光注入散射光"的量。
+        // 默认 1.0 → 水下雾亮度等于水面受光，观感是"白雾"（实测均值 R106 G126 B137）。
+        // 湖水只有上部透光，压到 0.35/0.4 才有"越深越暗"的观感。
+        //
+        // ⚠ **必须写在水面材质 Water.mat 上，不能写 Water Volume.mat**。
+        // `UnderwaterRenderer.Effect.cs:247` 每帧调
+        // `_VolumeMaterial.CopyMatchingPropertiesFromMaterial(_SurfaceMaterial)`，
+        // 把水面材质里的**同名属性**整体覆盖到水下材质上
+        // （由 `_CopyWaterMaterialParametersEachFrame: 1` 每帧执行，见场景 serialized 数据）。
+        // 所以只在 Volume 材质上设值会在下一帧被水面材质覆盖回 1.0，静默失效。
+        //
+        // 同时它不影响水面本身：水面走 `Fragment.hlsl` 自己的 VolumeLighting 调用，
+        // 那里的入射光项已被 `o_Emission *= 1-volumeOpacity` 主导，权重变化肉眼不可见。
+        void SetScatteringWeights(Material m)
+        {
+            if (m == null) return;
+            m.SetFloat("_Crest_AmbientTerm", 0.35f);
+            m.SetFloat("_Crest_DirectTerm", 0.40f);
+            EditorUtility.SetDirty(m);
+        }
+
+        SetScatteringWeights(waterMat);
+        SetScatteringWeights(volumeMat);
+        W("  体积光入射权重：_Crest_AmbientTerm=0.35, _Crest_DirectTerm=0.40（写在两个材质上，Volume 会被水面覆盖）");
+
         AssetDatabase.SaveAssets();
+        W($"  写水色：_Crest_AbsorptionColor={absorptionColor}, density(a)={absorptionColor.a}");
+    }
+
+    /// <summary>
+    /// 打印由当前材质参数推出的消光系数与 1/e 深度，作为"水有多透明"的可核查证据。
+    /// </summary>
+    private static string DescribeOptics(Material waterMat)
+    {
+        var a = waterMat.GetVector("_Crest_Absorption");
+        var s = waterMat.GetVector("_Crest_Scattering");
+        float ex = a.x + s.x, ey = a.y + s.y, ez = a.z + s.z;
+        float d(double e) => e > 1e-5 ? (float)(1.0 / e) : 9999f;
+
+        var lines = new StringBuilder();
+        lines.AppendLine("  === 水面光学参数 ===");
+        lines.AppendLine($"  _Crest_Absorption   = ({a.x:F4},{a.y:F4},{a.z:F4})  /m");
+        lines.AppendLine($"  _Crest_Scattering   = ({s.x:F4},{s.y:F4},{s.z:F4})  /m");
+        lines.AppendLine($"  extinction(=A+S)    = ({ex:F4},{ey:F4},{ez:F4})  /m");
+        lines.AppendLine($"  1/e 深度            = R {d(ex):F1}m / G {d(ey):F1}m / B {d(ez):F1}m");
+        lines.AppendLine($"  3m 处保留场景色     = {100f * Mathf.Exp(-ex * 3f):F0}% (R 通道，最差)");
+        lines.AppendLine($"  30m 处保留场景色    = {100f * Mathf.Exp(-ex * 30f):F1}%");
+        return lines.ToString().TrimEnd();
     }
 
     /// <summary>Clip 盒体的 Y 尺寸：只要覆盖水面上下即可（SDF 只判 XZ 有效范围由 transform 决定）。</summary>
