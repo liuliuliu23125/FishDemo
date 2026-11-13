@@ -872,5 +872,12 @@ Assets/PW_Tree_*_Impostor_*.exr filter=lfs diff=lfs merge=lfs -text
 /Assets/Scenes/World/TerrainSplits/Terrain_2_2-20261109[[:space:]]-[[:space:]]162007[[:space:]]1-1-0.asset filter=lfs diff=lfs merge=lfs -text
 /Assets/Gaia[[:space:]]User[[:space:]]Data/GTS[[:space:]]World[[:space:]]Profile_GTSData/Albedo[[:space:]]Texture[[:space:]]Array.asset filter=lfs diff=lfs merge=lfs -text
 /Assets/Gaia[[:space:]]User[[:space:]]Data/GTS[[:space:]]World[[:space:]]Profile_GTSData/Normal[[:space:]]Texture[[:space:]]Array.asset filter=lfs diff=lfs merge=lfs -text
+/Packages/com.waveharmonic.crest/Samples~/Examples/Audio/Examples_Shoreline.flac filter=lfs diff=lfs merge=lfs -text
+/Packages/com.waveharmonic.crest/Samples~/Examples/Audio/Examples_Underwater.wav filter=lfs diff=lfs merge=lfs -text
+/Packages/com.waveharmonic.crest/Samples~/Examples/Audio/Examples_WaterSurface.flac filter=lfs diff=lfs merge=lfs -text
+/Packages/com.waveharmonic.crest/Samples~/Storm/Textures/Storm_Skybox.hdr filter=lfs diff=lfs merge=lfs -text
+/Packages/com.waveharmonic.crest/Shared/Effects/LensFlares/Textures/Ring.png filter=lfs diff=lfs merge=lfs -text
+/Packages/com.waveharmonic.crest/Shared/Textures/Skybox.hdr filter=lfs diff=lfs merge=lfs -text
+/Packages/com.waveharmonic.crest/Shared/Textures/Stylized[[:space:]]Skybox.exr filter=lfs diff=lfs merge=lfs -text
 *.physicmaterial !text !filter !merge !diff
 **/*.physicmaterial !text !filter !merge !diff
