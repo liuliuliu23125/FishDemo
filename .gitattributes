@@ -879,5 +879,8 @@ Assets/PW_Tree_*_Impostor_*.exr filter=lfs diff=lfs merge=lfs -text
 /Packages/com.waveharmonic.crest/Shared/Effects/LensFlares/Textures/Ring.png filter=lfs diff=lfs merge=lfs -text
 /Packages/com.waveharmonic.crest/Shared/Textures/Skybox.hdr filter=lfs diff=lfs merge=lfs -text
 /Packages/com.waveharmonic.crest/Shared/Textures/Stylized[[:space:]]Skybox.exr filter=lfs diff=lfs merge=lfs -text
+/Tools/lake-veg-backup/World_SECTR[[:space:]]Terrain_1_1-20261109[[:space:]]-[[:space:]]162007[[:space:]]0-1-0[[:space:]]Sector.bytes filter=lfs diff=lfs merge=lfs -text
+/Tools/lake-veg-backup/World_SECTR[[:space:]]Terrain_1_1-20261109[[:space:]]-[[:space:]]162007[[:space:]]1-0-0[[:space:]]Sector.bytes filter=lfs diff=lfs merge=lfs -text
+/Tools/lake-veg-backup/World_SECTR[[:space:]]Terrain_1_1-20261109[[:space:]]-[[:space:]]162007[[:space:]]1-1-0[[:space:]]Sector.bytes filter=lfs diff=lfs merge=lfs -text
 *.physicmaterial !text !filter !merge !diff
 **/*.physicmaterial !text !filter !merge !diff
