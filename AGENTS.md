@@ -46,7 +46,7 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | **Terrain → Mesh 分块** | **GTS 已落地**：144 个 subTile，`saveResolution=Half` | 加 LOD 链、走 YooAsset | 同上 + [gts_srp_batcher](Docs/gts_srp_batcher.md) |
 | **地表合批** | **SRP Batcher 已生效**；静态合批已关；纹理数组 ASTC_8x8 | 维持 | [gts_srp_batcher](Docs/gts_srp_batcher.md) |
 | 大世界流式 | **SECTR**（承担全部 chunk 加载） | SECTR 降为区域级，chunk 走 YooAsset | 同上 |
-| 水体 | **Gaia Water (URP)** | Crest Water 5 | [water](Docs/water.md) |
+| **水体** | **Crest 5.10.0 已落地**：中心人工湖（湖心 `(192,96)` / 半径 190m / 水位 264m / 深 30m），Crest 包在 `Packages/com.waveharmonic.crest`；靠 Surface Clipping 裁出湖盆；旧 Gaia Water 已禁用保留 | 真机验反射/水下开关 | [water](Docs/water.md) §11 |
 | 昼夜/天气/大气雾 | **无**（仅一盏平行光） | Enviro 3 | [atmosphere](Docs/atmosphere.md) |
 | 体积雾/光 | 未接入 | Fog Mist 2 / Light Beam 2 / Lights 2 | 同上 |
 | 后处理 | URP 内置（主场景无 Volume） | 同 | [postprocess](Docs/postprocess.md) |
@@ -98,6 +98,23 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 - **不要开 `AlphaToMask`**：工程 `Assets/Settings/UniversalRP.asset` 是 `m_MSAA: 1`，
   无 MSAA 时 alpha-to-coverage 退化，近景草会被切成亮绿碎屑。
 - tint / 类型尺寸走**材质属性**（每类型一个材质）而非 per-instance 数据，GPU buffer 保持 32B/实例。
+
+**Crest 水体（2026-11-13 落地，改水前必读 [water](Docs/water.md) §11）**：
+- **Crest 是海洋系统**：水面以**视点**为中心铺开 clipmap，`WaterRenderer` 的 transform XZ 对水面无意义，
+  且最外圈能铺到 ε±数十公里。`WaterBody` 的剔除是整 chunk 粒度，**裁不出小湖**。
+  只有一个办法：`ClipLod.DefaultClippingState = EverythingClipped` + `ClipLodInput(Cube, Inverted=true)`。
+  `Inverted=false` 会全裁（一滴水不剩），语义见 `ClipPrimitive.compute:99-104`。
+- **Absorption / Scattering 默认是关闭的**。湖选择不开（省两个每帧 pass），改用材质恒定色；
+  但材质必须显式写入 `_Crest_AbsorptionColor` / `_Crest_Absorption` / `_Crest_Scattering`，
+  否则水面渲染成纯黑（批处理下没人触发 `UpdateAbsorptionFromColor`）。
+- **`Lod.Enabled` 的 getter 是 `_Enabled && _Valid`，`_Valid` 只在运行时 GPU 初始化后为真**。
+  编辑期/批处理读它必然是 false，**不能当校验判据**（校验用 `DefaultClippingState` 等持久字段）。
+- **验收前必须禁 `PegasusTourController`**：它挂在 Main Camera 上每帧改相机位姿，
+  会把验收脚本摆的机位覆盖掉（曾导致十几轮验收全部误判）。
+- **验收还要补两件事**，否则画面全黑但不是水的错：① `RenderSettings.ambientMode = Flat`
+  （场景未烘 GI，环境探针全黑）；② 对每个 `GTSMesh` 调 `Refresh()`（否则地表黑）。
+- 湖盆参数唯一来源是 `LakeCarve`（Center/Radius/WaterLevel/Depth）。改湖先改那里，
+  再跑 `LakeCarve.Apply` → `LakeVegetationClear.Apply` → 重转 GTS → `LakeCrestSetup.Apply`。
 
 **渲染分层**：Gameplay 层不得直接操作 `CommandBuffer` 或 `Graphics.*`。
 

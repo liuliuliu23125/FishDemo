@@ -24,6 +24,7 @@ Assets/Scenes/World/GrassData/*.bytes        36 份 BRG 草烘焙数据（387MB�
 | GTS mesh | `GtsConvertOne` → `GtsApplyMeshToChunks` → `GtsFixMeshRendering` | 地表贴图/分层错乱 |
 | BRG 草接入 | `GrassBaker.RunAll` → `GrassSceneSetupM2` → `DetailBrgSetup` | 场景里没有 `GrassBRG (M1)` 或 LOD0 退回兜底 mesh |
 | Pegasus 巡游 | 菜单 `FishDemo/World/② 布置 Pegasus 环绕巡游` | 没有巡游路线 / POI 悬空 |
+| **中心湖** | `LakeCarve.Apply` → `LakeVegetationClear.Apply` → 重转 GTS（受影响 2 chunk） → `LakeCrestSetup.Apply` | 湖没水 / 水边长树 / 地形没凹陷 |
 
 生成链路与参数见 [world_implementation](../../Docs/world_implementation.md)。
 
@@ -47,7 +48,8 @@ World_SECTR Terrain_0_0-20261109 - 162007 0-1-0 Sector.unity
 |---|---|
 | `Main Camera` | 挂 `SECTR_RegionLoader`（加载中心）；Pegasus 巡游也用它作 target |
 | `Directional Light` | 唯一光源 |
-| `Gaia Water` | 水面预制体实例，y=60 |
+| ~~`Gaia Water`~~ | **已禁用（2026-11-13）**：水面改由 Crest 提供，见下 |
+| **`Crest Lake`** | Crest 水面 + `WaterBody` + `ClipLodInput`（湖盆裁剪）。位置 `(192,264,96)` |
 | `Terrain_x_x` ×9 | 只有 Sector×4 + Portal×4，**无 Terrain 组件**（地形在 chunk 里） |
 | `Gaia Terrains` / `Gaia Runtime` / `Gaia Tools` | Gaia 运行时容器 |
 | `Alpine Meadow-*` ×10 | 撒点器，挂着空转的 Gaia `TerrainLoader` |
