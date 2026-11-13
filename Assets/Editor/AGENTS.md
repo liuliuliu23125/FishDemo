@@ -39,6 +39,12 @@ SECTR 与 GTS 都没有自己的 asmdef，其编辑器 API（`SECTR_TerrainWindo
 | `GtsConvertOne.cs` | 单块 Terrain→GTS Mesh（**一进程一块**） | `-gtsChunk "<名>" -gtsFirst 0/1` |
 | `GtsApplyMeshToChunks.cs` | 把 GTS mesh 挂进 chunk 场景 | `RunAll` / `RunOne -gtsChunk` |
 | `GtsFixMeshRendering.cs` | 补 GTSMesh 组件 + 写 worldSizeOverride | `-executeMethod GtsFixMeshRendering.RunAll` |
+| `LakeSiteProbe.cs` | **只读**：把真实地形高度采成 32m 网格（`Logs/Lake/height-grid.csv`），选湖址用 | `-executeMethod LakeSiteProbe.Run` |
+| `LakeCarve.cs` | 按碗形改 TerrainData 高度图造湖盆；`Restore` 可还原 | `Apply` / `Restore` / `Report` |
+| `LakeVegetationClear.cs` | 清湖区内树与草（`.bytes` 直接改写）；`Restore` 可还原 | `Apply` / `Restore` / `Report` |
+| `LakeGeometryProbe.cs` | **只读**：同时校验 Terrain 高度与 GTS mesh 顶点，抓「数据改了但没重烘」 | `-executeMethod LakeGeometryProbe.Run` |
+| `LakeCrestSetup.cs` | 把 Crest 水面接进主场景（裁剪/水色/波浪/URP 前置）；`Remove` 可撤 | `Apply` / `Remove` / `Report` |
+| `LakeRenderVerify.cs` | **需真实图形设备**：玩家视角截图 + 像素判定，证明湖里有水 | `-executeMethod LakeRenderVerify.Run` |
 
 ## 3. 铁律
 
@@ -94,6 +100,26 @@ TerrainChunkTuning.ApplyMobile
 
 `GtsFixMeshRendering` 不只是"补组件"——它写入的 `m_worldSizeOverride`（256m）
 决定贴图 tiling，漏掉会让地表贴图密度错 4 倍。详见 [gts_srp_batcher](../../Docs/gts_srp_batcher.md)。
+
+### 3.5.2 中心湖是独立的人工改造，重跑流水线会全部丢失
+
+湖盆不是 Gaia 生成的，是脚本后挖的。**重跑 `WorldPipeline` / `SectrPipeline` 后湖会消失**，
+必须按顺序重做：
+
+```
+LakeCarve.Apply                 （挖碗形湖盆，改 2 个 chunk 的高度图）
+  → LakeVegetationClear.Apply   （清湖区树与草）
+  → GtsConvertOne.Run × 受影响 chunk（一进程一块）→ GtsApplyMeshToChunks.RunAll
+  → GtsFixMeshRendering.RunAll
+  → LakeCrestSetup.Apply        （重建 Crest Lake 节点）
+  → LakeGeometryProbe.Run + LakeRenderVerify.Run（校验）
+```
+
+湖盆参数的**唯一来源**是 `LakeCarve` 的常量（`Center` / `Radius` / `WaterLevel` / `Depth` / `Blend`）。
+改湖先改那里，不要手改 36 个 chunk 的高度图。
+
+`LakeCarve` 的溢出判据按**矩形 AABB** 而非圆形：水面由 Crest WaterBody 的矩形范围决定，
+AABB 外的地形再低也不会露出水面。详见 [water](../../Docs/water.md) §11.4。
 
 ### 3.5.1 关草用 `DisableDetail`，不要动 `drawTreesAndFoliage`
 

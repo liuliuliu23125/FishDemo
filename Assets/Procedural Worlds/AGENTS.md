@@ -15,7 +15,7 @@ Packages - Install/   已解包安装的内容，真正参与编译
 | 内容 | 路径 | 说明 |
 |---|---|---|
 | Gaia 核心 | `Packages - Install/Gaia/` | `GaiaCore` / `GaiaEditor` asmdef |
-| Gaia Water (URP) | `Packages - Install/Gaia Water/` | 实际使用的水面 |
+| Gaia Water (URP) | `Packages - Install/Gaia Water/` | **已停用（2026-11-13）**：水面改由 Crest 承担，`Gaia Water` 节点已 `SetActive(false)` 保留。见 [water](../../Docs/water.md) §11 |
 | Unity URP Water | `Packages - Install/Unity URP Water/` | 水下效果（`GaiaURPUnderwaterEffects`） |
 | Gaia Pro Assets and Biomes | `Packages - Install/Gaia Pro Assets and Biomes/` | Biome 预设与美术材质 |
 | Stamps | `Packages - Install/Stamps/` | 地貌印章 exr |
