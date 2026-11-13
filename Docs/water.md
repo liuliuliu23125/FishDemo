@@ -210,3 +210,172 @@ Crest 自带 Gaia 集成（`Editor/Scripts/Integrations/Gaia/GRC_Crest.cs`）。
 - 移动端关闭各 LOD 后的实际帧率
 - Crest 的 shader 变体数量（配合 Shader Control 裁剪）
 - 与 Enviro 的雾/天空在水面反射中的交互
+
+---
+
+## 11. 落地记录（2026-11-12，中心人工湖 + Crest 接入）
+
+> 本节是实施结果，与上面 §1-10 的"选型分析"区分。所有数字都有工具输出佐证。
+
+### 11.1 为什么"看不到水"——根因
+
+水面实例在 `y=60`（`WorldPipeline.cs:296`），而地形实测高度 **236~350m**
+（`Logs/Lake/site-probe.txt`，9409 个采样点）。水面埋在地下约 200m。
+这不是渲染问题，是**水位与地形完全错位**。
+
+### 11.2 湖盆设计（第一性原理推导）
+
+地形是缓坡，中心 ±800m 内**没有天然洼地**（最低点 260.6m 与周边只差 4m），
+所以必须人工挖碗形盆地。参数由高度网格数据搜索得出：
+
+| 参数 | 值 | 依据 |
+|---|---|---|
+| 湖心 | `(192, 96)` | `Logs/Lake/height-grid.csv` 全局搜索：挖方小、AABB 内不溢出 |
+| 半径 R | 190m | 同上 |
+| 水位 | **264m** | 碗沿 266m，AABB 内湖外最低原生地形 266.7m；取 264 留 2.7m 波浪余量 |
+| 碗深 | 30m | 碗底 234m |
+| 过渡带 | 90m | R..R+90 不动，岸线自然收边 |
+| 挖方 | ~5.0M m³ | 只挖不填，零填方 |
+
+**溢出判据必须按矩形 AABB，不能按圆形**：水面由 WaterBody 的矩形 AABB 决定渲染范围
+（`SurfaceRenderer.ApplyWaterBodyCulling`），AABB 外的地形哪怕低于水位也不会露出水面。
+
+### 11.3 施工链路（4 步，全部可逆）
+
+| 步骤 | 脚本 | 改动 | 还原 |
+|---|---|---|---|
+| 1. 挖湖盆 | `LakeCarve.Apply` | 2 个 chunk 的高度图（113696 格） | `Restore`（`Tools/lake-backup/`，只备份受影响窗口） |
+| 2. 清植被 | `LakeVegetationClear.Apply` | 删 608 棵树 + 57531 株草 | `Restore`（`Tools/lake-veg-backup/`） |
+| 3. 重转 GTS | `GtsConvertOne.Run` ×2 → `GtsFixMeshRendering.RunAll` | 2 chunk 的地表 mesh | 重跑世界生成会覆盖 |
+| 4. 接 Crest | `LakeCrestSetup.Apply` | 主场景加 `Crest Lake` 节点；禁用旧 Gaia Water；开 URP Depth/Opaque | `Remove` |
+
+### 11.4 踩坑记录（全部实测）
+
+1. **unitypackage 必须连 `.meta` 一起解**。Crest 包里 asset:meta 是 1:1.28，
+   只解 asset 会 GUID 全断、编译失败（`LodInputMode not found` 等 20+ 错误）。
+   工具：`E:\pkg-inspect\work\unpack_upm2.py`。
+2. **重转已挂 mesh 的 chunk，GTS 会崩**。`GTSMesh : GTSComponent`，
+   `GTSProfile.GetGTSComponents()` 找到 chunk 里已有的 `GTSMesh` 后对它的
+   gameObject 取 `GetComponent<Terrain>()` → MissingComponentException。
+   修法：`GtsConvertOne` 转换前先删 `GTS_Mesh` 节点（不只是 `GTS_MeshTerrains`）。
+3. **植被清除不能加全局高度判据**。地形整体 236~350m，世界边缘大片低于任何水位；
+   `h < 水位` 会命中离湖 1km 外的草（首次统计误中 25 万株）。只用半径判据。
+4. **`WaterRenderer.SeaLevel` 在编辑器批处理下恒为 0**。它读 internal `Position`，
+   只在运行时 `RunUpdate` 赋值。编辑期校验水位要看 `transform.position.y`。
+5. **验收相机必须等 chunk 加载完**。Play Mode 第 20 帧时 SECTR 还没加载湖边 chunk，
+   `SampleHeight` 找不到 Terrain → 相机摆到 y=1.7 钻进地里（首跑截图证实）。
+   修法：轮询 Terrain 覆盖站位点才摆相机，超时用探测网格的已知高度兜底。
+6. **`SurfaceRenderer.Chunks` / `WaterChunkRenderer` 都是 internal**，
+   编辑器程序集访问不到。统计水面 chunk 数改用
+   `GetComponentsInChildren<MeshRenderer>()` 按水面材质过滤。
+
+### 11.5 Crest 接入配置（最终，`LakeCrestSetup`）
+
+| 配置 | 值 | 理由 |
+|---|---|---|
+| 位置 | `(192, 264, 96)` | 湖心 + 水位 |
+| `LodLevels` | 4 | 默认 9 是无限海洋用的；湖半径 190m |
+| `LodResolution` | 160 | 默认 384 对小湖过密 |
+| `ScaleRange` | `(1, 16)` | 湖面不需要远视距放大 |
+| **Surface Clipping** | `EverythingClipped` + `ClipLodInput(Cube)` | 见下：这是「只在湖盆出水」的唯一正确做法 |
+| 模块 ON | AnimatedWaves / Foam / Depth / Level | 移动端 30fps 下的最小可用集 |
+| 模块 OFF | DynamicWaves / Flow / Shadow / Albedo / **Absorption / Scattering** | 吸收/散射仿真对小湖没有视觉收益，且多两个每帧 pass |
+| 平面反射 | **OFF** | 最贵的一项；Crest 无视锥剔除（§3） |
+| WaterBody | `Include`，AABB 半边长 280m，`Affects=Volume+Physics` | 只管水下体积与物理限域，**不负责裁水面** |
+| 水色 | absorption `(0.42,0.75,0.88,0.035)` / scattering `(0.10,0.42,0.50)` | 默认深海色配 30m 深湖盆会渲染成近黑 |
+| URP | `m_RequireDepthTexture=1`、`m_RequireOpaqueTexture=1` | 水下/岸边泡沫依赖，不开**静默失效** |
+
+**为什么必须用 Surface Clipping，而不是只靠 WaterBody**：
+Crest 的水面是以**视点**为中心的 clipmap（`LateUpdatePosition` 把 `Position` 设为
+`(视点.x, 水面y, 视点.z)`，各 chunk 相对它按 LOD 翻倍铺开，最外圈能到 ±数十公里）。
+`WaterRenderer` 的 transform XZ 对水面**没有意义**；WaterBody 的 AABB 剔除是**整 chunk 粒度**，
+挡不住巨型外圈 chunk（实测 49 个 chunk 只有 8 个被剔除，水面仍铺满全世界）。
+只有 Clip 的逐像素 SDF 能精确裁出湖盆。
+
+**`ClipLodInput.Inverted` 的语义（`ClipPrimitive.compute:99-104`）**：
+初始 `EverythingClipped` 全写 1（>0.5 即裁）。
+`Inverted=true` → `target = min(target, sdf)`：盒内 sdf<0 保留水，盒外 sdf 大保持 1 被裁。**这才是对的**。
+`Inverted=false` → `target = max(target, 1-sdf) ≥ 1`：全裁，一滴水都不剩（2026-11-13 踩过）。
+
+### 11.6 踩坑记录（全部实测）
+
+按发现顺序：
+
+1. **unitypackage 必须连 `.meta` 一起解**。Crest 包里 asset:meta 是 1:1.28，
+   只解 asset 会 GUID 全断、编译失败（20+ 个 `LodInputMode not found`）。
+   工具：`E:\pkg-inspect\work\unpack_upm2.py`。
+2. **重转已挂 mesh 的 chunk，GTS 会崩**。`GTSMesh : GTSComponent`，
+   `GTSProfile.GetGTSComponents()` 找到 chunk 里已有的 `GTSMesh` 后对它取
+   `GetComponent<Terrain>()` → MissingComponentException。
+   修法：`GtsConvertOne` 转换前先删 `GTS_Mesh` 节点（不只是 `GTS_MeshTerrains`）。
+3. **植被清除不能加全局高度判据**。地形整体 236~350m，世界边缘大片低于任何水位；
+   `h < 水位` 会命中离湖 1km 外的草（首次统计误中 25 万株）。只用半径判据。
+4. **`WaterRenderer.SeaLevel` 在编辑器批处理下恒为 0**。它读 internal `Position`，
+   只在运行时 `RunUpdate` 赋值。编辑期校验水位要看 `transform.position.y`。
+5. **`SurfaceRenderer.Chunks` / `WaterChunkRenderer` 都是 internal**，
+   编辑器程序集访问不到（CS1061）。统计水面 chunk 改用 `GetComponentsInChildren<MeshRenderer>()`。
+6. **`Lod.Enabled` 的 getter 是 `_Enabled && _Valid`**，而 `_Valid` 只在运行时
+   `Initialize()`（需要 GPU）后为 true。**编辑期读它必然 false**，不能当校验判据。
+7. **Absorption / Scattering 默认关闭**（`Lod` 基类 `_Enabled` 默认 false，
+   只有 AnimatedWaves / Shadow 在构造函数里置 true）。湖最终选择关闭它们、
+   用材质恒定色：小湖的空间变化吸收色没有收益，且能省两个仿真 pass。
+8. **水面材质需要显式写入 `_Crest_AbsorptionColor` / `_Crest_Absorption` / `_Crest_Scattering`**。
+   这些值本应由材质 Inspector 的 `@OnChange` 触发 `UpdateAbsorptionFromColor` 计算，
+   批处理下没人触发 → 取到 0 → 水面全黑。用 public API
+   `WaterRenderer.CalculateAbsorptionValueFromColor` 按目标色算好写入。
+9. **Pegasus 巡游控制器会覆盖相机位姿**（挂在 Main Camera 上，`Update()` 里驱动）。
+   验收前必须 `tour.enabled = false`，否则脚本摆的机位每帧被覆盖
+   ——这是「验了十几轮都看不到湖」的真正原因。
+10. **SECTR 是异步流式加载，脚本瞬移相机后加载内容不确定**。
+    同机位两次运行加载到的 chunk 完全不同（GTS subTile bounds 都不一样）。
+    验收脚本改为**进 Play Mode 前把 36 个 chunk 全部 Additive 打开**，几何一定齐。
+11. **世界场景没有环境光（未烘 GI）**。`m_AmbientMode=0`（Skybox）依赖烘焙环境探针，
+    batchmode 从不烘 → 探针全黑 → 所有背光面和水面都渲染成 `(0,3,17)` 近黑。
+    验收脚本必须显式 `RenderSettings.ambientMode = Flat` 给中性环境光。
+    这曾长期被误判为「水面渲染错误」。
+12. **GTS 地表在编辑/批处理下需要显式 `GTSMesh.Refresh()`**。splat 混合依赖一批
+    全局 Vector 数组，由 `GTSComponent.UpdateMaterial()` 注入；不 Refresh 时
+    地表全黑（现象：同一画面里树正常、地面黑）。
+13. **改高度图后必须重转 GTS mesh，且要重跑 `GtsFixMeshRendering`**。
+    重转会重建 `GTS_Mesh` 节点并换 mesh GUID，`GTSMesh` 组件丢失后
+    worldSize 校正与全局数组注入全没了。
+
+### 11.7 验收结果
+
+`-executeMethod LakeRenderVerify.Run` → `Logs/Lake/lake-render.txt` + `lake-render.png`
+
+```
+[1] 水位正确           : PASS (y=264.0)
+[2] 水面 chunk 存在    : PASS (49)
+[3] 中带出现水体色     : PASS (14.4%，阈值 12%)
+[4] 画面有内容         : PASS (8954 色)
+==== 结论：PASS ====
+```
+
+截图 `Logs/Lake/lake-render.png`：湖盆碗形完整、岸线平齐、岸边有泡沫线、
+水色随深度由浅到深。树与草在湖区已清空。
+
+### 11.8 当前水面观感与已知限制
+
+`Logs/Lake/lake-render.png`（玩家视角）：湖盆碗形完整、岸线平齐、岸边有泡沫线、
+水色为明亮的青蓝，**湖已正确显示在凹陷处**。水与地形衔接自然。
+
+**已知限制（需真机/交互环境确认，batchmode 无法验证）**：
+1. **水面看起来是纯平的**。`ShapeGerstner` 已挂、频谱 `WavesModerate`、风速 20 km/h，
+   但 batchmode 的 `Camera.Render()` 不推进 Crest 的仿真时钟，位移纹理停在初始帧。
+   真机 Play Mode 下应有正常起伏。**这一条未验证。**
+2. **水面偏不透明**。材质是 `m_CustomRenderQueue: 3000` + `_BUILTIN_SrcBlend: 5`（SrcAlpha），
+   透明混合管线是对的；但 absorption 恒定色模式下 alpha 输出接近 1，
+   看不到水下地形。若要"能看见水底"，需要开 `Depth` 相关的水深透明度，
+   或把 scattering 的 alpha 调低。**属于表现调优，不是功能缺陷。**
+3. 截图里的**岸壁有拉伸条纹**（碗壁陡坡上 GTS 贴图被拉伸），
+   是 30m 深碗的陡坡 + 256m/257 顶点的分辨率导致，属可接受范围。
+
+### 11.9 遗留事项
+
+- [ ] 真机（iQOO 16）实测帧率；Reflections / Underwater 的取舍要在真机上定
+- [ ] 钓鱼玩法需要 CPU 波高查询时，开 `com.waveharmonic.crest.cpu-queries` 附加包
+- [ ] Crest shader 变体数量未审计（Shader Control 待接入）
+- [ ] 旧 Gaia Water 已禁用保留在场景中；确认不再回退后可删
+- [ ] **水面仍会以视点为中心铺满全世界**（靠 Clip 裁掉），水面 chunk 数量不随湖缩小。
+      若真机 draw call 压力大，可考虑改用 `WaterMeshType.Quad`（单四边形 + 自定义网格）
