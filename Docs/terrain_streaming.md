@@ -206,8 +206,9 @@ public Vector3 LoadSize = new Vector3(20f, 10f, 20f);
 > - prefab 化的真正价值是**走 YooAsset bundle**，不是合批
 >
 > 另一个纠正：静态合批与 SRP Batcher 会互相干扰（静态合批先合并成大 mesh，
-> 反而破坏 SRP Batcher 的按材质归并粒度）。subTile 目前标了 `isStatic`，
-> 是否移除以 Frame Debugger 实测为准。
+> 反而破坏 SRP Batcher 的按材质归并粒度）。subTile 原先标了 `isStatic`；
+> 2026-11-13 已改为 `go.isStatic = false`，并通过 `BatchingSetup.FixAll` 关闭平台静态合批
+> （Android/Standalone 0/0）。详见 [gts_srp_batcher](gts_srp_batcher.md) §8.6。
 
 ## 10. chunk 为什么不能改成 prefab
 
@@ -251,7 +252,7 @@ public Vector3 LoadSize = new Vector3(20f, 10f, 20f);
 | 每块 detail 实例（全密度） | ≈570 万 | `chunk-render-stats.txt` |
 | 36 块 detail 总量 | **2.07 亿** | 同上 |
 | 每块树实例 | ≈1.3 万 | 同上 |
-| 36 块树总量 | 46.5 万 | 同上 |
+| 36 块树总量 | 4.65 万 | 同上 |
 | 每块 TerrainData | ≈4.68MB | 文件大小 |
 
 **mesh 化后的地形几何**：

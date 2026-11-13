@@ -10,9 +10,10 @@
 |---|---|---|---|
 | `Resources/` | `FishDemo.Resources` | `FishDemo.AssetManagement` | YooAsset 初始化 + 句柄封装 |
 | `Rendering/` | `FishDemo.Rendering` | `FishDemo.Rendering` | 草 BRG 运行时，`allowUnsafeCode=true` |
-| `Gameplay/` | **无** → `Assembly-CSharp` | `FishDemo.Gameplay` | Pegasus 巡游演示控制器 |
+| `Gameplay/` | **无** → `Assembly-CSharp` | `FishDemo.Gameplay` | Pegasus 巡游 + 环湖轨道相机与切换 rig |
 
 **`Gameplay/` 不能加 asmdef**：`PegasusTourController.cs` 直接 `using Pegasus`，
+`LakeCameraRig.cs` 同时 `using Pegasus` 与 `using WaveHarmonic.Crest`，同理；
 Pegasus 没有 asmdef、编在 `Assembly-CSharp`。asmdef 程序集引用不到默认程序集。
 同 `Assets/GTSRuntime/` 的处理方式。
 
@@ -36,6 +37,25 @@ Pegasus 没有 asmdef、编在 `Assembly-CSharp`。asmdef 程序集引用不到�
 **地址规则必须是 `AddressByFolderAndFileName`**（`YooAssetSetup.cs:96`）。
 `Assets/Scenes` 下场景与烘焙数据同名（`World/Chunks/*Sector.unity` 与 `World/GrassData/*Sector.bytes`），
 纯文件名规则会让两者撞 Address，收集阶段直接抛 `Address already exists`（`BundleCollector.cs:226`）。
+
+## 2.5 Gameplay：相机与巡游（无 asmdef）
+
+| 文件 | 职责 |
+|---|---|
+| `Gameplay/PegasusTourController.cs` | 原 F 键巡游/手动飞行切换。**已被 `LakeCameraRig` 接管 F 键后禁用**（保留不删，可随时改回） |
+| `Gameplay/LakeOrbitCamera.cs` | 环湖轨道运动：半径 300m / 水位+26m / 120s 一圈 / 俯仰 12°±3°；`Paused` 让出 transform |
+| `Gameplay/LakeCameraRig.cs` | **C** 切相机（巡游 ⇄ 轨道）+ **F** 自由飞行；同步 Crest `Viewer`、SECTR loader、MainCamera tag |
+
+三条容易踩的：
+1. **切相机必须同步三样东西**：`WaterRenderer.Viewer`（水面 clipmap 以它为中心）、
+   当前相机的 `SECTR_RegionLoader`（按自身 transform 加载 chunk）、`Camera.main` tag。
+   新增"跟着相机走的状态"必须加进 `LakeCameraRig.Apply()`。
+2. **F 键飞行前必须暂停轨道脚本**（`LakeOrbitCamera.Paused`）：它在 `LateUpdate` 写 transform，
+   比飞行的 `Update` 更晚，不暂停会把飞行位移整帧覆盖。
+3. **组件级开关，不要 `SetActive(false)`**：每台相机自带 `AudioListener`，
+   禁 GameObject 会触发 "no audio listeners"。
+
+验收：`LakeOrbitVerify.Run`（可 `-nographics`，9 项断言）。
 
 ## 3. Rendering（草 BRG）
 

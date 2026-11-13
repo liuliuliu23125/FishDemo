@@ -304,7 +304,7 @@ BRG 单 batch 的 raw buffer 上限 16MB（`EntitiesGraphicsSystem.cs:1156`）�
 | 9 | `[ExecuteAlways]` + `AddComponent` | 验证脚本改参数不生效 | `Configure*ForValidation` 内部先 `Shutdown()` |
 | 10 | `_scaleMultiplier=8` 残留 | 密度看似正常但顶点爆炸（LOD 距离被放大 8 倍） | 阶段切换必须清理上一阶段的权宜参数 |
 | 11 | 运行时按名字找 detail 原型 mesh | `Resources.FindObjectsOfTypeAll<Mesh>()` 实测 0 命中，7 种植物长一样，`LOD0 三角形 = 24` | 编辑器期用 `AssetDatabase` 拿引用、序列化进组件（`DetailBrgSetup`）；且 FBX 内 mesh 名带 `_E` 后缀 |
-| 12 | 与 Terrain detail 重复绘制 | 同一处画两遍草，且 detail 无法与 BRG 合批 | `DetailObjectDistance = 0`；**不要用 `drawTreesAndFoliage=false`**（会关掉 46.5 万棵树） |
+| 12 | 与 Terrain detail 重复绘制 | 同一处画两遍草，且 detail 无法与 BRG 合批 | `DetailObjectDistance = 0`；**不要用 `drawTreesAndFoliage=false`**（会关掉 4.65 万棵树） |
 | 13 | 打包后草消失 | `Assets/` 不存在，`File.ReadAllBytes` 失败 → 静默回退合成方阵 | 正式版改走 YooAsset（M3） |
 | 14 | `[Toggle]` 属性设了但没 EnableKeyword | `shader_feature` 变体不切换：LOD0 花仍是绿色、无 alpha 裁剪，**静默失效** | 代码里必须显式 `mat.EnableKeyword("_USE_ALBEDO_TEX")`，`SetFloat` 只影响属性值不影响变体 |
 | 15 | 只传 tint 不给贴图 | 花仍是纯绿（tint 乘在绿色渐变上，乘什么都是绿） | 花色在图集里，必须采样 + `clip(a - _Cutoff)` |

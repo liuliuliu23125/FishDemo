@@ -52,19 +52,12 @@ public static class LakeRenderVerify
         Directory.CreateDirectory(OutDir);
         EditorSceneManager.OpenScene(WorldScenePath, OpenSceneMode.Single);
 
-        // ── 预先把 36 个 chunk 全部 Additive 打开 ──
+        // ── 预先打开与湖相关的 chunk ──
         // 为什么不靠 SECTR 流式：实测 Play Mode 下 SECTR 按相机位置异步加载，
-        // 脚本瞬移相机后每轮加载到的 chunk 不同（同机位两次运行 GTS subTile bounds 完全不同），
-        // "画面下半全黑"其实是该处 chunk 没加载。全部预加载后几何一定齐全。
-        int preloaded = 0;
-        foreach (var s in EditorBuildSettings.scenes)
-        {
-            if (!s.enabled || s.path.EndsWith("World.unity")) continue;
-            if (!File.Exists(s.path)) continue;
-            EditorSceneManager.OpenScene(s.path, OpenSceneMode.Additive);
-            preloaded++;
-        }
-        W($"预加载 chunk = {preloaded}");
+        // 脚本瞬移相机后每轮加载到的 chunk 不同（同机位两次运行 GTS subTile bounds 完全不同）。
+        // 但也不需要全部 36 个 —— 本验证只在一个固定机位看湖，
+        // 按湖 AABB 筛选即可（36 → 8 左右），详见 ChunkLoadScope 类注释。
+        ChunkLoadScope.LoadRelevant(ChunkLoadScope.Area.FromLake(), W);
         // 回到主场景为 active（Additive 打开不会切换 active scene，但保险）
         EditorSceneManager.SetActiveScene(EditorSceneManager.GetSceneByPath(WorldScenePath));
 
@@ -340,7 +333,8 @@ public static class LakeRenderVerify
             DestroyImmediate(rt);
 
             File.WriteAllText(ResultPath, _sb.ToString());
-            EditorApplication.isPlaying = false;
+            // 不先 isPlaying=false：退出 Play Mode 会触发域重载 + 全量资产重导入
+            // （实测 20s 资产导入 + 10s 备份场景落盘）。本进程紧接着 Exit，直接退出最省时间。
             gameObject.AddComponent<QuitAfter>().Init();
         }
 
@@ -364,7 +358,7 @@ public static class LakeRenderVerify
         public void Init() { hideFlags = HideFlags.DontSave; }
         private void Update()
         {
-            if (++_f < 30) return;
+            if (++_f < 3) return;
             EditorApplication.Exit(0);
         }
     }

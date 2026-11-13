@@ -34,7 +34,7 @@ Gameplay → World Streaming（chunk + 流式）
 | 内容 | 路径 |
 |---|---|
 | 地表（GTS mesh） | SRP Batcher |
-| 树（Terrain 自带，46.5 万实例） | Terrain 渲染 + SRP Batcher |
+| 树（Terrain 自带，4.65 万实例） | Terrain 渲染 + SRP Batcher |
 | **草（1265 万实例）** | **BRG**，不经过 SRP Batcher |
 
 **判定标准**：任何新增渲染内容，必须说明它走哪一条批处理路径。说不出来就是设计缺陷。
@@ -67,7 +67,7 @@ Gameplay → World Streaming（chunk + 流式）
   **草已迁到 BRG（2026-11-11）**：36 chunk / 1265 万实例，Terrain detail 已关
   （`DetailObjectDistance=0`）。见 [grass_brg_progress](grass_brg_progress.md)。
   新增植被内容仍不得回到 Terrain detail。
-- ❌ 用 `drawTreesAndFoliage = false` 关草。它同时关树（46.5 万实例）。
+- ❌ 用 `drawTreesAndFoliage = false` 关草。它同时关树（4.65 万实例）。
   关草只用 `detailObjectDistance = 0`。
 - ❌ 在 `Update` 里逐对象设材质属性（破坏 SRP Batcher）。
 - ❌ 用 `MaterialPropertyBlock` 传 per-object 数据（会拆 SRP Batcher 批次）。

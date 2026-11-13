@@ -68,9 +68,48 @@ public static class LakeCrestSetup
     /// <summary>水面节点名。重复执行时按这个名字找已有对象，保证幂等。</summary>
     private const string NodeName = "Crest Lake";
 
+    /// <summary>
+    /// 固定 LOD 视点相对水面的高度（米）。
+    /// 取 26（与 LakeOrbitCamera 默认高度一致）：固定一个适中的 LOD 尺度，
+    /// 4 级 LOD 才能覆盖 560m 湖面；0m 时 scale=1，3/4 级都覆盖不到岸边。
+    /// </summary>
+    private const float ViewpointHeightAboveWater = 26f;
+
     public static void Apply() { Run("apply"); }
     public static void Remove() { Run("remove"); }
     public static void Report() { Run("report"); }
+
+    /// <summary>
+    /// 只重写水面材质的光学参数，不动场景节点。调水色时用它，比 Apply 快得多
+    /// （Apply 会销毁重建 Crest 节点，还会重跑 URP 前置检查与全量校验）。
+    /// </summary>
+    public static void Retune()
+    {
+        var sb = new StringBuilder();
+        void W(string s) { Debug.Log($"{Tag} {s}"); sb.AppendLine(s); }
+        try
+        {
+            var waterMat = AssetDatabase.LoadAssetAtPath<Material>(WaterMatPath);
+            var volumeMat = AssetDatabase.LoadAssetAtPath<Material>(VolumeMatPath);
+            if (waterMat == null || volumeMat == null)
+            {
+                W($"FAIL：找不到材质（water={waterMat}, volume={volumeMat}）");
+                Flush(sb, 2);
+                return;
+            }
+
+            ApplyWaterColor(waterMat, volumeMat, W);
+            W(DescribeOptics(waterMat));
+            W("==== 结论：PASS ====");
+            Flush(sb, 0);
+        }
+        catch (Exception ex)
+        {
+            W($"异常：{ex}");
+            W("==== 结论：FAIL ====");
+            Flush(sb, 1);
+        }
+    }
 
     private static void Run(string mode)
     {
@@ -113,36 +152,80 @@ public static class LakeCrestSetup
             if (mode == "remove")
             {
                 var old = GameObject.Find(NodeName);
-                if (old != null) UnityEngine.Object.DestroyImmediate(old);
-                // 同时清掉 WaterBody 子节点（它是水面的子物体，随父一起删）
+                if (old != null)
+                {
+                    for (var i = old.transform.childCount - 1; i >= 0; i--)
+                    {
+                        UnityEngine.Object.DestroyImmediate(old.transform.GetChild(i).gameObject);
+                    }
+
+                    var oldWater = old.GetComponent<WaterRenderer>();
+                    if (oldWater != null) UnityEngine.Object.DestroyImmediate(oldWater);
+
+                    // 根上若还挂着 LakeCameraRig，保留节点给 LakeCameraSetup.Remove 处理；
+                    // 只剩 Transform 时才删除空根。
+                    if (old.GetComponents<Component>().Length <= 1)
+                    {
+                        UnityEngine.Object.DestroyImmediate(old);
+                    }
+                }
+
                 EditorSceneManager.MarkSceneDirty(scene);
                 EditorSceneManager.SaveScene(scene);
                 AssetDatabase.SaveAssets();
-                W($"已删除 {NodeName}");
+                W($"已移除 {NodeName} 的水面数据（保留可能存在的 LakeCameraRig）");
                 W("==== 结论：PASS ====");
                 Flush(sb, 0);
                 return;
             }
 
             // ── apply ──
-            // 幂等：先删旧的
-            var stale = GameObject.Find(NodeName);
-            if (stale != null) UnityEngine.Object.DestroyImmediate(stale);
+            // 幂等：只清掉旧的水面数据，保留根节点。
+            // 不能 DestroyImmediate(root)：LakeCameraRig 挂在同一个根上，
+            // 整棵删掉会让 C/F 相机切换和轨道相机引用一起消失。
+            var root = GameObject.Find(NodeName);
+            if (root == null)
+            {
+                root = new GameObject(NodeName);
+            }
+            else
+            {
+                for (var i = root.transform.childCount - 1; i >= 0; i--)
+                {
+                    UnityEngine.Object.DestroyImmediate(root.transform.GetChild(i).gameObject);
+                }
+
+                var staleWater = root.GetComponent<WaterRenderer>();
+                if (staleWater != null) UnityEngine.Object.DestroyImmediate(staleWater);
+            }
 
             var waterMat = AssetDatabase.LoadAssetAtPath<Material>(WaterMatPath);
             var volumeMat = AssetDatabase.LoadAssetAtPath<Material>(VolumeMatPath);
             if (waterMat == null) { W($"FAIL：找不到水面材质 {WaterMatPath}"); Flush(sb, 2); return; }
             W($"水面材质 = {waterMat.name}（shader={waterMat.shader?.name}）");
 
-            var root = new GameObject(NodeName);
             root.transform.position = new Vector3(LakeCarve.Center.x, LakeCarve.WaterLevel, LakeCarve.Center.y);
             W($"水面节点位置 = {root.transform.position}");
+
+            // ── 固定 LOD 视点 ──
+            // Crest 默认用相机作为 clipmap 中心：相机一动，depth/foam/wave/clip 的采样
+            // 就跟着漂，表现为水面高度/岸线观感随相机变化。湖是固定的小水体，
+            // 把 Viewpoint 锚在湖心上方后，水面数据不再跟相机；
+            // Viewer 仍然是相机，水下检测/反射继续跟相机走。
+            var viewpointGo = new GameObject("Lake Viewpoint");
+            viewpointGo.transform.SetParent(root.transform, false);
+            viewpointGo.transform.localPosition = new Vector3(0f, ViewpointHeightAboveWater, 0f);
 
             var water = root.AddComponent<WaterRenderer>();
             // AddComponent 会调 Reset()，Reset 里已把 Water.mat / Chunk.prefab 填好。
             // 但 Reset 只在编辑器里、且通过 Inspector 添加时才走；这里显式兜底一次。
             water.Surface.Material = waterMat;
             water.Surface.VolumeMaterial = volumeMat;
+            water.Viewpoint = viewpointGo.transform;
+            W($"LOD 视点 = {viewpointGo.name} @ {viewpointGo.transform.position}（固定；Viewer 仍跟相机）");
+            // 当前性能模式是 Quad。Apply 会重建节点，必须在这里显式写回；
+            // 否则新节点会回到 SurfaceRenderer 的默认值 Chunks（49 个 chunk）。
+            CrestPerformanceMode.SetMeshType(water, 1, W);
 
             // ── 写入水的颜色参数（否则水面渲染成纯黑）──
             // 机制（代码事实）：Crest 的 Absorption/Scattering 仿真把
@@ -162,13 +245,32 @@ public static class LakeCrestSetup
 
             // ── LOD：湖很小，压到最低档 ──
             // 默认 9 级是给"无限海洋"的，每级翻倍覆盖范围，9 级能铺到几十公里。
-            // 湖盆半径 190m，4 级（覆盖约 8 倍视距）足够，且每级都有仿真开销。
+            // 湖盆半径 190m，3 级已覆盖 560m 湖面；每级都有仿真开销。
             water.LodLevels = 4;
-            // 默认 384 对 190m 的湖太浪费；160 在湖边看水面起伏已足够。
-            water.LodResolution = 160;
+            // 默认 384 对 190m 的湖太浪费；128 在湖边看水面起伏已足够。
+            water.LodResolution = 128;
             // ScaleRange 下限压到 1：水面网格跟着相机高度缩放，湖面不需要放大。
             water.ScaleRange = new Vector2(1f, 16f);
-            W($"LodLevels={water.LodLevels}, LodResolution={water.LodResolution}, ScaleRange={water.ScaleRange}");
+
+            // ── 各模块分辨率：默认 256 对 560m 的湖过大 ──
+            // AnimatedWaves/Level 跟随 WaterRenderer.LodResolution（128）；
+            // Depth/Foam/Clip 默认 OverrideResolution=true + 256，这里统一压到 128。
+            water.AnimatedWavesLod.OverrideResolution = false;
+            water.LevelLod.OverrideResolution = false;
+            water.DepthLod.OverrideResolution = true;
+            water.DepthLod.Resolution = 128;
+            water.FoamLod.OverrideResolution = true;
+            water.FoamLod.Resolution = 128;
+            water.ClipLod.OverrideResolution = true;
+            water.ClipLod.Resolution = 128;
+
+            // Depth 的 SDF 通道只有 DepthProbe 才会写入；本工程没有 DepthProbe，
+            // 开着它只会把深度纹理从 R16 变成 R16G16，白付一倍带宽（DepthLod.cs:21）。
+            water.DepthLod.EnableSignedDistanceFields = false;
+
+            W($"LodLevels={water.LodLevels}, LodResolution={water.LodResolution}, " +
+              $"Depth={water.DepthLod.Resolution}, Foam={water.FoamLod.Resolution}, " +
+              $"Clip={water.ClipLod.Resolution}, ScaleRange={water.ScaleRange}");
 
             // ── 模块裁剪（移动端 30fps）──
             // Clip 必须开：Crest 是海洋系统，水面是以视点为中心的 clipmap、铺到无限远。
@@ -195,6 +297,10 @@ public static class LakeCrestSetup
             water.ShadowLod.Enabled = false;
             water.ClipLod.Enabled = true;
             water.FoamLod.Enabled = true;
+            // 不通过降低 SimulationFrequency 来省 dispatch：PersistentLod 在
+            // substeps==0 时仍会做一次 delta=0 的 dispatch（PersistentLod.cs:105-116），
+            // 降频只减少完整仿真步，dispatch 次数不变。
+            water.FoamLod.SimulationFrequency = 30;
             water.DepthLod.Enabled = true;
             water.AnimatedWavesLod.Enabled = true;
             water.LevelLod.Enabled = true;
@@ -266,19 +372,41 @@ public static class LakeCrestSetup
             var shapeGo = new GameObject("Lake Waves");
             shapeGo.transform.SetParent(root.transform, false);
             var shape = shapeGo.AddComponent<ShapeGerstner>();
+            // 128 对 20km/h 的小湖波浪过大；96 仍能被 8 整除（线程组要求）。
+            shape.Resolution = 96;
             var spectrum = AssetDatabase.LoadAssetAtPath<WaveSpectrum>(
                 "Packages/com.waveharmonic.crest/Runtime/Data/WaveSpectra/WavesModerate.asset");
             if (spectrum != null)
             {
                 shape.Spectrum = spectrum;
-                W($"波浪频谱 = {spectrum.name}");
+                W($"波浪频谱 = {spectrum.name}, Resolution={shape.Resolution}");
             }
             // 湖面不需要大风浪：风程短，20 km/h 左右起小波（默认 10 太静）。
             water.WindSpeed = 20f;
             W($"风速 = {water.WindSpeed} km/h，ShapeGerstner 已挂");
 
-            // ── URP 前置：Crest 的深度/不透明图依赖 ──
-            EnableUrpDepthAndOpaque(W);
+            // ── URP 前置：按当前透明度模式决定 Depth/Opaque 开关 ──
+            // SimpleTransparency = 1 时水面不再请求 opaque/depth，URP 资产必须保持 0，
+            // 否则 URP 仍会为所有相机做 CopyColor/CopyDepth（water.md §14.3）。
+            // 非 SimpleTransparency 才需要 1（折射/深度交互）。
+            if (CrestPerformanceMode.IsSimpleTransparencyEnabled())
+            {
+                if (CrestPerformanceMode.HasOtherDepthOrOpaqueConsumers(W))
+                {
+                    W("⚠ 检测到除 Crest 外还有 shader 依赖 Depth/Opaque，保持 URP 资产不变");
+                }
+                else
+                {
+                    CrestPerformanceMode.SetUrpTextures(requireDepth: false, requireOpaque: false, W);
+                }
+                CrestPerformanceMode.SetTransparencyMinAlpha(
+                    CrestPerformanceMode.SimpleTransparencyMinAlpha, W);
+                W("SimpleTransparency=ON：URP Depth/Opaque=0，水面 MeshType=Quad");
+            }
+            else
+            {
+                EnableUrpDepthAndOpaque(W);
+            }
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene);
@@ -303,12 +431,12 @@ public static class LakeCrestSetup
     /// <summary>
     /// 打开 URP 资产上的 Depth Texture / Opaque Texture。
     ///
-    /// 为什么必须开：Crest 的
+    /// 只用于**非 SimpleTransparency** 模式。Crest 的
     ///   - 水下吸收/散射（UnderwaterRenderer 读 _CameraDepthTexture）
     ///   - 水面与地形的深度比较（判断哪部分在水下、岸边泡沫）
     ///   - 折射（需要 _CameraOpaqueTexture）
-    /// 都依赖这两张图。工程当前都是 0（`UniversalRP.asset:22-23`），
-    /// 不开会导致水下效果失效、岸边泡沫不出现，且**不报错**——静默不生效，最难排查。
+    /// 都依赖这两张图。当前 SimpleTransparency 模式下水面不请求它们，资产必须保持 0
+    /// （见 water.md §14.3）；切回折射路径时才走这里。
     /// </summary>
     private static void EnableUrpDepthAndOpaque(Action<string> W)
     {
@@ -338,19 +466,45 @@ public static class LakeCrestSetup
     }
 
     /// <summary>
-    /// 把 Crest 默认的 Absorption / Scattering 颜色写进材质，避免水面渲染成纯黑。
-    /// 默认值取自 AbsorptionLod.s_DefaultColor / ScatteringLod.s_DefaultColor（代码事实）。
+    /// 把 Crest 的 Absorption / Scattering 消光系数写进材质，决定水体的透明程度。
+    ///
+    /// ── 为什么"透明度"由这两个系数决定（代码事实）──
+    /// `Fragment.hlsl:625-670`：
+    ///     o_Emission *= 1 - volumeOpacity;          // 场景色（折射采样）被衰减
+    ///     o_Emission += volumeLight * volumeOpacity; // 补上水体自身的散射光
+    /// 其中 `VolumeLighting.hlsl:22-25`：
+    ///     volumeOpacity = 1 - exp(-extinction * 视线在水中的长度)
+    ///     extinction    = absorption + scattering
+    /// 所以 **extinction 越大越不透明**，与材质的 alpha 通道无关
+    /// （`CREST_SIMPLE_TRANSPARENCY (0)`，见 `Settings.Crest.Default.hlsl:23`，
+    ///  非 SimpleTransparency 路径下 `o_Alpha` 恒为 1，走的是折射合成而非 alpha 混合）。
+    ///
+    /// ── 2026-11-13 的参数为什么必须改 ──
+    /// 上一版 absorption=(0.194,0.064,0.029) + scattering=(0.10,0.42,0.50)
+    /// → extinction≈(0.29,0.48,0.53)/m → 5m 处只剩 exp(-2.4)≈9%，
+    /// 等于下水就看不见底，观感就是"一块不透明的蓝板"。
+    /// 现按"岸边看得见水底、湖心 30m 渐变成深青"反推：
+    ///   目标 extinction ≈(0.061,0.041,0.045)/m → 1/e 深度 16/24/22m
+    ///   → 3m 处保留 83% 场景色（能看见底），30m 处 16%（深水区自然是深色）。
+    ///
+    /// ── 颜色怎么反推成系数 ──
+    /// `WaterRenderer.UpdateAbsorptionFromColor`（WaterRenderer.cs:519-527）：
+    ///     absorption = -color.a * 32/5 * ln(color.rgb)
+    /// 即 color.a 是"密度"，color.rgb 是"透过水看到的颜色"。
+    /// 所以 alpha 越小越清澈；rgb 越接近白，各通道衰减越均衡（越不偏色）。
+    ///
+    /// ── scattering 为什么 R 要压得很低 ──
+    /// 体积光的颜色 = `scatteringAmount * 入射光`，而
+    /// `scatteringAmount = scattering / extinction`（VolumeLighting.hlsl:78）。
+    /// 上一版 scattering=(0.034,0.046,0.050) 让三通道比值接近 1，
+    /// 入射光一乘就趋近白 —— 实测水下画面均值 (118,131,139)，雾是白的。
+    /// 现取 (0.012,0.026,0.036) → scatteringAmount≈(0.20,0.63,0.80)，
+    /// 雾色明显偏青蓝，这才是湖水该有的水下观感。
     /// </summary>
     private static void ApplyWaterColor(Material waterMat, Material volumeMat, Action<string> W)
     {
-        // ── 湖泊调色（实测截图 2026-11-13）──
-        // Crest 默认的深海色（absorption 密度 0.102）配 30m 深的湖盆，
-        // 渲染出来是近黑的深蓝（实测像素 (0,3,17)），看不见水。
-        // 湖要明亮得多：把吸收密度降到 ~1/3（alpha 0.035 → 每米吸收弱），
-        // 散射色提到明亮的青绿（浅水湖的视觉主色）。
-        // 深浅梯度仍由 Depth 仿真保留：岸边浅亮、湖心略深。
-        var absorptionColor = new Color(0.42f, 0.75f, 0.88f, 0.035f);
-        var scatteringColor = new Color(0.10f, 0.42f, 0.50f, 1f);
+        var absorptionColor = new Color(0.62f, 0.86f, 0.92f, 0.016f);
+        var scatteringColor = new Color(0.012f, 0.026f, 0.036f, 1f);
 
         var absorption = WaterRenderer.CalculateAbsorptionValueFromColor(absorptionColor);
         var scattering = new Vector4(scatteringColor.r, scatteringColor.g, scatteringColor.b, scatteringColor.a);
@@ -362,12 +516,71 @@ public static class LakeCrestSetup
             m.SetVector("_Crest_Absorption", absorption);
             m.SetVector("_Crest_Scattering", scattering);
             EditorUtility.SetDirty(m);
-            W($"  {label}: _Crest_Absorption=({absorption.x:F3},{absorption.y:F3},{absorption.z:F3},{absorption.w:F3})");
         }
 
         Set(waterMat, "Water.mat");
         Set(volumeMat, "Water Volume.mat");
+
+        // 水下雾的密度倍率。`Underwater.hlsl:244-245` 把 absorption/scattering 乘上它，
+        // 所以它只影响**水下**观感，不改水面透明度。
+        // shader 里声明为 Range(0,1)（Underwater.shader:8），**只能调淡不能调浓**，
+        // 故取 1（沿用材质原值），靠 absorption 本身的青蓝偏色形成水下色偏。
+        if (volumeMat != null && !Mathf.Approximately(volumeMat.GetFloat("_Crest_ExtinctionMultiplier"), 1f))
+        {
+            volumeMat.SetFloat("_Crest_ExtinctionMultiplier", 1f);
+            EditorUtility.SetDirty(volumeMat);
+        }
+
+        // ── 水下体积光的入射光权重 ──
+        // `UnderwaterShared.hlsl:288-303` 把这两个值传给 VolumeLighting 的
+        // ambientTerm / directTerm，缩放"环境光 / 阳光注入散射光"的量。
+        // 默认 1.0 → 水下雾亮度等于水面受光，观感是"白雾"（实测均值 R106 G126 B137）。
+        // 湖水只有上部透光，压到 0.35/0.4 才有"越深越暗"的观感。
+        //
+        // ⚠ **必须写在水面材质 Water.mat 上，不能写 Water Volume.mat**。
+        // `UnderwaterRenderer.Effect.cs:247` 每帧调
+        // `_VolumeMaterial.CopyMatchingPropertiesFromMaterial(_SurfaceMaterial)`，
+        // 把水面材质里的**同名属性**整体覆盖到水下材质上
+        // （由 `_CopyWaterMaterialParametersEachFrame: 1` 每帧执行，见场景 serialized 数据）。
+        // 所以只在 Volume 材质上设值会在下一帧被水面材质覆盖回 1.0，静默失效。
+        //
+        // 同时它不影响水面本身：水面走 `Fragment.hlsl` 自己的 VolumeLighting 调用，
+        // 那里的入射光项已被 `o_Emission *= 1-volumeOpacity` 主导，权重变化肉眼不可见。
+        void SetScatteringWeights(Material m)
+        {
+            if (m == null) return;
+            m.SetFloat("_Crest_AmbientTerm", 0.35f);
+            m.SetFloat("_Crest_DirectTerm", 0.40f);
+            EditorUtility.SetDirty(m);
+        }
+
+        SetScatteringWeights(waterMat);
+        SetScatteringWeights(volumeMat);
+        W("  体积光入射权重：_Crest_AmbientTerm=0.35, _Crest_DirectTerm=0.40（写在两个材质上，Volume 会被水面覆盖）");
+
         AssetDatabase.SaveAssets();
+        W($"  写水色：_Crest_AbsorptionColor={absorptionColor}, density(a)={absorptionColor.a}");
+    }
+
+    /// <summary>
+    /// 打印由当前材质参数推出的消光系数与 1/e 深度，作为"水有多透明"的可核查证据。
+    /// </summary>
+    private static string DescribeOptics(Material waterMat)
+    {
+        var a = waterMat.GetVector("_Crest_Absorption");
+        var s = waterMat.GetVector("_Crest_Scattering");
+        float ex = a.x + s.x, ey = a.y + s.y, ez = a.z + s.z;
+        float d(double e) => e > 1e-5 ? (float)(1.0 / e) : 9999f;
+
+        var lines = new StringBuilder();
+        lines.AppendLine("  === 水面光学参数 ===");
+        lines.AppendLine($"  _Crest_Absorption   = ({a.x:F4},{a.y:F4},{a.z:F4})  /m");
+        lines.AppendLine($"  _Crest_Scattering   = ({s.x:F4},{s.y:F4},{s.z:F4})  /m");
+        lines.AppendLine($"  extinction(=A+S)    = ({ex:F4},{ey:F4},{ez:F4})  /m");
+        lines.AppendLine($"  1/e 深度            = R {d(ex):F1}m / G {d(ey):F1}m / B {d(ez):F1}m");
+        lines.AppendLine($"  3m 处保留场景色     = {100f * Mathf.Exp(-ex * 3f):F0}% (R 通道，最差)");
+        lines.AppendLine($"  30m 处保留场景色    = {100f * Mathf.Exp(-ex * 30f):F1}%");
+        return lines.ToString().TrimEnd();
     }
 
     /// <summary>Clip 盒体的 Y 尺寸：只要覆盖水面上下即可（SDF 只判 XZ 有效范围由 transform 决定）。</summary>
@@ -391,6 +604,25 @@ public static class LakeCrestSetup
 
         if (water.Surface.Material == null) { W("  FAIL：Surface.Material 为空"); ok = false; }
         else W($"  Surface.Material = {water.Surface.Material.name}");
+
+        var viewpoint = water.Viewpoint;
+        W($"  Viewpoint = {(viewpoint != null ? viewpoint.name : "null")}（期望 Lake Viewpoint；Viewer 仍跟相机）");
+        if (viewpoint == null) ok = false;
+
+        // Surface.MeshType 是 [SerializeReference] 内部字段，没有公开 API，走序列化读取。
+        int meshType = CrestPerformanceMode.GetMeshType(water);
+        W($"  Surface.MeshType = {meshType}（期望 1=Quad）");
+        if (meshType != 1) ok = false;
+
+        W($"  LodLevels={water.LodLevels}（期望 4）, LodResolution={water.LodResolution}（期望 128）, " +
+          $"Depth={water.DepthLod.Resolution}, Foam={water.FoamLod.Resolution}, Clip={water.ClipLod.Resolution}（期望 128）");
+        if (water.LodLevels != 4 || water.LodResolution != 128) ok = false;
+        if (water.DepthLod.Resolution != 128 ||
+            water.FoamLod.Resolution != 128 ||
+            water.ClipLod.Resolution != 128) ok = false;
+
+        W($"  DepthLod.EnableSignedDistanceFields = {water.DepthLod.EnableSignedDistanceFields}（期望 false）");
+        if (water.DepthLod.EnableSignedDistanceFields) ok = false;
 
         var body = root.GetComponentInChildren<WaterBody>();
         if (body == null) { W("  FAIL：没有 WaterBody"); ok = false; }
@@ -425,12 +657,23 @@ public static class LakeCrestSetup
         W($"  旧 Gaia Water 激活状态 = {(gaia != null ? gaia.activeSelf : false)}（期望 false）");
         if (gaia != null && gaia.activeSelf) ok = false;
 
-        // URP 深度/不透明图
+        // URP 深度/不透明图：期望值随透明度模式变化。
         var urp = File.ReadAllText("Assets/Settings/UniversalRP.asset");
         bool depth = System.Text.RegularExpressions.Regex.IsMatch(urp, @"m_RequireDepthTexture:\s*1");
         bool opaque = System.Text.RegularExpressions.Regex.IsMatch(urp, @"m_RequireOpaqueTexture:\s*1");
-        W($"  URP DepthTexture={depth}, OpaqueTexture={opaque}");
-        if (!depth || !opaque) ok = false;
+        bool simpleTransparency = CrestPerformanceMode.IsSimpleTransparencyEnabled();
+        W($"  URP DepthTexture={depth}, OpaqueTexture={opaque}（SimpleTransparency={simpleTransparency}，" +
+          $"期望 {(simpleTransparency ? "0/0" : "1/1")}）");
+        if (simpleTransparency)
+        {
+            // 例外：若工程里已有其他 Depth/Opaque 消费者，Apply 会保持 1，此时不应判 FAIL。
+            if ((depth || opaque) && !CrestPerformanceMode.HasOtherDepthOrOpaqueConsumers(W))
+                ok = false;
+        }
+        else if (!depth || !opaque)
+        {
+            ok = false;
+        }
 
         return ok;
     }

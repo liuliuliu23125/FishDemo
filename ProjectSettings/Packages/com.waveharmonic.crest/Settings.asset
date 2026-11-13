@@ -45,8 +45,8 @@ MonoBehaviour:
     _CausticsForceDistortion: 1
     _OverrideAdditionalLights: 0
     _AdditionalLights: 1
-    _OverrideSimpleTransparency: 0
-    _SimpleTransparency: 0
+    _OverrideSimpleTransparency: 1
+    _SimpleTransparency: 1
   _PlatformSettingsServer:
     _Default: 0
     _OverrideAlbedoSimulation: 0
@@ -73,8 +73,8 @@ MonoBehaviour:
     _CausticsForceDistortion: 1
     _OverrideAdditionalLights: 0
     _AdditionalLights: 1
-    _OverrideSimpleTransparency: 0
-    _SimpleTransparency: 0
+    _OverrideSimpleTransparency: 1
+    _SimpleTransparency: 1
   _PlatformSettingsAndroid:
     _Default: 0
     _OverrideAlbedoSimulation: 0
@@ -101,8 +101,8 @@ MonoBehaviour:
     _CausticsForceDistortion: 1
     _OverrideAdditionalLights: 0
     _AdditionalLights: 1
-    _OverrideSimpleTransparency: 0
-    _SimpleTransparency: 0
+    _OverrideSimpleTransparency: 1
+    _SimpleTransparency: 1
   _PlatformSettingsIOS:
     _Default: 0
     _OverrideAlbedoSimulation: 0
@@ -129,8 +129,8 @@ MonoBehaviour:
     _CausticsForceDistortion: 1
     _OverrideAdditionalLights: 0
     _AdditionalLights: 1
-    _OverrideSimpleTransparency: 0
-    _SimpleTransparency: 0
+    _OverrideSimpleTransparency: 1
+    _SimpleTransparency: 1
   _PlatformSettingsTVOS:
     _Default: 0
     _OverrideAlbedoSimulation: 0
@@ -157,8 +157,8 @@ MonoBehaviour:
     _CausticsForceDistortion: 1
     _OverrideAdditionalLights: 0
     _AdditionalLights: 1
-    _OverrideSimpleTransparency: 0
-    _SimpleTransparency: 0
+    _OverrideSimpleTransparency: 1
+    _SimpleTransparency: 1
   _PlatformSettingsVisionOS:
     _Default: 0
     _OverrideAlbedoSimulation: 0
@@ -185,8 +185,8 @@ MonoBehaviour:
     _CausticsForceDistortion: 1
     _OverrideAdditionalLights: 0
     _AdditionalLights: 1
-    _OverrideSimpleTransparency: 0
-    _SimpleTransparency: 0
+    _OverrideSimpleTransparency: 1
+    _SimpleTransparency: 1
   _PlatformSettingsWeb:
     _Default: 0
     _OverrideAlbedoSimulation: 1
@@ -213,8 +213,8 @@ MonoBehaviour:
     _CausticsForceDistortion: 0
     _OverrideAdditionalLights: 0
     _AdditionalLights: 1
-    _OverrideSimpleTransparency: 0
-    _SimpleTransparency: 0
+    _OverrideSimpleTransparency: 1
+    _SimpleTransparency: 1
   _PlatformSettings:
     _Default: 1
     _OverrideAlbedoSimulation: 0
@@ -241,7 +241,7 @@ MonoBehaviour:
     _CausticsForceDistortion: 1
     _OverrideAdditionalLights: 0
     _AdditionalLights: 1
-    _OverrideSimpleTransparency: 0
-    _SimpleTransparency: 0
+    _OverrideSimpleTransparency: 1
+    _SimpleTransparency: 1
   _Version: 1
   _MaterialVersion: 1

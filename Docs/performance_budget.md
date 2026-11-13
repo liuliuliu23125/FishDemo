@@ -16,6 +16,9 @@
 | 水下后处理 | ≤ 1.5ms |
 | UI + 余量 | ≤ 4ms |
 
+> 水面当前配置：SimpleTransparency + Quad，平面反射关闭、CopyColor/CopyDepth=0；
+> Crest 的 compute 清单见 [water](water.md) §14.5。5ms 预算包含反射，当前反射关闭后余量更大。
+
 ## 2. 规模上限
 
 - Draw Call：< 300（SRP Batcher 阶段）/ < 100（BRG 阶段）

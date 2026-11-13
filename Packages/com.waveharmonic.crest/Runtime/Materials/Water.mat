@@ -46,6 +46,7 @@ Material:
   - _BUILTIN_AlphaClip
   - _BUILTIN_SURFACE_TYPE_TRANSPARENT
   - _BUILTIN_TRANSPARENT_RECEIVES_SHADOWS
+  - _CREST_CUSTOM_MESH
   - _SURFACE_TYPE_TRANSPARENT
   m_InvalidKeywords:
   - _DOUBLESIDED_ON
@@ -75,6 +76,9 @@ Material:
     - _BUILTIN_QueueControl: 0
     - _BUILTIN_SrcBlend: 5
     - _BUILTIN_ZWrite: 1
+    - _Crest_AmbientTerm: 0.35
+    - _Crest_DirectTerm: 0.4
+    - _Crest_TransparencyMinimumAlpha: 0.12
     - _CullMode: 0
     - _CullModeForward: 0
     - _DstBlend: 10
@@ -84,9 +88,9 @@ Material:
     - _ZTestGBuffer: 3
     - _ZWrite: 1
     m_Colors:
-    - _Crest_Absorption: {r: 0.19432013, g: 0.06444079, b: 0.028634677, a: 1}
-    - _Crest_AbsorptionColor: {r: 0.42, g: 0.75, b: 0.88, a: 0.035}
-    - _Crest_Scattering: {r: 0.1, g: 0.42, b: 0.5, a: 1}
+    - _Crest_Absorption: {r: 0.04895087, g: 0.015444264, b: 0.008538275, a: 1}
+    - _Crest_AbsorptionColor: {r: 0.62, g: 0.86, b: 0.92, a: 0.016}
+    - _Crest_Scattering: {r: 0.012, g: 0.026, b: 0.036, a: 1}
     - _DoubleSidedConstants: {r: 1, g: 1, b: 1, a: 0}
   m_BuildTextureStacks: []
 --- !u!114 &4748330692745026848

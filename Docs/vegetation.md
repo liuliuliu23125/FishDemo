@@ -170,7 +170,7 @@ depth and keep early-z.
 |---|---|---|
 | 目录里 prefab 总数 | 45 个 | `Assets/…/Prefabs/Trees/*.prefab` |
 | **地形实际在用原型** | **7 个** | `Logs/tree-material-audit.txt`（运行时读 `terrainData.treePrototypes`） |
-| 实例总数 | **464,843**（36 chunk 累加） | 同上 |
+| 实例总数 | **464,843**（1/10 前；当前 46,472） | 同上 |
 | 占 99.99% 的原型 | `PW_Tree_Spruce_02/06/04/07_Hero`，共 464,810 | 同上 |
 | shader | **只有 1 个**：`Shader Graphs/PW_General_ShaderGraph_URP` | 同上 |
 | 材质 keyword | 6 种，见下表（**不是「全部为空」**） | `m_ValidKeywords` |

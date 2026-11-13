@@ -552,7 +552,7 @@ LOD 收益：近 44.9% / 中 61.7% / 远 83.3% 三角形节省。
 - ~~关掉 Terrain detail~~ ✅ 已完成（用 `detailObjectDistance = 0`，保留树）
 - 真机验证 ⬜
 
-> **范围限定**：本方案**只做草**。树（46.5 万实例）仍走 Terrain，后续单独处理。
+> **范围限定**：本方案**只做草**。树（4.65 万实例）仍走 Terrain，后续单独处理。
 > 因此 M3 关草时必须用 `detailObjectDistance = 0` 而不是 `drawTreesAndFoliage = false`
 > （后者会把树一起关掉）。
 

@@ -15582,60 +15582,6 @@ MonoBehaviour:
   ExportForReuse: 0
   ProxyMesh: {fileID: 0}
   ProxyMaterials: []
---- !u!1 &650830971
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 650830972}
-  - component: {fileID: 650830973}
-  m_Layer: 0
-  m_Name: Lake Body
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &650830972
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 650830971}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 560, y: 1, z: 560}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 1199125459}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &650830973
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 650830971}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 12fa5fcd0e5ac436b8581c4441a2683e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _Version: 0
-  _Affects: 12
-  _Vertical: 0
-  _Precise: 1
-  _Exclusion: 1
-  _Conservative: 0
-  _OverrideMaterials: 0
-  _AboveSurfaceMaterial: {fileID: 0}
-  _BelowSurfaceMaterial: {fileID: 0}
-  _VolumeMaterial: {fileID: 0}
 --- !u!114 &667520074
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -16281,6 +16227,138 @@ MonoBehaviour:
   ExportForReuse: 0
   ProxyMesh: {fileID: 0}
   ProxyMaterials: []
+--- !u!1 &700223423
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 700223424}
+  - component: {fileID: 700223425}
+  m_Layer: 0
+  m_Name: Lake Body
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &700223424
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 700223423}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 560, y: 1, z: 560}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1199125459}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &700223425
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 700223423}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 12fa5fcd0e5ac436b8581c4441a2683e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _Version: 0
+  _Affects: 12
+  _Vertical: 0
+  _Precise: 1
+  _Exclusion: 1
+  _Conservative: 0
+  _OverrideMaterials: 0
+  _AboveSurfaceMaterial: {fileID: 0}
+  _BelowSurfaceMaterial: {fileID: 0}
+  _VolumeMaterial: {fileID: 0}
+--- !u!1 &720205557
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 720205558}
+  - component: {fileID: 720205559}
+  m_Layer: 0
+  m_Name: Lake Waves
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &720205558
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 720205557}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1199125459}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &720205559
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 720205557}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 002f2642204d348f3a2fab18595c44cd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _Version: 3
+  _Mode: 5
+  _Weight: 1
+  _Queue: 0
+  _Blend: 1
+  _FeatherWidth: 0.1
+  _FollowHorizontalWaveMotion: 1
+  _Data:
+    rid: -2
+  _DrawBounds: 0
+  _BicubicSampling: 0
+  _Spectrum: {fileID: 11400000, guid: ce5a3f1aff978418c90b45d58f574528, type: 2}
+  _EvaluateSpectrumAtRunTimeEveryFrame: 0
+  _RespectShallowWaterAttenuation: 1
+  _SeaLevelOnly: 1
+  _OverrideGlobalWindDirection: 0
+  _WaveDirectionHeadingAngle: 0
+  _OverrideGlobalWindSpeed: 0
+  _WindSpeed: 20
+  _Resolution: 96
+  _IncludeInDropDetailHeightBasedOnWaves: 0
+  _DrawSlicesInEditor: 0
+  _AlphaSource: 0
+  _Swell: 1
+  _ReverseWaveWeight: 0.5
+  _ComponentsPerOctave: 8
+  _Randomize: 1
+  _RandomSeed: 0
+  _ManualGeneration: 0
+  references:
+    version: 2
+    RefIds:
+    - rid: -2
+      type: {class: , ns: , asm: }
 --- !u!1 &743276447
 GameObject:
   m_ObjectHideFlags: 0
@@ -40495,84 +40573,6 @@ MonoBehaviour:
     fractalTypeName: Fbm
     noiseTypeParams: 
     fractalTypeParams: '{"warpOffsets":{"x":2.5,"y":1.399999976158142,"z":3.200000047683716,"w":2.700000047683716},"octavesMinMax":{"x":0.0,"y":16.0},"amplitudeMinMax":{"x":0.0,"y":1.0},"frequencyMinMax":{"x":0.0,"y":2.0},"lacunarityMinMax":{"x":0.0,"y":4.0},"persistenceMinMax":{"x":0.0,"y":1.0},"warpIterationsMinMax":{"x":0.0,"y":8.0},"warpStrengthMinMax":{"x":-2.0,"y":2.0},"octaves":6.960000038146973,"amplitude":0.3709999918937683,"frequency":0.9049999713897705,"persistence":0.503000020980835,"lacunarity":1.8799999952316285,"warpIterations":1.0,"warpStrength":0.5,"warpEnabled":false,"warpExpanded":true}'
---- !u!1 &1055327461
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1055327462}
-  - component: {fileID: 1055327463}
-  m_Layer: 0
-  m_Name: Lake Waves
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1055327462
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1055327461}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 1199125459}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1055327463
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1055327461}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 002f2642204d348f3a2fab18595c44cd, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _Version: 3
-  _Mode: 5
-  _Weight: 1
-  _Queue: 0
-  _Blend: 1
-  _FeatherWidth: 0.1
-  _FollowHorizontalWaveMotion: 1
-  _Data:
-    rid: -2
-  _DrawBounds: 0
-  _BicubicSampling: 0
-  _Spectrum: {fileID: 11400000, guid: ce5a3f1aff978418c90b45d58f574528, type: 2}
-  _EvaluateSpectrumAtRunTimeEveryFrame: 0
-  _RespectShallowWaterAttenuation: 1
-  _SeaLevelOnly: 1
-  _OverrideGlobalWindDirection: 0
-  _WaveDirectionHeadingAngle: 0
-  _OverrideGlobalWindSpeed: 0
-  _WindSpeed: 20
-  _Resolution: 128
-  _IncludeInDropDetailHeightBasedOnWaves: 0
-  _DrawSlicesInEditor: 0
-  _AlphaSource: 0
-  _Swell: 1
-  _ReverseWaveWeight: 0.5
-  _ComponentsPerOctave: 8
-  _Randomize: 1
-  _RandomSeed: 0
-  _ManualGeneration: 0
-  references:
-    version: 2
-    RefIds:
-    - rid: -2
-      type: {class: , ns: , asm: }
 --- !u!114 &1074553166
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -47840,7 +47840,8 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1199125459}
-  - component: {fileID: 1199125458}
+  - component: {fileID: 1199125460}
+  - component: {fileID: 1199125461}
   m_Layer: 0
   m_Name: Crest Lake
   m_TagString: Untagged
@@ -47848,7 +47849,47 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &1199125458
+--- !u!4 &1199125459
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1199125457}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 192, y: 264, z: 96}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 1851974949}
+  - {fileID: 1893939540}
+  - {fileID: 700223424}
+  - {fileID: 720205558}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1199125460
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1199125457}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 74f40c2fe9e96634f915737bd20e696b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _tourCamera: {fileID: 1899673376}
+  _orbitCamera: {fileID: 1738924074}
+  _toggleKey: 99
+  _flyToggleKey: 102
+  _flyMoveSpeed: 30
+  _flyMaxMoveSpeed: 120
+  _flyRangeRadius: 600
+  _flyScrollSpeedStep: 0.5
+  _startOnOrbit: 1
+--- !u!114 &1199125461
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -47890,16 +47931,16 @@ MonoBehaviour:
   _OverrideRenderHDR: 0
   _RenderHDR: 1
   _Surface:
-    rid: 4672384848296935424
+    rid: 4672384863656214528
   _ScaleRange: {x: 1, y: 16}
   _DropDetailHeightBasedOnWaves: 0.2
   _Slices: 4
   _RenderMaximumLOD: 1
-  _Resolution: 160
+  _Resolution: 128
   _GeometryDownSampleFactor: 2
   _ExtentsSizeMultiplier: 100
   _MultipleViewpoints: 0
-  _Viewpoint: {fileID: 0}
+  _Viewpoint: {fileID: 1851974949}
   _ViewpointDataOverride: {fileID: 0}
   _CameraExclusions: -1
   _DataBackgroundMode: 3
@@ -47909,35 +47950,35 @@ MonoBehaviour:
   _TeleportThreshold: 100
   _DisableInputDispatchOptimization: 0
   _AnimatedWavesLod:
-    rid: 4672384848296935425
+    rid: 4672384863656214529
   _DepthLod:
-    rid: 4672384848296935426
+    rid: 4672384863656214530
   _LevelLod:
-    rid: 4672384848296935427
+    rid: 4672384863656214531
   _FoamLod:
-    rid: 4672384848296935428
+    rid: 4672384863656214532
   _DynamicWavesLod:
-    rid: 4672384848296935429
+    rid: 4672384863656214533
   _FlowLod:
-    rid: 4672384848296935430
+    rid: 4672384863656214534
   _ShadowLod:
-    rid: 4672384848296935431
+    rid: 4672384863656214535
   _AbsorptionLod:
-    rid: 4672384848296935432
+    rid: 4672384863656214536
   _ScatteringLod:
-    rid: 4672384848296935433
+    rid: 4672384863656214537
   _ClipLod:
-    rid: 4672384848296935434
+    rid: 4672384863656214538
   _AlbedoLod:
-    rid: 4672384848296935435
+    rid: 4672384863656214539
   _Reflections:
-    rid: 4672384848296935436
+    rid: 4672384863656214540
   _Underwater:
-    rid: 4672384848296935437
+    rid: 4672384863656214541
   _Meniscus:
-    rid: 4672384848296935438
+    rid: 4672384863656214542
   _Portals:
-    rid: 4672384848296935439
+    rid: 4672384863656214543
   _DefaultExcludes: 0
   _ShowWaterProxyPlane: 0
   _FollowSceneCamera: 1
@@ -47964,13 +48005,13 @@ MonoBehaviour:
   references:
     version: 2
     RefIds:
-    - rid: 4672384848296935424
+    - rid: 4672384863656214528
       type: {class: SurfaceRenderer, ns: WaveHarmonic.Crest, asm: WaveHarmonic.Crest}
       data:
         _Version: 0
         _Enabled: 1
         _Layer: 4
-        _MeshType: 0
+        _MeshType: 1
         _ChunkTemplate: {fileID: 1516456258233481520, guid: 17840562212c147d6bdb5144d35bc442, type: 3}
         _SupportCustomRenderers: 1
         _Material: {fileID: 2100000, guid: 8ab064b6606504a55b489af2787350c2, type: 2}
@@ -47986,7 +48027,7 @@ MonoBehaviour:
           _DisableSkirt: 0
           _DrawRendererBounds: 0
         _WaterBodyCulling: 1
-    - rid: 4672384848296935425
+    - rid: 4672384863656214529
       type: {class: AnimatedWavesLod, ns: WaveHarmonic.Crest, asm: WaveHarmonic.Crest}
       data:
         _Version: 0
@@ -48006,13 +48047,13 @@ MonoBehaviour:
         _AttenuationInShallows: 0.95
         _ShallowsMaximumDepth: 1000
         _CollisionSource: 2
-    - rid: 4672384848296935426
+    - rid: 4672384863656214530
       type: {class: DepthLod, ns: WaveHarmonic.Crest, asm: WaveHarmonic.Crest}
       data:
         _Version: 0
         _Enabled: 1
         _OverrideResolution: 1
-        _Resolution: 256
+        _Resolution: 128
         _TextureFormatMode: 100
         _TextureFormat: 46
         _Blur: 0
@@ -48020,8 +48061,8 @@ MonoBehaviour:
         _QuerySource: 1
         _MaximumQueryCount: 512
         _IncludeTerrainHeight: 1
-        _EnableSignedDistanceFields: 1
-    - rid: 4672384848296935427
+        _EnableSignedDistanceFields: 0
+    - rid: 4672384863656214531
       type: {class: LevelLod, ns: WaveHarmonic.Crest, asm: WaveHarmonic.Crest}
       data:
         _Version: 0
@@ -48032,13 +48073,13 @@ MonoBehaviour:
         _TextureFormat: 45
         _Blur: 0
         _BlurIterations: 4
-    - rid: 4672384848296935428
+    - rid: 4672384863656214532
       type: {class: FoamLod, ns: WaveHarmonic.Crest, asm: WaveHarmonic.Crest}
       data:
         _Version: 0
         _Enabled: 1
         _OverrideResolution: 1
-        _Resolution: 256
+        _Resolution: 128
         _TextureFormatMode: 100
         _TextureFormat: 45
         _Blur: 0
@@ -48046,7 +48087,7 @@ MonoBehaviour:
         _SimulationFrequency: 30
         _Prewarm: 1
         _Settings: {fileID: 0}
-    - rid: 4672384848296935429
+    - rid: 4672384863656214533
       type: {class: DynamicWavesLod, ns: WaveHarmonic.Crest, asm: WaveHarmonic.Crest}
       data:
         _Version: 0
@@ -48060,7 +48101,7 @@ MonoBehaviour:
         _SimulationFrequency: 60
         _AttenuationInShallows: 1
         _Settings: {fileID: 0}
-    - rid: 4672384848296935430
+    - rid: 4672384863656214534
       type: {class: FlowLod, ns: WaveHarmonic.Crest, asm: WaveHarmonic.Crest}
       data:
         _Version: 0
@@ -48073,7 +48114,7 @@ MonoBehaviour:
         _BlurIterations: 1
         _QuerySource: 1
         _MaximumQueryCount: 1024
-    - rid: 4672384848296935431
+    - rid: 4672384863656214535
       type: {class: ShadowLod, ns: WaveHarmonic.Crest, asm: WaveHarmonic.Crest}
       data:
         _Version: 0
@@ -48093,7 +48134,7 @@ MonoBehaviour:
         _CurrentFrameWeightHard: 0.15
         _AllowNullLight: 0
         _AllowNoShadows: 0
-    - rid: 4672384848296935432
+    - rid: 4672384863656214536
       type: {class: AbsorptionLod, ns: WaveHarmonic.Crest, asm: WaveHarmonic.Crest}
       data:
         _Version: 0
@@ -48108,7 +48149,7 @@ MonoBehaviour:
         _ShorelineColor: {r: 0.513, g: 1, b: 1, a: 0.153}
         _ShorelineColorMaximumDistance: 10
         _ShorelineColorFalloff: 2
-    - rid: 4672384848296935433
+    - rid: 4672384863656214537
       type: {class: ScatteringLod, ns: WaveHarmonic.Crest, asm: WaveHarmonic.Crest}
       data:
         _Version: 0
@@ -48123,20 +48164,20 @@ MonoBehaviour:
         _ShorelineColor: {r: 0, g: 0.588, b: 1, a: 1}
         _ShorelineColorMaximumDistance: 10
         _ShorelineColorFalloff: 2
-    - rid: 4672384848296935434
+    - rid: 4672384863656214538
       type: {class: ClipLod, ns: WaveHarmonic.Crest, asm: WaveHarmonic.Crest}
       data:
         _Version: 0
         _Enabled: 1
         _OverrideResolution: 1
-        _Resolution: 256
+        _Resolution: 128
         _TextureFormatMode: 100
         _TextureFormat: 5
         _Blur: 0
         _BlurIterations: 1
         _DefaultClippingState: 1
         _IncludeTerrainHoles: 0
-    - rid: 4672384848296935435
+    - rid: 4672384863656214539
       type: {class: AlbedoLod, ns: WaveHarmonic.Crest, asm: WaveHarmonic.Crest}
       data:
         _Version: 0
@@ -48147,7 +48188,7 @@ MonoBehaviour:
         _TextureFormat: 8
         _Blur: 0
         _BlurIterations: 1
-    - rid: 4672384848296935436
+    - rid: 4672384863656214540
       type: {class: WaterReflections, ns: WaveHarmonic.Crest, asm: WaveHarmonic.Crest}
       data:
         _Version: 0
@@ -48185,7 +48226,7 @@ MonoBehaviour:
           _DisableRecursiveRendering: 0
           _ForceCompatibility: 0
         _AllowMSAA: 0
-    - rid: 4672384848296935437
+    - rid: 4672384863656214541
       type: {class: UnderwaterRenderer, ns: WaveHarmonic.Crest, asm: WaveHarmonic.Crest}
       data:
         _Version: 0
@@ -48208,7 +48249,7 @@ MonoBehaviour:
           _DisableArtifactCorrection: 0
           _OnlyReflectionCameras: 0
         _AllCameras: 0
-    - rid: 4672384848296935438
+    - rid: 4672384863656214542
       type: {class: Meniscus, ns: WaveHarmonic.Crest, asm: WaveHarmonic.Crest}
       data:
         _Version: 0
@@ -48216,27 +48257,9 @@ MonoBehaviour:
         _Layer: 4
         _Material: {fileID: 2100000, guid: 238e45299a5ec46308e9bf99ddf67963, type: 2}
         _CameraExclusions: 6
-    - rid: 4672384848296935439
+    - rid: 4672384863656214543
       type: {class: PortalRenderer, ns: WaveHarmonic.Crest.Portals, asm: WaveHarmonic.Crest}
       data: 
---- !u!4 &1199125459
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1199125457}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 192, y: 264, z: 96}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 2056964120}
-  - {fileID: 650830972}
-  - {fileID: 1055327462}
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &1217184562
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -88684,6 +88707,137 @@ MonoBehaviour:
   m_LightCookieSize: {x: 1, y: 1}
   m_LightCookieOffset: {x: 0, y: 0}
   m_SoftShadowQuality: 0
+--- !u!1 &1738924070
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1738924075}
+  - component: {fileID: 1738924074}
+  - component: {fileID: 1738924073}
+  - component: {fileID: 1738924072}
+  - component: {fileID: 1738924071}
+  m_Layer: 0
+  m_Name: Lake Orbit Camera
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1738924071
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1738924070}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e91594bbfa20c6f4cb3fbe4a860ec35a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  LoadSize: {x: 768, y: 1000, z: 768}
+  UnloadBuffer: 0.25
+  LayersToLoad:
+    serializedVersion: 2
+    m_Bits: 4294967295
+--- !u!81 &1738924072
+AudioListener:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1738924070}
+  m_Enabled: 0
+--- !u!114 &1738924073
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1738924070}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 356008bd81cb8a847a6b3fcbcfe0c76a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _radius: 300
+  _heightAboveWater: 26
+  _secondsPerRevolution: 120
+  _startAngle: 0
+  _pitch: 12
+  _pitchSway: 3
+  _pitchSwayPeriod: 24
+  _lakeCenter: {x: 192, y: 264, z: 96}
+--- !u!20 &1738924074
+Camera:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1738924070}
+  m_Enabled: 0
+  serializedVersion: 2
+  m_ClearFlags: 1
+  m_BackGroundColor: {r: 0.19215687, g: 0.3019608, b: 0.4745098, a: 0}
+  m_projectionMatrixMode: 1
+  m_GateFitMode: 2
+  m_FOVAxisMode: 0
+  m_Iso: 200
+  m_ShutterSpeed: 0.005
+  m_Aperture: 16
+  m_FocusDistance: 10
+  m_FocalLength: 50
+  m_BladeCount: 5
+  m_Curvature: {x: 2, y: 11}
+  m_BarrelClipping: 0.25
+  m_Anamorphism: 0
+  m_SensorSize: {x: 36, y: 24}
+  m_LensShift: {x: 0, y: 0}
+  m_NormalizedViewPortRect:
+    serializedVersion: 2
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+  near clip plane: 0.3
+  far clip plane: 1000
+  field of view: 60
+  orthographic: 0
+  orthographic size: 5
+  m_Depth: 0
+  m_CullingMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_RenderingPath: -1
+  m_TargetTexture: {fileID: 0}
+  m_TargetDisplay: 0
+  m_TargetEye: 3
+  m_HDR: 1
+  m_AllowMSAA: 1
+  m_AllowDynamicResolution: 0
+  m_ForceIntoRT: 0
+  m_OcclusionCulling: 1
+  m_StereoConvergence: 10
+  m_StereoSeparation: 0.022
+--- !u!4 &1738924075
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1738924070}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0.9945219, z: -0.104528464, w: 0}
+  m_LocalPosition: {x: 192, y: 290, z: 396}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1784342956
 GameObject:
   m_ObjectHideFlags: 0
@@ -92275,6 +92429,37 @@ MonoBehaviour:
   ExportForReuse: 0
   ProxyMesh: {fileID: 0}
   ProxyMaterials: []
+--- !u!1 &1851974948
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1851974949}
+  m_Layer: 0
+  m_Name: Lake Viewpoint
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1851974949
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1851974948}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 26, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1199125459}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1872955124
 GameObject:
   m_ObjectHideFlags: 0
@@ -92672,6 +92857,68 @@ MonoBehaviour:
   ExportForReuse: 0
   ProxyMesh: {fileID: 0}
   ProxyMaterials: []
+--- !u!1 &1893939539
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1893939540}
+  - component: {fileID: 1893939541}
+  m_Layer: 0
+  m_Name: Lake Clip Area
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1893939540
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1893939539}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 560, y: 200, z: 560}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1199125459}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1893939541
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1893939539}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 26623fd0e291a478a9f8b68a3df7e8a6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _Version: 0
+  _Mode: 4
+  _Weight: 1
+  _Queue: 0
+  _Blend: 3
+  _FeatherWidth: 0.1
+  _FollowHorizontalWaveMotion: 0
+  _Data:
+    rid: -2
+  _DrawBounds: 0
+  _Primitive: 3
+  _Inverted: 1
+  _WaterHeightDistanceCulling: 0
+  references:
+    version: 2
+    RefIds:
+    - rid: -2
+      type: {class: , ns: , asm: }
 --- !u!1 &1899673374
 GameObject:
   m_ObjectHideFlags: 0
@@ -97996,68 +98243,6 @@ MonoBehaviour:
   ExportForReuse: 0
   ProxyMesh: {fileID: 0}
   ProxyMaterials: []
---- !u!1 &2056964119
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 2056964120}
-  - component: {fileID: 2056964121}
-  m_Layer: 0
-  m_Name: Lake Clip Area
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &2056964120
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2056964119}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 560, y: 200, z: 560}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 1199125459}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &2056964121
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2056964119}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 26623fd0e291a478a9f8b68a3df7e8a6, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _Version: 0
-  _Mode: 4
-  _Weight: 1
-  _Queue: 0
-  _Blend: 3
-  _FeatherWidth: 0.1
-  _FollowHorizontalWaveMotion: 0
-  _Data:
-    rid: -2
-  _DrawBounds: 0
-  _Primitive: 3
-  _Inverted: 1
-  _WaterHeightDistanceCulling: 0
-  references:
-    version: 2
-    RefIds:
-    - rid: -2
-      type: {class: , ns: , asm: }
 --- !u!1 &2071483368
 GameObject:
   m_ObjectHideFlags: 0
@@ -103469,3 +103654,4 @@ SceneRoots:
   - {fileID: 1173028441}
   - {fileID: 553378054}
   - {fileID: 1199125459}
+  - {fileID: 1738924075}

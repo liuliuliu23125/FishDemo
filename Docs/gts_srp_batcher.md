@@ -89,24 +89,23 @@ SRP Batcher 没有公开的运行时查询 API（`ShaderUtil.GetSRPBatcherCompat
 
 ## 6. 与静态合批的关系
 
-当前场景的 subTile 标了 `isStatic`，会触发**静态合批**（构建期把多个 mesh 合成大 VBO）。
+2026-11-09 时 subTile 标了 `isStatic`，会触发**静态合批**（构建期把多个 mesh 合成大 VBO）。
 这与 SRP Batcher 是两套机制，且会互相干扰：
 
 | 机制 | 合批依据 | 现状 |
 |---|---|---|
-| 静态合批 | 同材质 + 同 static 标记，构建期合并 | 已生效：4 subTile 因 16-bit index（65535 上限）装成 2 批 |
-| SRP Batcher | 同 shader variant + 同 CBUFFER 布局 | 本次改造目标 |
+| 静态合批 | 同材质 + 同 static 标记，构建期合并 | **已取消**：PlayerSettings Android/Standalone 0/0 + `go.isStatic=false` |
+| SRP Batcher | 同 shader variant + 同 CBUFFER 布局 | 已生效 |
 
-**两者不建议同时依赖。** 若确认 SRP Batcher 生效，应取消 subTile 的 static 标记，
+**两者不建议同时依赖。** 确认 SRP Batcher 生效后已取消 subTile 的 static 标记，
 避免静态合批把 mesh 合并后破坏 SRP Batcher 的按材质归并粒度。
-是否取消，待 Frame Debugger 验证后决定。
 
 ## 7. 待办
 
 - [x] Frame Debugger 确认 SRP Batch 分组出现（项目负责人已确认生效）
 - [x] 静态合批已关闭（见 §8.6）
 - [x] 纹理数组改 ASTC（见 §8.5）
-- [ ] 草（Terrain detail，136 万实例）改造——下一步
+- [x] 草改 BRG（435 万实例，Terrain detail 已关）
 
 ## 8. 视觉与 Terrain 不一致的修复（2026-11-09）
 
@@ -208,5 +207,17 @@ GTS_Functions.hlsl:592  float4 splatHeight = float4(masks[0..3]) * splatControl.
 地形 subTile 原先标了 `isStatic`，会触发构建期静态合批。
 它把多个 mesh 合并成大 VBO，**破坏 SRP Batcher 的按材质归并粒度**，二者互相干扰。
 
-已由项目负责人在 Player Settings 中关闭静态合批（`m_BuildTargetBatching`）。
+已由 `Assets/Editor/BatchingSetup.cs` 的 `FixAll` 通过 PlayerSettings 的 internal
+`SetBatchingForPlatform` 写入平台覆写：
+
+```
+m_BuildTargetBatching:
+  Android:           m_StaticBatching: 0, m_DynamicBatching: 0
+  Standalone:        m_StaticBatching: 0, m_DynamicBatching: 0
+```
+
+同时 `GtsApplyMeshToChunks.cs:138-141` 已改为 `go.isStatic = false`，重跑 GTS 流水线
+不会再把 subTile 标回 static。存量 chunk 里的 static 标记仍保留，但全局静态合批已关，
+不再参与合批。
+
 SRP Batcher 成为地形唯一的合批路径。
