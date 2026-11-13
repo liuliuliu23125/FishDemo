@@ -221,6 +221,12 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
   Unity 的 YAML 文本（`.unity/.mat/.prefab/.asset`）刻意不进 LFS，保留 diff 能力。
   当前走 LFS 的：`GrassData/**/*.bytes`、Pegasus 的 fbx/psd/bmp/png/tga、
   **`Assets/PW_Tree_*_Impostor_*.tga|exr`（2026-11-12 新增，114MB）**。
+  **2026-11-13 教训**：把 Unity YAML 移出 LFS 时，规则收窄漏掉了 1319 个仍被 LFS
+  跟踪的二进制文件（GTS mesh、GeNa DLL、贴图等）。它们在索引里还是 LFS 指针，
+  却不再匹配任何 LFS 规则 → Unity 把指针当资产读，GTS mesh 全部 corrupted，
+  GeNa DLL 无法加载，GaiaCore 编译失败。收窄规则后必须用
+  `git lfs ls-files -n` + `git check-attr --stdin filter` 核对，确认没有
+  `filter: unspecified` 的 LFS 指针。本次已按精确路径补回（`.gitattributes` 末尾）。
 - **目录**：`Assets/Scripts/Runtime/{Rendering,Streaming,Gameplay}`、`Assets/ThirdParty/`。
   `Rendering/`（草 BRG）与 `Gameplay/`（Pegasus 巡游控制器）已存在；`Streaming/` 尚未创建。
 - **默认程序集目录**：`Assets/Editor/`（Editor 专用）、`Assets/GTSRuntime/`（运行时）。
