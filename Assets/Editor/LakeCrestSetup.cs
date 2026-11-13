@@ -145,28 +145,58 @@ public static class LakeCrestSetup
             if (mode == "remove")
             {
                 var old = GameObject.Find(NodeName);
-                if (old != null) UnityEngine.Object.DestroyImmediate(old);
-                // 同时清掉 WaterBody 子节点（它是水面的子物体，随父一起删）
+                if (old != null)
+                {
+                    for (var i = old.transform.childCount - 1; i >= 0; i--)
+                    {
+                        UnityEngine.Object.DestroyImmediate(old.transform.GetChild(i).gameObject);
+                    }
+
+                    var oldWater = old.GetComponent<WaterRenderer>();
+                    if (oldWater != null) UnityEngine.Object.DestroyImmediate(oldWater);
+
+                    // 根上若还挂着 LakeCameraRig，保留节点给 LakeCameraSetup.Remove 处理；
+                    // 只剩 Transform 时才删除空根。
+                    if (old.GetComponents<Component>().Length <= 1)
+                    {
+                        UnityEngine.Object.DestroyImmediate(old);
+                    }
+                }
+
                 EditorSceneManager.MarkSceneDirty(scene);
                 EditorSceneManager.SaveScene(scene);
                 AssetDatabase.SaveAssets();
-                W($"已删除 {NodeName}");
+                W($"已移除 {NodeName} 的水面数据（保留可能存在的 LakeCameraRig）");
                 W("==== 结论：PASS ====");
                 Flush(sb, 0);
                 return;
             }
 
             // ── apply ──
-            // 幂等：先删旧的
-            var stale = GameObject.Find(NodeName);
-            if (stale != null) UnityEngine.Object.DestroyImmediate(stale);
+            // 幂等：只清掉旧的水面数据，保留根节点。
+            // 不能 DestroyImmediate(root)：LakeCameraRig 挂在同一个根上，
+            // 整棵删掉会让 C/F 相机切换和轨道相机引用一起消失。
+            var root = GameObject.Find(NodeName);
+            if (root == null)
+            {
+                root = new GameObject(NodeName);
+            }
+            else
+            {
+                for (var i = root.transform.childCount - 1; i >= 0; i--)
+                {
+                    UnityEngine.Object.DestroyImmediate(root.transform.GetChild(i).gameObject);
+                }
+
+                var staleWater = root.GetComponent<WaterRenderer>();
+                if (staleWater != null) UnityEngine.Object.DestroyImmediate(staleWater);
+            }
 
             var waterMat = AssetDatabase.LoadAssetAtPath<Material>(WaterMatPath);
             var volumeMat = AssetDatabase.LoadAssetAtPath<Material>(VolumeMatPath);
             if (waterMat == null) { W($"FAIL：找不到水面材质 {WaterMatPath}"); Flush(sb, 2); return; }
             W($"水面材质 = {waterMat.name}（shader={waterMat.shader?.name}）");
 
-            var root = new GameObject(NodeName);
             root.transform.position = new Vector3(LakeCarve.Center.x, LakeCarve.WaterLevel, LakeCarve.Center.y);
             W($"水面节点位置 = {root.transform.position}");
 
@@ -175,6 +205,9 @@ public static class LakeCrestSetup
             // 但 Reset 只在编辑器里、且通过 Inspector 添加时才走；这里显式兜底一次。
             water.Surface.Material = waterMat;
             water.Surface.VolumeMaterial = volumeMat;
+            // 当前性能模式是 Quad。Apply 会重建节点，必须在这里显式写回；
+            // 否则新节点会回到 SurfaceRenderer 的默认值 Chunks（49 个 chunk）。
+            CrestPerformanceMode.SetMeshType(water, 1, W);
 
             // ── 写入水的颜色参数（否则水面渲染成纯黑）──
             // 机制（代码事实）：Crest 的 Absorption/Scattering 仿真把
@@ -194,13 +227,32 @@ public static class LakeCrestSetup
 
             // ── LOD：湖很小，压到最低档 ──
             // 默认 9 级是给"无限海洋"的，每级翻倍覆盖范围，9 级能铺到几十公里。
-            // 湖盆半径 190m，4 级（覆盖约 8 倍视距）足够，且每级都有仿真开销。
-            water.LodLevels = 4;
-            // 默认 384 对 190m 的湖太浪费；160 在湖边看水面起伏已足够。
-            water.LodResolution = 160;
+            // 湖盆半径 190m，3 级已覆盖 560m 湖面；每级都有仿真开销。
+            water.LodLevels = 3;
+            // 默认 384 对 190m 的湖太浪费；128 在湖边看水面起伏已足够。
+            water.LodResolution = 128;
             // ScaleRange 下限压到 1：水面网格跟着相机高度缩放，湖面不需要放大。
             water.ScaleRange = new Vector2(1f, 16f);
-            W($"LodLevels={water.LodLevels}, LodResolution={water.LodResolution}, ScaleRange={water.ScaleRange}");
+
+            // ── 各模块分辨率：默认 256 对 560m 的湖过大 ──
+            // AnimatedWaves/Level 跟随 WaterRenderer.LodResolution（128）；
+            // Depth/Foam/Clip 默认 OverrideResolution=true + 256，这里统一压到 128。
+            water.AnimatedWavesLod.OverrideResolution = false;
+            water.LevelLod.OverrideResolution = false;
+            water.DepthLod.OverrideResolution = true;
+            water.DepthLod.Resolution = 128;
+            water.FoamLod.OverrideResolution = true;
+            water.FoamLod.Resolution = 128;
+            water.ClipLod.OverrideResolution = true;
+            water.ClipLod.Resolution = 128;
+
+            // Depth 的 SDF 通道只有 DepthProbe 才会写入；本工程没有 DepthProbe，
+            // 开着它只会把深度纹理从 R16 变成 R16G16，白付一倍带宽（DepthLod.cs:21）。
+            water.DepthLod.EnableSignedDistanceFields = false;
+
+            W($"LodLevels={water.LodLevels}, LodResolution={water.LodResolution}, " +
+              $"Depth={water.DepthLod.Resolution}, Foam={water.FoamLod.Resolution}, " +
+              $"Clip={water.ClipLod.Resolution}, ScaleRange={water.ScaleRange}");
 
             // ── 模块裁剪（移动端 30fps）──
             // Clip 必须开：Crest 是海洋系统，水面是以视点为中心的 clipmap、铺到无限远。
@@ -227,6 +279,10 @@ public static class LakeCrestSetup
             water.ShadowLod.Enabled = false;
             water.ClipLod.Enabled = true;
             water.FoamLod.Enabled = true;
+            // 不通过降低 SimulationFrequency 来省 dispatch：PersistentLod 在
+            // substeps==0 时仍会做一次 delta=0 的 dispatch（PersistentLod.cs:105-116），
+            // 降频只减少完整仿真步，dispatch 次数不变。
+            water.FoamLod.SimulationFrequency = 30;
             water.DepthLod.Enabled = true;
             water.AnimatedWavesLod.Enabled = true;
             water.LevelLod.Enabled = true;
@@ -298,19 +354,41 @@ public static class LakeCrestSetup
             var shapeGo = new GameObject("Lake Waves");
             shapeGo.transform.SetParent(root.transform, false);
             var shape = shapeGo.AddComponent<ShapeGerstner>();
+            // 128 对 20km/h 的小湖波浪过大；96 仍能被 8 整除（线程组要求）。
+            shape.Resolution = 96;
             var spectrum = AssetDatabase.LoadAssetAtPath<WaveSpectrum>(
                 "Packages/com.waveharmonic.crest/Runtime/Data/WaveSpectra/WavesModerate.asset");
             if (spectrum != null)
             {
                 shape.Spectrum = spectrum;
-                W($"波浪频谱 = {spectrum.name}");
+                W($"波浪频谱 = {spectrum.name}, Resolution={shape.Resolution}");
             }
             // 湖面不需要大风浪：风程短，20 km/h 左右起小波（默认 10 太静）。
             water.WindSpeed = 20f;
             W($"风速 = {water.WindSpeed} km/h，ShapeGerstner 已挂");
 
-            // ── URP 前置：Crest 的深度/不透明图依赖 ──
-            EnableUrpDepthAndOpaque(W);
+            // ── URP 前置：按当前透明度模式决定 Depth/Opaque 开关 ──
+            // SimpleTransparency = 1 时水面不再请求 opaque/depth，URP 资产必须保持 0，
+            // 否则 URP 仍会为所有相机做 CopyColor/CopyDepth（water.md §14.3）。
+            // 非 SimpleTransparency 才需要 1（折射/深度交互）。
+            if (CrestPerformanceMode.IsSimpleTransparencyEnabled())
+            {
+                if (CrestPerformanceMode.HasOtherDepthOrOpaqueConsumers(W))
+                {
+                    W("⚠ 检测到除 Crest 外还有 shader 依赖 Depth/Opaque，保持 URP 资产不变");
+                }
+                else
+                {
+                    CrestPerformanceMode.SetUrpTextures(requireDepth: false, requireOpaque: false, W);
+                }
+                CrestPerformanceMode.SetTransparencyMinAlpha(
+                    CrestPerformanceMode.SimpleTransparencyMinAlpha, W);
+                W("SimpleTransparency=ON：URP Depth/Opaque=0，水面 MeshType=Quad");
+            }
+            else
+            {
+                EnableUrpDepthAndOpaque(W);
+            }
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene);
@@ -335,12 +413,12 @@ public static class LakeCrestSetup
     /// <summary>
     /// 打开 URP 资产上的 Depth Texture / Opaque Texture。
     ///
-    /// 为什么必须开：Crest 的
+    /// 只用于**非 SimpleTransparency** 模式。Crest 的
     ///   - 水下吸收/散射（UnderwaterRenderer 读 _CameraDepthTexture）
     ///   - 水面与地形的深度比较（判断哪部分在水下、岸边泡沫）
     ///   - 折射（需要 _CameraOpaqueTexture）
-    /// 都依赖这两张图。工程当前都是 0（`UniversalRP.asset:22-23`），
-    /// 不开会导致水下效果失效、岸边泡沫不出现，且**不报错**——静默不生效，最难排查。
+    /// 都依赖这两张图。当前 SimpleTransparency 模式下水面不请求它们，资产必须保持 0
+    /// （见 water.md §14.3）；切回折射路径时才走这里。
     /// </summary>
     private static void EnableUrpDepthAndOpaque(Action<string> W)
     {
@@ -509,6 +587,21 @@ public static class LakeCrestSetup
         if (water.Surface.Material == null) { W("  FAIL：Surface.Material 为空"); ok = false; }
         else W($"  Surface.Material = {water.Surface.Material.name}");
 
+        // Surface.MeshType 是 [SerializeReference] 内部字段，没有公开 API，走序列化读取。
+        int meshType = CrestPerformanceMode.GetMeshType(water);
+        W($"  Surface.MeshType = {meshType}（期望 1=Quad）");
+        if (meshType != 1) ok = false;
+
+        W($"  LodLevels={water.LodLevels}（期望 3）, LodResolution={water.LodResolution}（期望 128）, " +
+          $"Depth={water.DepthLod.Resolution}, Foam={water.FoamLod.Resolution}, Clip={water.ClipLod.Resolution}（期望 128）");
+        if (water.LodLevels != 3 || water.LodResolution != 128) ok = false;
+        if (water.DepthLod.Resolution != 128 ||
+            water.FoamLod.Resolution != 128 ||
+            water.ClipLod.Resolution != 128) ok = false;
+
+        W($"  DepthLod.EnableSignedDistanceFields = {water.DepthLod.EnableSignedDistanceFields}（期望 false）");
+        if (water.DepthLod.EnableSignedDistanceFields) ok = false;
+
         var body = root.GetComponentInChildren<WaterBody>();
         if (body == null) { W("  FAIL：没有 WaterBody"); ok = false; }
         else
@@ -542,12 +635,23 @@ public static class LakeCrestSetup
         W($"  旧 Gaia Water 激活状态 = {(gaia != null ? gaia.activeSelf : false)}（期望 false）");
         if (gaia != null && gaia.activeSelf) ok = false;
 
-        // URP 深度/不透明图
+        // URP 深度/不透明图：期望值随透明度模式变化。
         var urp = File.ReadAllText("Assets/Settings/UniversalRP.asset");
         bool depth = System.Text.RegularExpressions.Regex.IsMatch(urp, @"m_RequireDepthTexture:\s*1");
         bool opaque = System.Text.RegularExpressions.Regex.IsMatch(urp, @"m_RequireOpaqueTexture:\s*1");
-        W($"  URP DepthTexture={depth}, OpaqueTexture={opaque}");
-        if (!depth || !opaque) ok = false;
+        bool simpleTransparency = CrestPerformanceMode.IsSimpleTransparencyEnabled();
+        W($"  URP DepthTexture={depth}, OpaqueTexture={opaque}（SimpleTransparency={simpleTransparency}，" +
+          $"期望 {(simpleTransparency ? "0/0" : "1/1")}）");
+        if (simpleTransparency)
+        {
+            // 例外：若工程里已有其他 Depth/Opaque 消费者，Apply 会保持 1，此时不应判 FAIL。
+            if ((depth || opaque) && !CrestPerformanceMode.HasOtherDepthOrOpaqueConsumers(W))
+                ok = false;
+        }
+        else if (!depth || !opaque)
+        {
+            ok = false;
+        }
 
         return ok;
     }

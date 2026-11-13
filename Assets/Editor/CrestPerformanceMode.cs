@@ -68,7 +68,7 @@ public static class CrestPerformanceMode
     /// 取 0.12：浅水处 volumeOpacity 很小，让 alpha 落到 0.12 附近，
     /// 能看见水底；深水处 volumeOpacity 上升，水面自然变实。
     /// </summary>
-    private const float SimpleTransparencyMinAlpha = 0.12f;
+    internal const float SimpleTransparencyMinAlpha = 0.12f;
 
     public static void ApplySimpleTransparency() => Run("simple");
     public static void ApplyQuad() => Run("quad");
@@ -322,7 +322,7 @@ public static class CrestPerformanceMode
     }
 
     /// <summary>写 `_Crest_TransparencyMinimumAlpha`。只在 SimpleTransparency 下有意义。</summary>
-    private static void SetTransparencyMinAlpha(float value, Action<string> W)
+    internal static void SetTransparencyMinAlpha(float value, Action<string> W)
     {
         foreach (var path in new[] { WaterMatPath, VolumeMatPath })
         {
@@ -337,7 +337,7 @@ public static class CrestPerformanceMode
     }
 
     /// <summary>改 URP 资产的 Depth/Opaque 纹理开关。</summary>
-    private static void SetUrpTextures(bool requireDepth, bool requireOpaque, Action<string> W)
+    internal static void SetUrpTextures(bool requireDepth, bool requireOpaque, Action<string> W)
     {
         var text = File.ReadAllText(UrpAssetPath);
         bool changed = false;
@@ -372,7 +372,7 @@ public static class CrestPerformanceMode
     /// 只扫本项目实际会用到的东西：Assets 下非插件目录 + 场景里挂的材质。
     /// 保守起见：只把 Gaia/GeNa 的 VFX 视为"不参与"（它们未被接入，见 AGENTS.md §2）。
     /// </summary>
-    private static bool HasOtherDepthOrOpaqueConsumers(Action<string> W)
+    internal static bool HasOtherDepthOrOpaqueConsumers(Action<string> W)
     {
         // 工程里已接入渲染的 shader：GTS 地表、草 BRG、树（PW）、Crest。
         // 逐个确认它们不采样这两张图。若将来新增依赖，这里会提醒。
@@ -401,22 +401,36 @@ public static class CrestPerformanceMode
         return any;
     }
 
-    /// <summary>改场景里 WaterRenderer 的 MeshType（运行时枚举，直接改序列化字段）。</summary>
-    private static void SetMeshType(int type, Action<string> W)
+    /// <summary>读取 WaterRenderer 的 MeshType 序列化值（0=Chunks 1=Quad 2=Custom）。</summary>
+    internal static int GetMeshType(WaterRenderer water)
     {
-        var scene = EditorSceneManager.OpenScene(WorldScenePath, OpenSceneMode.Single);
-        var root = GameObject.Find(NodeName);
-        if (root == null) { W($"FAIL：找不到 {NodeName}"); return; }
-        var water = root.GetComponent<WaterRenderer>();
-        if (water == null) { W($"FAIL：{NodeName} 上没有 WaterRenderer"); return; }
+        if (water == null) return -1;
 
         var so = new SerializedObject(water);
         var surfaceProp = so.FindProperty("_Surface");
         // Surface 是 [SerializeReference] 的托管对象，字段在它的 SerializedProperty 下。
         var meshTypeProp = surfaceProp?.FindPropertyRelative("_MeshType");
+        if (meshTypeProp != null) return meshTypeProp.enumValueIndex;
+
+        // 兜底：SerializedReference 在部分 Unity 版本下需要走 managedReferenceValue。
+        var surfaceObj = surfaceProp?.managedReferenceValue as UnityEngine.Object;
+        if (surfaceObj == null) return -1;
+        return new SerializedObject(surfaceObj).FindProperty("_MeshType")?.enumValueIndex ?? -1;
+    }
+
+    /// <summary>
+    /// 直接改已加载 WaterRenderer 的 MeshType，不负责保存场景。
+    /// 给 LakeCrestSetup.Apply 在保存前调用，避免它重建节点后把 Quad 回退成 Chunks。
+    /// </summary>
+    internal static void SetMeshType(WaterRenderer water, int type, Action<string> W)
+    {
+        if (water == null) { W("FAIL：WaterRenderer 为空"); return; }
+
+        var so = new SerializedObject(water);
+        var surfaceProp = so.FindProperty("_Surface");
+        var meshTypeProp = surfaceProp?.FindPropertyRelative("_MeshType");
         if (meshTypeProp == null)
         {
-            // 兜底：SerializedReference 在部分 Unity 版本下需要走 managedReferenceValue。
             var surfaceObj = surfaceProp?.managedReferenceValue as UnityEngine.Object;
             if (surfaceObj == null) { W("FAIL：拿不到 SurfaceRenderer 序列化数据"); return; }
             var sso = new SerializedObject(surfaceObj);
@@ -433,10 +447,40 @@ public static class CrestPerformanceMode
             so.ApplyModifiedPropertiesWithoutUndo();
         }
 
+        W($"MeshType = {type}（0=Chunks 1=Quad 2=Custom）");
+    }
+
+    /// <summary>改场景里 WaterRenderer 的 MeshType 并保存场景。</summary>
+    private static void SetMeshType(int type, Action<string> W)
+    {
+        var scene = EditorSceneManager.OpenScene(WorldScenePath, OpenSceneMode.Single);
+        var root = GameObject.Find(NodeName);
+        if (root == null) { W($"FAIL：找不到 {NodeName}"); return; }
+        var water = root.GetComponent<WaterRenderer>();
+        if (water == null) { W($"FAIL：{NodeName} 上没有 WaterRenderer"); return; }
+
+        SetMeshType(water, type, W);
+
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene);
         AssetDatabase.SaveAssets();
-        W($"MeshType = {type}（0=Chunks 1=Quad 2=Custom）");
+    }
+
+    /// <summary>
+    /// 当前工程是否真的处于 SimpleTransparency 模式。
+    /// define 影响 C# 的 #if，生成的 hlsl 宏影响 shader；两者都必须是 1，
+    /// 只改一半会导致 C# 不请求纹理、shader 却仍在采样（或反之）。
+    /// </summary>
+    internal static bool IsSimpleTransparencyEnabled()
+    {
+        var defines = PlayerSettings.GetScriptingDefineSymbolsForGroup(BuildTargetGroup.Android);
+        var hasDefine = defines.Contains("d_Crest_SimpleTransparency");
+        if (!hasDefine) return false;
+
+        const string hlsl = "Packages/com.waveharmonic.crest/Runtime/Shaders/Library/Settings/Settings.Crest.Default.hlsl";
+        if (!File.Exists(hlsl)) return false;
+        var m = Regex.Match(File.ReadAllText(hlsl), @"CREST_SIMPLE_TRANSPARENCY \((\d)\)");
+        return m.Success && m.Groups[1].Value == "1";
     }
 
     private static void Report(Action<string> W)

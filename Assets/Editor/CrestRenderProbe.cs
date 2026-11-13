@@ -19,7 +19,8 @@ using WaveHarmonic.Crest;
 /// 1. URP 的 `_CameraOpaqueTexture` / `_CameraDepthTexture` 每帧被 copy 几次？
 ///    Crest 在 URP 14 下用反射复用 URP 私有的 `m_OpaqueColor` / `m_DepthTexture`，
 ///    再 enqueue 自己 new 的 CopyColorPass/CopyDepthPass。若 URP 自己也 enqueue 了
-///    （因为 asset 上 `m_RequireOpaqueTexture=1`，或 Crest 的 ConfigureInput 请求），
+///    （非 SimpleTransparency 时 asset 上 `m_RequireOpaqueTexture=1`，或 Crest 的 ConfigureInput 请求；
+///      当前 SimpleTransparency 下 asset 为 0，正常应是 0 次），
 ///    那就是同一张 RT 被写两遍 —— 纯浪费。
 /// 2. 水面 chunk 有多少个、可见多少个、每帧提交多少次 DrawRenderer？
 ///    Crest 的 Chunks 模式用 `CommandBuffer.DrawRenderer` 逐 chunk 提交
@@ -196,6 +197,27 @@ public static class CrestRenderProbe
             _sb.AppendLine($"WriteToColorTexture = {water.WriteToColorTexture}, " +
                            $"WriteToDepthTexture = {water.WriteToDepthTexture}");
             _sb.AppendLine($"LodLevels = {water.LodLevels}, LodResolution = {water.LodResolution}");
+
+            // DepthLod 现在只对与湖 AABB 相交的 Terrain dispatch（见 DepthLod.TerrainDepthInput）。
+            // 这里用 WaterBody 的 transform 尺度复算一次，给 Frame Debugger 的 Depth dispatch 数做对照。
+            var waterBody = UnityEngine.Object.FindObjectOfType<WaterBody>();
+            if (waterBody != null)
+            {
+                var scale = waterBody.transform.lossyScale;
+                var p = waterBody.transform.position;
+                var lakeRect = new Rect(p.x - scale.x * 0.5f, p.z - scale.z * 0.5f, scale.x, scale.z);
+                var terrains = Terrain.activeTerrains;
+                var intersect = 0;
+                foreach (var terrain in terrains)
+                {
+                    if (terrain.terrainData == null) continue;
+                    var pos = terrain.GetPosition();
+                    var size = terrain.terrainData.size;
+                    if (new Rect(pos.x, pos.z, size.x, size.z).Overlaps(lakeRect)) intersect++;
+                }
+                _sb.AppendLine($"Terrain: active={terrains.Length}, 与湖 AABB 相交={intersect}" +
+                               "（DepthLod 过滤后应只 dispatch 这些）");
+            }
 
             // SimpleTransparency 是编译期宏（CREST_SIMPLE_TRANSPARENCY），运行时从材质 keyword 读不到，
             // 但可以从 shader 的编译结果间接判断：这里直接打印当前工程宏值供对照。

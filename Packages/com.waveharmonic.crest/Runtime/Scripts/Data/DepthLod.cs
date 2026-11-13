@@ -147,6 +147,53 @@ namespace WaveHarmonic.Crest
                 _DepthLod = lod;
             }
 
+            /// <summary>
+            /// 只保留与 Include WaterBody AABB 相交的 Terrain。
+            ///
+            /// 仅在水面被 Clip 到局部区域（EverythingClipped）时启用：
+            /// 此时湖外没有水面，湖外 Terrain 的高度永远不会被水面 shader 采样，
+            /// 每帧为它们重烘深度是纯浪费。
+            ///
+            /// 保守策略：只要与任意一个 Include 区域相交就保留；没有 Include 区域
+            /// 或处于大洋模式（默认不裁）时返回 false，保留全部 Terrain。
+            /// </summary>
+            bool TryGetIncludeArea(out Rect area)
+            {
+                area = default;
+
+                var water = _DepthLod.Water;
+                if (water == null || water.ClipLod.DefaultClippingState != DefaultClippingState.EverythingClipped)
+                {
+                    return false;
+                }
+
+                var any = false;
+                foreach (var body in WaterBody.WaterBodies)
+                {
+                    if (body == null || !body.isActiveAndEnabled || body.Exclusion != WaterBodyExclusion.Include)
+                    {
+                        continue;
+                    }
+
+                    var bodyArea = body.AABB.RectXZ();
+                    if (!any)
+                    {
+                        area = bodyArea;
+                        any = true;
+                    }
+                    else
+                    {
+                        area = Rect.MinMaxRect(
+                            Mathf.Min(area.xMin, bodyArea.xMin),
+                            Mathf.Min(area.yMin, bodyArea.yMin),
+                            Mathf.Max(area.xMax, bodyArea.xMax),
+                            Mathf.Max(area.yMax, bodyArea.yMax));
+                    }
+                }
+
+                return any;
+            }
+
             public void Draw(Lod lod, CommandBuffer buffer, RenderTargetIdentifier target, int pass = -1, float weight = 1, int slices = -1, int offset = 0)
             {
                 var resources = WaterResources.Instance;
@@ -162,6 +209,8 @@ namespace WaveHarmonic.Crest
                 // Cannot because rect is zero.
                 wrapper.SetBoolean(LodInput.ShaderIDs.s_TargetRegion, false);
 
+                var restrictToIncludes = TryGetIncludeArea(out var includeArea);
+
                 Terrain.GetActiveTerrains(_Terrains);
                 foreach (var terrain in _Terrains)
                 {
@@ -169,6 +218,12 @@ namespace WaveHarmonic.Crest
                     if (data == null) continue;
                     var size = data.size;
                     var position = terrain.GetPosition();
+
+                    if (restrictToIncludes)
+                    {
+                        var terrainArea = new Rect(position.x, position.z, size.x, size.z);
+                        if (!terrainArea.Overlaps(includeArea)) continue;
+                    }
 
                     wrapper.SetFloat(DepthLodInput.ShaderIDs.s_HeightOffset, position.y);
                     wrapper.SetVector(Crest.ShaderIDs.s_Multiplier, new(size.y * 2f, 1, 1, 1));
