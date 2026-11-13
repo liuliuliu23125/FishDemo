@@ -43,8 +43,14 @@ SECTR 与 GTS 都没有自己的 asmdef，其编辑器 API（`SECTR_TerrainWindo
 | `LakeCarve.cs` | 按碗形改 TerrainData 高度图造湖盆；`Restore` 可还原 | `Apply` / `Restore` / `Report` |
 | `LakeVegetationClear.cs` | 清湖区内树与草（`.bytes` 直接改写）；`Restore` 可还原 | `Apply` / `Restore` / `Report` |
 | `LakeGeometryProbe.cs` | **只读**：同时校验 Terrain 高度与 GTS mesh 顶点，抓「数据改了但没重烘」 | `-executeMethod LakeGeometryProbe.Run` |
-| `LakeCrestSetup.cs` | 把 Crest 水面接进主场景（裁剪/水色/波浪/URP 前置）；`Remove` 可撤 | `Apply` / `Remove` / `Report` |
+| `LakeCrestSetup.cs` | 把 Crest 水面接进主场景（裁剪/水色/波浪/URP 前置）；`Remove` 可撤；`Retune` 只重写水色不动场景 | `Apply` / `Remove` / `Report` / `Retune` |
 | `LakeRenderVerify.cs` | **需真实图形设备**：玩家视角截图 + 像素判定，证明湖里有水 | `-executeMethod LakeRenderVerify.Run` |
+| `LakeCameraSetup.cs` | 环湖轨道相机 + 切换 rig 写进主场景（幂等）；`Remove` 撤并复原原相机 | `Apply` / `Remove` / `Report` |
+| `LakeWaterVerify.cs` | **需真实图形设备**：水面透明 / 水下效果开·关对照 / 水上不误开，6 项像素判定 | `-executeMethod LakeWaterVerify.Run` |
+| `LakeOrbitVerify.cs` | 轨道几何 + Crest 视点 / SECTR loader / tag 跟随 + 切换（可 `-nographics`） | `-executeMethod LakeOrbitVerify.Run` |
+| `CrestRenderProbe.cs` | **只读**：反射读 URP pass 队列，统计 CopyColor/CopyDepth 次数、水面 chunk 数与 MeshType | `-executeMethod CrestRenderProbe.Run` |
+| `ChunkLoadScope.cs` | 验证脚本共用：按区域筛选 chunk（36→8），避免全量加载 | 由验证脚本调用 |
+| `CrestPerformanceMode.cs` | 切水面性能模式（SimpleTransparency / Quad），三项联动可逆 | `ApplySimpleTransparency` / `ApplyQuad` / `ApplyBoth` / `Restore` / `Report` |
 
 ## 3. 铁律
 
@@ -166,7 +172,30 @@ AABB 外的地形再低也不会露出水面。详见 [water](../../Docs/water.m
 处 `RaiseException`）。做法：明细全写文件，Console 只打汇总
 （`TreeRenderProbe.cs:36-41` 的 `W` / `C` 两个委托）。
 
-### 3.10 需要真实图形设备的验证不能加 `-nographics`
+### 3.10 验证脚本的三条提速规则（2026-11-13，实测 9m50s → 1m02s）
+
+**① 只加载与目标区域相交的 chunk**，用 `ChunkLoadScope.LoadRelevant(ChunkLoadScope.Area.FromLake())`。
+原先三个验证脚本都 `OpenScene` 全部 36 个 chunk。按湖 AABB 筛选后只需 **8~9 个**。
+`ChunkLoadScope` 的定位方式：读场景 YAML 里**所有非零 `m_LocalPosition` 取 x/z 最小值**
+作为 chunk 世界原点（每个 chunk 场景里有正负对称两组位置，最小值恒为地形）。
+**不要用文件名网格坐标**：本工程文件名里 `Terrain_X_Y` 是 1024m 大区块、
+`a-b-0` 是 512m 子块，直接取末尾数字只有 4 种重复值。
+
+**② 结束时不要先 `EditorApplication.isPlaying = false`**，直接 `EditorApplication.Exit`。
+这是最大的一笔：退出 Play Mode 会触发 `StopAssetImportingV2(ForceSynchronousImport |
+ForceDomainReload)`，实测 **20s 资产重导入 + 10s 备份场景落盘**。
+本进程紧接着就退出，Play Mode 状态不会保留到下次运行。
+（`QuitAfter` 的等待帧数也从 30 降到 3。）
+
+**③ 截图预热帧数按渲染模式定**。`LakeWaterVerify` 原为每张 40 帧 × 4 张。
+切到 SimpleTransparency 后 shader 不再采样仿真纹理、也没有 copy pass，
+**8 帧足够**（`WarmupFrames` 常量）。若关掉 SimpleTransparency 要调回 40。
+
+提速后实测：`LakeWaterVerify` 62s、`CrestRenderProbe` 62s、`LakeOrbitVerify` 38s。
+其中脚本内实际只有 ~17s（打开 World 7s + 加载 chunk 9.5s + 4 张截图 1.9s），
+其余是 Unity 启动与脚本编译 —— 属环境固有开销，改脚本无收益。
+
+### 3.11 需要真实图形设备的验证不能加 `-nographics`
 
 BRG 的剔除回调在 `-nographics` 下不执行，`LastVisibleCount` 恒为 `-1`，
 「草没被画出来」和「草被正确剔除」无法区分。

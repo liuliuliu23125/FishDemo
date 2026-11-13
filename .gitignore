@@ -113,3 +113,6 @@ yoo
 
 # 树密度削减前的实例备份（17MB，可重现：Gaia 撒点规则重跑即可恢复）
 Tools/tree-instance-backup/
+
+# 个人记忆/工具目录（非工程资产）
+.workbuddy/

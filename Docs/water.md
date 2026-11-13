@@ -371,10 +371,10 @@ Crest 的水面是以**视点**为中心的 clipmap（`LateUpdatePosition` 把 `
 1. **水面看起来是纯平的**。`ShapeGerstner` 已挂、频谱 `WavesModerate`、风速 20 km/h，
    但 batchmode 的 `Camera.Render()` 不推进 Crest 的仿真时钟，位移纹理停在初始帧。
    真机 Play Mode 下应有正常起伏。**这一条未验证。**
-2. **水面偏不透明**。材质是 `m_CustomRenderQueue: 3000` + `_BUILTIN_SrcBlend: 5`（SrcAlpha），
-   透明混合管线是对的；但 absorption 恒定色模式下 alpha 输出接近 1，
-   看不到水下地形。若要"能看见水底"，需要开 `Depth` 相关的水深透明度，
-   或把 scattering 的 alpha 调低。**属于表现调优，不是功能缺陷。**
+2. ~~**水面偏不透明**~~ —— **已解决**，见 §12.1（消光系数）与 §14.4
+   （SimpleTransparency 下的 `_Crest_TransparencyMinimumAlpha`）。
+   当时的误判是"以为 alpha 混合没生效"；实际 Crest 的透明靠体积消光，
+   与 alpha 无关，详见 §12.1 的机制说明。
 3. 截图里的**岸壁有拉伸条纹**（碗壁陡坡上 GTS 贴图被拉伸），
    是 30m 深碗的陡坡 + 256m/257 顶点的分辨率导致，属可接受范围。
 
@@ -386,3 +386,320 @@ Crest 的水面是以**视点**为中心的 clipmap（`LateUpdatePosition` 把 `
 - [ ] 旧 Gaia Water 已禁用保留在场景中；确认不再回退后可删
 - [ ] **水面仍会以视点为中心铺满全世界**（靠 Clip 裁掉），水面 chunk 数量不随湖缩小。
       若真机 draw call 压力大，可考虑改用 `WaterMeshType.Quad`（单四边形 + 自定义网格）
+
+## 12. 水面透明 + 水下效果 + 环湖轨道相机（2026-11-13 落地）
+
+### 12.1 水面透明：机制与参数
+
+**Crest 的"透明"不是 alpha 混合，是折射合成 + 体积消光**（代码事实）：
+
+- `Fragment.hlsl:825-828`：只有 `d_Crest_SimpleTransparency` 分支才用 `volumeOpacity` 写
+  `o_Alpha`；而工程 `CREST_SIMPLE_TRANSPARENCY (0)`（`Settings.Crest.Default.hlsl:23`），
+  所以 `o_Alpha` 恒为 1，材质的 SrcAlpha 混合形同虚设。
+- 真正的透明来自 `Fragment.hlsl:625-670`：
+  `o_Emission *= 1-volumeOpacity; o_Emission += volumeLight*volumeOpacity`，其中
+  `VolumeLighting.hlsl:22-25`：`volumeOpacity = 1 - exp(-(absorption+scattering) * 水中光程)`。
+- **结论：调透明度只动材质上的 `_Crest_Absorption` / `_Crest_Scattering`，别找 alpha**。
+
+**颜色→系数的换算**（`WaterRenderer.cs:519-527`）：
+`absorption = -color.a * 32/5 * ln(color.rgb)`。alpha 是密度（越小越清澈），
+rgb 是透水色。scattering 则是直接写入的每米散射系数。
+
+**最终参数**（`LakeCrestSetup.ApplyWaterColor`，`LakeCrestSetup.Retune` 可单独重跑）：
+
+| 参数 | 值 | 效果 |
+|---|---|---|
+| `_Crest_AbsorptionColor` | `(0.62, 0.86, 0.92, 0.016)` | 密度 0.016，清澈 |
+| `_Crest_Absorption` | `(0.049, 0.015, 0.008)` /m | R 衰减最快 → 水下偏青 |
+| `_Crest_Scattering` | `(0.012, 0.026, 0.036)` /m | 青蓝，**R 必须压低** |
+| extinction 合计 | `(0.061, 0.041, 0.045)` /m | 1/e 深度 16/24/22m |
+| 3m 处保留场景色 | 83%（R 最差） | 岸边看得见底 |
+| 30m 处保留 | 16% | 湖心自然变深 |
+
+**踩坑（实测）**：
+- scattering 的 R 通道不能跟着 rgb 直觉走。第一版 `(0.034,0.046,0.050)` 三通道接近，
+  入射光一乘雾就发白（水下画面均值 RGB 106/126/137）。压到 `(0.012,0.026,0.036)`
+  → `scatteringAmount = scattering/extinction ≈ (0.20,0.63,0.80)`，雾色才偏青。
+- **水下体积光的入射权重 `_Crest_AmbientTerm` / `_Crest_DirectTerm` 必须写在
+  Water.mat（水面材质）上**：`UnderwaterRenderer.Effect.cs:247` 每帧执行
+  `_VolumeMaterial.CopyMatchingPropertiesFromMaterial(_SurfaceMaterial)`，
+  只写 Volume 材质会被水面材质覆盖回默认 1.0（静默失效）。取 0.35/0.40
+  让水下雾"越深越暗"，不再是一片亮白。
+
+### 12.2 水下效果：开关机制
+
+**引擎自带判断，不需要自己写"相机进水检测"**（`UnderwaterRenderer.cs:299-307`）：
+相机离水面 >2m 时 `ShouldRender` 直接 return false；在 2m 以内且相机 XZ 落在
+Volume 型 WaterBody（`Lake Body` 节点，`Exclusion=Include`）内、且相机 cullingMask
+含 Water 层（layer 4）时开启。三项场景里都已配置。
+
+水下雾的浓度/颜色 = 水下材质的 absorption/scattering × `_Crest_ExtinctionMultiplier`，
+每帧从水面材质拷贝（见 12.1 踩坑第二条）。
+
+### 12.3 环湖轨道相机（不改原相机）
+
+**没有用 Cinemachine**：工程没装（manifest.json 无该项），且下面三件事它一件都解决不了。
+
+三个必须跟随相机的状态（`LakeCameraRig.Apply` 统一处理）：
+1. **Crest 视点**：`WaterRenderer.Viewer` —— 水面 clipmap 以它为中心铺开，
+   不切换就出现"湖在那个方向、水铺在别处"。
+2. **SECTR chunk 加载**：`SECTR_RegionLoader` 按**自身 transform** 判定范围
+   （`SECTR_RegionLoader.cs:83-84`），不看相机。两台相机各挂一个 loader，
+   rig 只启用当台（两个同开会叠加加载范围）。
+3. **`Camera.main` tag**：GrassBRG 剔除兜底等依赖它，rig 把 MainCamera tag 搬到当前相机。
+
+| 文件 | 职责 |
+|---|---|
+| `Assets/Scripts/Runtime/Gameplay/LakeOrbitCamera.cs` | 轨道运动：半径 300m、水位+26m、120s/圈、俯仰 12°±3° 摆动；`Paused` 让出 transform；支持注入时间源（验收用） |
+| `Assets/Scripts/Runtime/Gameplay/LakeCameraRig.cs` | **C** 切相机 + **F** 自由飞行：Camera/AudioListener/loader 三件套开关 + Viewer/tag 跟随；挂在 `Crest Lake` 上 |
+| `Assets/Editor/LakeCameraSetup.cs` | 幂等写入 World.unity；`Apply`/`Remove`/`Report` |
+
+组件级开关而**不是 SetActive(false)**：每台相机自带 AudioListener，
+禁 GameObject 会把监听器一起关掉，Unity 报 "no audio listeners"。
+
+**F 键自由飞行（两台相机都支持）**：
+- `PegasusFlyingCamera` 挂在**当前渲染相机**上，WASD 移动 / QE 升降 / 右键转视角 / 滚轮调速。
+- **必须暂停轨道脚本**：`LakeOrbitCamera` 在 `LateUpdate` 写 transform，比飞行的
+  `Update` 更晚，不暂停就把飞行位移整帧覆盖（表现"按 F 没反应、镜头自己转"）。
+  rig 用 `Paused` 开关解决，实测 15 帧漂移 0.000m。
+- 巡游相机飞行时必须 `PauseFlythrough()`，否则 Pegasus 每帧把相机拖回路径点。
+  退出时按最近路径点续接（同 `PegasusTourController.SnapToNearestPathPoint`）。
+- **`PegasusTourController` 已被 rig 禁用**：它也监听 F，两者同帧会各挂一份飞行组件。
+  rig 已实现它的全部职责并扩展到两台相机，故禁用而非删除（场景结构不变，可随时改回）。
+- 退出飞行后轨道用 `ResumeFromCurrentPosition()` 按当前方位角续接，
+  不用 `ResetPose()`（那会瞬移回起始角度，观感是镜头一跳）。
+
+### 12.4 验收
+
+| 脚本 | 判什么 | 命令 |
+|---|---|---|
+| `LakeWaterVerify.Run` | 水面透明（浅水见底）、水下吸收色调、水下有内容、开关对照、水上不误开 | 需真实图形设备 |
+| `LakeOrbitVerify.Run` | 轨道几何（半径/高度恒定、扫过角度、朝湖心）+ 三项系统跟随 + 切换 | 可 `-nographics` |
+| `LakeCrestSetup.Retune` | 只重写水色，打印 1/e 深度等光学参数 | 快速调参入口 |
+
+2026-11-13 最终结果：`lake-water.txt` 6/6 PASS，`lake-orbit.txt` 9/9 PASS
+（含 [8] F 键飞行位移保持、[9] 退出后轨道接管）。
+截图在 `Logs/Lake/lake-water-*.png`（浅水俯视 / 水下开 / 水下关对照 / 轨道机位）。
+
+**验收脚本的三个坑**：
+- batchmode 下 `Time.deltaTime` 不推进（120 帧只走 0.6°），
+  `LakeOrbitCamera.OverrideDeltaTime` 注入固定步长解决；
+- 水下色调判据不能用绝对值 —— 湖只有 16m 深，碗底占屏幕大半，
+  必须用「同机位开/关水下效果」的差值（`Underwater.Enabled = false` 对照组）；
+- 验收机位不能站岸上：湖区植被只清到 r = R+8（`LakeVegetationClear`），
+  岸外机位会落在树里，近处树干挡镜头（实测画面中间一条黑线）。
+
+### 12.5 新增遗留事项
+
+- [ ] `LakeCameraRig` 只在运行时搬 tag，退出 Play 后场景 tag 复原 ——
+      `LakeRenderVerify` 这类编辑期脚本不受影响，但若将来加"编辑期也要 orbit 相机"
+      的需求，需另行处理
+- [ ] 水下体积光权重 0.35/0.40 是 batchmode 观感定参，真机 HDR/色调映射下需复核
+- [ ] 轨道相机未接任何后处理 Volume（场景本就无 Volume），加后处理时两台相机要同步
+
+## 13. 渲染开销分析（2026-11-13，实测）
+
+> 工具：`-executeMethod CrestRenderProbe.Run` → `Logs/Crest/crest-render-probe.txt`。
+> 它反射读 URP 的 `m_ActiveRenderPassQueue`（在 `beginCameraRendering` 里抓，因为
+> `Render()` 结束会清空队列），并统计 chunk 数。
+
+### 13.1 实测数据（当前配置）
+
+```
+MeshType = Chunks,  InjectionPoint = Default,  CREST_SIMPLE_TRANSPARENCY = 0
+LodLevels = 4, LodResolution = 160
+chunk 总数 = 49   （LOD0: 13, LOD1: 12, LOD2: 12, LOD3: 12）
+
+pass 队列（每帧稳定 4 个）：
+  [0] WaterSurfaceRenderPass        event=BeforeRenderingTransparents
+  [1] CopyTargetsRenderPass         event=AfterRenderingTransparents
+  [2] CopyColorPass                 event=AfterRenderingTransparents
+  [3] CopyDepthPass                 event=AfterRenderingTransparents
+CopyColorPass = 1,  CopyDepthPass = 1
+```
+
+**关于"两次 copy color / copy depth"——实测不成立。** 每帧只有各 1 次。
+`CopyTargetsRenderPass` 是 setup pass，`Execute` 是空的（`WaterRenderer.Universal.cs:177-185`），
+不产生额外拷贝。它之所以单独存在，是为了在 `OnCameraSetup` 里拿到 URP 私有的
+`m_OpaqueColor` / `m_DepthTexture`（反射），再 `Setup` 那两个真正的 copy pass。
+
+### 13.2 chunk 为什么不合批（三条独立原因，任一条都足以拆批）
+
+**① 提交方式是 `CommandBuffer.DrawRenderer` 逐个画**（`SurfaceRenderer.cs:958`）：
+
+```csharp
+foreach (var chunk in Chunks)
+{
+    if (!chunk._Visible) continue;
+    buffer.DrawRenderer(renderer, material, submeshIndex: 0, pass);
+}
+```
+
+`DrawRenderer` 是立即提交的单物体绘制，**根本不进 SRP Batcher 的批处理队列**。
+SRP Batcher 只对"引擎正常收集的不透明/透明物体"生效，手工 CommandBuffer 提交的
+draw 不走那条路。这一条与材质、CBUFFER 无关，是最直接的原因。
+
+**② 每个 chunk 的常量不同，无法共享 CBUFFER**（`Geometry.hlsl:12-16`）：
+
+```hlsl
+// These are per cascade, set per chunk instance.
+CBUFFER_START(CrestChunkGeometryData)
+float _Crest_ChunkMeshScaleAlpha;
+float _Crest_ChunkGeometryGridWidth;
+CBUFFER_END
+```
+
+注释写得很明确："set per chunk instance"。SRP Batcher 的前提是
+**同一 shader 变体 + 同一 CBUFFER 布局 + 逐物体数据都在引擎管理的 `UnityPerDraw` 里**。
+这里逐 chunk 的 `_Crest_ChunkMeshScaleAlpha` 在独立 CBUFFER 中，引擎必须每个 chunk
+上传一份常量，天然不能合并。
+
+**③ 逐 chunk 的 MaterialPropertyBlock**（`WaterChunkRenderer.cs:185-202`）：
+
+```csharp
+internal void Bind()
+{
+    _MaterialPropertyBlock = _Water.Surface.PerCascadeMPB[_LodIndex];
+    var wrapper = new PropertyWrapperMPB(_MaterialPropertyBlock);
+    wrapper.SetSHCoefficients(Transform.position);   // ← 按 chunk 位置采样环境光
+    ...
+    Rend.SetPropertyBlock(_MaterialPropertyBlock);
+}
+```
+
+MPB 会打断 SRP Batcher 的批（这也是工程里 `terrain-batching-reality` 记录过的结论：
+"MPB 会拆批"）。而且 SH 系数是按 chunk 位置算的，本身就不可能相同。
+
+### 13.3 为什么 chunk 是"分块"而不是一整块网格
+
+这是 **clipmap LOD** 的必然结果，不是设计疏忽：
+- 水面以**视点**为中心，每级 LOD 覆盖范围翻倍（`WaterBuilder.cs:389` 的 `scale = 2^lodIndex`）；
+- 每级是一个 4×4 去掉中心的环（12 块），最内层 1 块 → `1 + 12×4 = 49`，与实测一致；
+- 每块用不同的**顶点密度**，LOD 之间靠 `i_LodAlpha` 混合，避免接缝。
+
+所以"分块"是为了**减少远处顶点数**，代价是 draw call 数 = chunk 数。
+这在 PC 上无所谓（49 次 draw 不到 0.3ms），在移动端 tile-based GPU 上是主要瓶颈之一。
+
+### 13.4 官方给的两个移动端选项（对应你的问题）
+
+**简单透明模式（`CREST_SIMPLE_TRANSPARENCY`）**
+- 编译期宏，改 `Runtime/Shaders/Library/Settings/Settings.Crest.{Default,Android}.hlsl`
+  后要重新生成 shader（菜单 `Edit > Rendering > Generate Shader Includes`）。
+- 效果（`Fragment.hlsl:490-500`）：**不采样场景色/深度**，改用 `waterDepth`（Depth 仿真）
+  估算光程，`o_Emission` 用平均光照近似。
+- 收益：`SurfaceRenderer.Universal.cs:61-63` 把 `ConfigureInput` 从
+  `Color|Depth` 改成 `None` → **URP 不再需要 `_CameraOpaqueTexture` 和 `_CameraDepthTexture`**，
+  省掉 CopyColor + CopyDepth 两个全屏 pass（移动端 tile 带宽上这是最大的一笔）。
+- 代价：失去折射（水面下看到的景物不扭曲）、失去与地形的深度交互精度。
+
+**简单网格模式（`WaterMeshType.Quad`）**
+- 单个四边形，`SurfaceRenderer.cs:930-933` 只发 **1 次 DrawMesh**。
+- 效果：`WaterBuilder` 完全不走，**置换只贡献法线**（水面几何不再起伏）。
+- 收益：draw call 从 49 → 1，且没有任何 per-chunk CBUFFER/MPB。
+- 代价：看不到真实波浪起伏，只有法线扰动带来的高光变化。
+
+两者可**叠加**：Quad + SimpleTransparency 是 Crest 官方给低端移动端的组合。
+
+### 13.5 对本工程的建议（按收益/风险排序）
+
+| 措施 | 收益 | 风险 | 建议 |
+|---|---|---|---|
+| **`WaterMeshType.Quad`** | draw call 49→1，去掉全部 chunk CBUFFER/MPB | 湖面变平（法线仍在，高光仍有变化） | **值得试**。湖只有 190m，远景不需要 clipmap LOD |
+| **`CREST_SIMPLE_TRANSPARENCY=1`** | 省 CopyColor+CopyDepth 两个全屏 pass | 失去折射；需重新生成 shader | 移动端**强烈建议**，桌面可选 |
+| 关 `WriteToColorTexture` | 省 CopyColor | 无折射 | 与上一条互斥（SimpleTransparency 时自动无效） |
+| 关 `WriteToDepthTexture` | 省 CopyDepth | 岸边泡沫/深浅过渡失效 | 不建议，泡沫是主要视觉线索 |
+| `LodLevels` 4→3 | chunk 49→37 | 远处精度下降 | 收益有限，先做上面两条 |
+| 水下效果按需 | 水下 pass 只在入水时跑 | 无 | **已是现状**（引擎自带 >2m 关闭） |
+
+**先做 Quad 还是先做 SimpleTransparency**：如果目标是 30fps 稳，
+先上 `SimpleTransparency`（省的是带宽，移动端 tile GPU 上更值钱）；
+如果目标是 draw call 数，先上 Quad。两者叠加是官方推荐的低端组合。
+
+**必须先验证的**：Quad 模式下湖面是否还"像水"。
+湖面平静、观察距离 300m，纯法线扰动可能足够；但若要做近景钓鱼视角的水面起伏，
+Quad 就不够了 —— 那时应保留 Chunks 但把 `LodLevels` 压到 2~3。
+
+### 13.6 一条容易误判的事
+
+`WaterBody` 的 chunk 级剔除（`WaterBodyCulling=1`）对湖**几乎不起作用**：
+实测 49 个 chunk 里 `_Culled=0`、`forceRenderingOff=0`。原因是水面 clipmap 跟着视点走，
+外圈 chunk 尺寸巨大，AABB 必然相交。**真正把水面裁成湖盆形状的是 ClipLod**（§11.5），
+不是 WaterBody。所以别指望靠 WaterBody 减少水面 chunk 数。
+
+## 14. 性能模式：SimpleTransparency + Quad（2026-11-13 落地）
+
+> 工具：`CrestPerformanceMode`（`ApplySimpleTransparency` / `ApplyQuad` / `ApplyBoth` / `Restore` / `Report`）
+> 验证：`CrestRenderProbe.Run` 读 URP pass 队列 + `LakeWaterVerify.Run` 看画面。
+
+### 14.1 实测收益
+
+| 配置 | URP pass 总数 | CopyColor | CopyDepth | 水面 chunk | draw call |
+|---|---|---|---|---|---|
+| 原始（Chunks + 非 SimpleTransparency） | 4 | 1 | 1 | 49 | ~49 |
+| **+ SimpleTransparency** | **1** | **0** | **0** | 49 | ~49 |
+| **+ SimpleTransparency + Quad** | **1** | **0** | **0** | **0** | **1** |
+
+两档画面都通过 `LakeWaterVerify` 6/6（浅水见底、水下吸收色调、水下有内容、
+开关对照、水上不误开、水面有内容）。Quad 后浅水画面的标准差 26.9 / 色种 10044，
+与 Chunks 的 26.9 / 10182 几乎一致 —— **视觉损失比预期小**，因为湖面平静，
+"动"主要来自法线扰动的高光变化，几何起伏本来就看不出来。
+
+### 14.2 SimpleTransparency 怎么改才对（三层，缺一不可）
+
+1. **Crest Settings 资产**（`ProjectSettings/Packages/com.waveharmonic.crest/Settings.asset`）
+   的 `_PlatformSettings*.SimpleTransparency = 1` + `_OverrideSimpleTransparency = 1`。
+2. **scripting define** `d_Crest_SimpleTransparency`（影响 C# 的 `#if`，
+   如 `SurfaceRenderer.Universal.cs:61` 的 `ConfigureInput`）。
+3. **重新生成** `Runtime/Shaders/Library/Settings/Settings.Crest.*.hlsl`
+   （`#define CREST_SIMPLE_TRANSPARENCY (1)`，影响 shader）。
+
+**踩坑（全部实测）**：
+- **不能只改 hlsl 文本**：`ShaderSettingsGenerator` 会在脚本重载时覆盖手改内容。
+- **`AssetDatabase.LoadAllAssetsAtPath` 读不到**：该资产在 `ProjectSettings/` 目录，
+  不在 `Assets/` 下，AssetDatabase 不索引它。
+- **`SerializedObject` + `ScriptableSingleton.Save()` 无效**：内存里回读是 True，
+  但落盘后文件仍是 0（`OnEnable` 的 hideFlags 与内部序列化路径不一致）。
+  **正确做法是直接改文本**。
+- **改完文本必须重载单例再调 `UpdateSymbols()`**：否则它读内存里的旧单例，
+  会把 define 写回旧值（实测：文本 True → define 被写成 False）。
+  逻辑照抄 Crest 自己的 `FileSystemWatcher.OnChanged`（`ProjectSettings.cs:440-455`）：
+  销毁单例 → 清 `s_Instance` → 重新取（从磁盘反序列化）→ `UpdateSymbols()`。
+- **`UpdateSymbols()` 内部只请求重编译**，真正的 hlsl 生成在域重载后
+  `[DidReloadScripts]` 才发生。batchmode 单进程内不触发，
+  必须直接反射调 `ShaderGeneratorUtility.GenerateAll()` 并等待完成。
+
+### 14.3 为什么必须同时关 URP 资产的 Depth/Opaque 纹理
+
+只改宏只让 **Crest 自己**不再请求。但 `Assets/Settings/UniversalRP.asset` 上
+`m_RequireDepthTexture: 1` / `m_RequireOpaqueTexture: 1` 会让 **URP 对所有相机**
+无条件 copy（`UniversalRenderPipeline.cs:1243-1244`）。
+不关这两项，省下的只是 Crest 那 1 份，等于白改。
+
+**关之前必须确认没有别的 shader 依赖**：已检查草 BRG（`Assets/Grasses/GrassBRG.shader`
+不采样这两张图）、URP 资产自身。GTS 地表与树材质是 ShaderGraph 产物，
+在 SRP Batcher 下正常不采样。Gaia/GeNa 的 VFX shader 有依赖但**未接入**
+（AGENTS.md §2），接入时必须重新打开这两项。
+
+### 14.4 SimpleTransparency 下必须调 `_Crest_TransparencyMinimumAlpha`
+
+`Fragment.hlsl:825-828` 在 SimpleTransparency 分支里用
+`max(length(volumeOpacity), _Crest_TransparencyMinimumAlpha, foam, albedo.a)` 写 `o_Alpha`，
+该属性默认 **0.95** —— 水面最多 5% 透光，等于不透明。
+本工程取 **0.12**（`CrestPerformanceMode.SimpleTransparencyMinAlpha`）。
+这是切到 SimpleTransparency 后**最容易漏的一步**：不改就会看到"水面变实了"。
+
+### 14.5 还剩下的开销
+
+- **水下效果**：`Underwater.Enabled = true`，入水时才有 pass（引擎自带 >2m 关闭），
+  非入水时零成本。已是最优。
+- **波浪仿真**：`AnimatedWavesLod` + `ShapeGerstner` 每帧一个 compute pass。
+  Quad 模式下置换只贡献法线，仿真仍然在跑 —— 若要进一步省，可考虑
+  `LodResolution` 降到 96~128（湖 190m，视觉差异小）。
+- **49 → 0 chunk 的连带收益**：`WaterChunkRenderer.Bind()` 里的 MPB + SH 采样
+  （`WaterChunkRenderer.cs:185-202`）全部消失，CPU 侧也省了一笔。
+
+### 14.6 还原
+
+`-executeMethod CrestPerformanceMode.Restore` 会把三项全部回退：
+Chunks + 非 SimpleTransparency + URP Depth/Opaque 开启 +
+`_Crest_TransparencyMinimumAlpha = 0.95`。
