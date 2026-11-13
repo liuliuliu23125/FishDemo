@@ -99,9 +99,20 @@ public static class GtsConvertOne
             AssetDatabase.SaveAssets();
 
             // 幂等：清本 chunk 旧产物
+            // 必须连已有的 GTS_Mesh 节点一起删（不只是 GTS_MeshTerrains）。
+            // 原因：GTSMesh 继承 GTSComponent，GTSProfile.GetGTSComponents() 会把它们全部找出来，
+            // 再对每个 component 的 gameObject 取 GetComponent<Terrain>()。
+            // 而 GtsApplyMeshToChunks 建的 GTS_Mesh/SubTile_xx 上没有 Terrain，
+            // 于是 ConvertToMesh 抛 MissingComponentException（实测：重转已挂过 mesh 的 chunk 直接 FAIL）。
+            // 先删节点，让本次转换从干净状态开始。
             foreach (var root in scene.GetRootGameObjects().ToList())
                 if (root.name.StartsWith("GTS_MeshTerrains"))
                     UnityEngine.Object.DestroyImmediate(root);
+            foreach (var t in terrains)
+            {
+                var oldMeshNode = t.transform.Find("GTS_Mesh");
+                if (oldMeshNode != null) UnityEngine.Object.DestroyImmediate(oldMeshNode.gameObject);
+            }
 
             var gtsTerrain = terrain.GetComponent<GTSTerrain>();
             if (gtsTerrain == null) gtsTerrain = terrain.gameObject.AddComponent<GTSTerrain>();
