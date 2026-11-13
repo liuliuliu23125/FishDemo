@@ -18,7 +18,7 @@ using WaveHarmonic.Crest;
 ///    - 累积扫过的**圆心角**必须明显大于 0（证明在动，而不是停着）；
 ///    - 相机高度恒定（水位 + 高度）。
 /// 3. **始终朝湖心**：每帧 `forward` 与「相机指向湖心」的水平方向夹角 < 15°。
-/// 4. **Crest 视点跟随**：`water.Viewer == 轨道相机`。
+/// 4. **Crest Viewer 跟随 + Viewpoint 固定**：`water.Viewer == 轨道相机`，且 `Viewpoint != null`。
 /// 5. **SECTR loader 唯一**：同一时刻只有 1 个 `SECTR_RegionLoader.enabled == true`，
 ///    且它挂在当前渲染相机上 —— 两个同时开会造成加载范围叠加、chunk 常驻。
 /// 6. **切换回原相机后不破坏原行为**：`rig.Apply(false)` 之后原相机 `enabled == true`
@@ -206,11 +206,15 @@ public static class LakeOrbitVerify
             _sb.AppendLine($"朝向偏差: 最大 {_maxAngleErr:F1}°（< 15°，始终朝湖心）");
             if (!_c3) _ok = false;
 
-            // ── Crest 视点 ──
+            // ── Crest Viewer + 固定 Viewpoint ──
             _sb.AppendLine("");
             _sb.AppendLine("=== 系统跟随 ===");
-            _c4 = _water.Viewer == _orbitCam;
-            _sb.AppendLine($"Crest Viewer == 轨道相机 : {_c4}（实际 {(_water.Viewer != null ? _water.Viewer.name : "null")}）");
+            var viewerOk = _water.Viewer == _orbitCam;
+            var viewpointOk = _water.Viewpoint != null;
+            _c4 = viewerOk && viewpointOk;
+            _sb.AppendLine($"Crest Viewer == 轨道相机 : {viewerOk}（实际 {(_water.Viewer != null ? _water.Viewer.name : "null")}）");
+            _sb.AppendLine($"Crest Viewpoint = {(_water.Viewpoint != null ? _water.Viewpoint.name : "null")}" +
+                           "（固定湖心，不跟相机）");
             if (!_c4) _ok = false;
 
             // ── SECTR loader 唯一且挂在当前相机 ──
@@ -224,9 +228,10 @@ public static class LakeOrbitVerify
 
             // ── 切回原相机 ──
             _rig.Apply(false);
-            _c6 = _tourCam.enabled && !_orbitCam.enabled && _water.Viewer == _tourCam;
+            _c6 = _tourCam.enabled && !_orbitCam.enabled && _water.Viewer == _tourCam &&
+                  _water.Viewpoint != null;
             _sb.AppendLine($"切换回原相机: 原相机 enabled={_tourCam.enabled}, 轨道 enabled={_orbitCam.enabled}, " +
-                           $"Viewer==原相机 {_water.Viewer == _tourCam}");
+                           $"Viewer==原相机 {_water.Viewer == _tourCam}, Viewpoint 仍固定 {_water.Viewpoint != null}");
             if (!_c6) _ok = false;
 
             var loadersAfter = UnityEngine.Object.FindObjectsOfType<SECTR_RegionLoader>().Where(l => l.enabled).ToArray();
@@ -306,7 +311,7 @@ public static class LakeOrbitVerify
             _sb.AppendLine($"[1] 半径与高度恒定   : {(_c1 ? "PASS" : "FAIL")}");
             _sb.AppendLine($"[2] 确实在运动       : {(_c2 ? "PASS" : "FAIL")} ({_totalAngle:F1}°)");
             _sb.AppendLine($"[3] 始终朝湖心       : {(_c3 ? "PASS" : "FAIL")} (最大偏差 {_maxAngleErr:F1}°)");
-            _sb.AppendLine($"[4] Crest 视点跟随   : {(_c4 ? "PASS" : "FAIL")}");
+            _sb.AppendLine($"[4] Viewer+固定Viewpoint: {(_c4 ? "PASS" : "FAIL")}");
             _sb.AppendLine($"[5] loader 唯一      : {(_c5 ? "PASS" : "FAIL")}");
             _sb.AppendLine($"[6] 切回原相机正常   : {(_c6 ? "PASS" : "FAIL")}");
             _sb.AppendLine($"[7] 切换后 loader 转移: {(_c7 ? "PASS" : "FAIL")}");

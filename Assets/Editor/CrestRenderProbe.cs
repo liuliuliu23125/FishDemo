@@ -197,6 +197,8 @@ public static class CrestRenderProbe
             _sb.AppendLine($"WriteToColorTexture = {water.WriteToColorTexture}, " +
                            $"WriteToDepthTexture = {water.WriteToDepthTexture}");
             _sb.AppendLine($"LodLevels = {water.LodLevels}, LodResolution = {water.LodResolution}");
+            _sb.AppendLine($"Viewpoint = {(water.Viewpoint != null ? water.Viewpoint.name : "相机（默认）")}" +
+                           "（固定时水面数据不跟相机；Viewer 仍跟相机）");
 
             // DepthLod 现在只对与湖 AABB 相交的 Terrain dispatch（见 DepthLod.TerrainDepthInput）。
             // 这里用 WaterBody 的 transform 尺度复算一次，给 Frame Debugger 的 Depth dispatch 数做对照。

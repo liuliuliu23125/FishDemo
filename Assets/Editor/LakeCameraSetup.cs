@@ -14,10 +14,9 @@ using FishDemo.Gameplay;
 /// ── 第一性原理：为什么需要三样东西，而不是只加一台相机 ──
 /// 拿掉原相机换成新的，只是渲染了一个新视角。但本工程有两处状态**不跟着相机走**：
 ///
-///   1. **Crest 水面以「视点」为中心铺开**（`WaterRenderer.cs:99-112` 的 GetViewpoint
-///      取 `_Camera`，即 public 的 `Viewer`）。视点还停在没渲染的相机上时，
-///      水面的 clipmap 会铺在别处 —— 表现为「湖在这个方向，水却在那个方向」。
-///      所以 rig 每次切换都重写 `water.Viewer`。
+///   1. **Crest 的 Viewer 必须跟着渲染相机**：水下检测和反射取它；未设置固定
+///      `Viewpoint` 时它还是 LOD 中心。本工程已把 LOD 中心固定在 `Lake Viewpoint`
+///      （湖心，水位+26m），所以水面数据不随相机漂移；但 rig 仍要重写 `water.Viewer`。
 ///
 ///   2. **SECTR 的 chunk 加载按 loader 自身 transform 判定**
 ///      （`SECTR_RegionLoader.cs:83-84` 用 `transform.position` 建 Bounds，不看相机）。

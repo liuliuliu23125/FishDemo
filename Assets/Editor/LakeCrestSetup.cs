@@ -68,6 +68,13 @@ public static class LakeCrestSetup
     /// <summary>水面节点名。重复执行时按这个名字找已有对象，保证幂等。</summary>
     private const string NodeName = "Crest Lake";
 
+    /// <summary>
+    /// 固定 LOD 视点相对水面的高度（米）。
+    /// 取 26（与 LakeOrbitCamera 默认高度一致）：固定一个适中的 LOD 尺度，
+    /// 4 级 LOD 才能覆盖 560m 湖面；0m 时 scale=1，3/4 级都覆盖不到岸边。
+    /// </summary>
+    private const float ViewpointHeightAboveWater = 26f;
+
     public static void Apply() { Run("apply"); }
     public static void Remove() { Run("remove"); }
     public static void Report() { Run("report"); }
@@ -200,11 +207,22 @@ public static class LakeCrestSetup
             root.transform.position = new Vector3(LakeCarve.Center.x, LakeCarve.WaterLevel, LakeCarve.Center.y);
             W($"水面节点位置 = {root.transform.position}");
 
+            // ── 固定 LOD 视点 ──
+            // Crest 默认用相机作为 clipmap 中心：相机一动，depth/foam/wave/clip 的采样
+            // 就跟着漂，表现为水面高度/岸线观感随相机变化。湖是固定的小水体，
+            // 把 Viewpoint 锚在湖心上方后，水面数据不再跟相机；
+            // Viewer 仍然是相机，水下检测/反射继续跟相机走。
+            var viewpointGo = new GameObject("Lake Viewpoint");
+            viewpointGo.transform.SetParent(root.transform, false);
+            viewpointGo.transform.localPosition = new Vector3(0f, ViewpointHeightAboveWater, 0f);
+
             var water = root.AddComponent<WaterRenderer>();
             // AddComponent 会调 Reset()，Reset 里已把 Water.mat / Chunk.prefab 填好。
             // 但 Reset 只在编辑器里、且通过 Inspector 添加时才走；这里显式兜底一次。
             water.Surface.Material = waterMat;
             water.Surface.VolumeMaterial = volumeMat;
+            water.Viewpoint = viewpointGo.transform;
+            W($"LOD 视点 = {viewpointGo.name} @ {viewpointGo.transform.position}（固定；Viewer 仍跟相机）");
             // 当前性能模式是 Quad。Apply 会重建节点，必须在这里显式写回；
             // 否则新节点会回到 SurfaceRenderer 的默认值 Chunks（49 个 chunk）。
             CrestPerformanceMode.SetMeshType(water, 1, W);
@@ -228,7 +246,7 @@ public static class LakeCrestSetup
             // ── LOD：湖很小，压到最低档 ──
             // 默认 9 级是给"无限海洋"的，每级翻倍覆盖范围，9 级能铺到几十公里。
             // 湖盆半径 190m，3 级已覆盖 560m 湖面；每级都有仿真开销。
-            water.LodLevels = 3;
+            water.LodLevels = 4;
             // 默认 384 对 190m 的湖太浪费；128 在湖边看水面起伏已足够。
             water.LodResolution = 128;
             // ScaleRange 下限压到 1：水面网格跟着相机高度缩放，湖面不需要放大。
@@ -587,14 +605,18 @@ public static class LakeCrestSetup
         if (water.Surface.Material == null) { W("  FAIL：Surface.Material 为空"); ok = false; }
         else W($"  Surface.Material = {water.Surface.Material.name}");
 
+        var viewpoint = water.Viewpoint;
+        W($"  Viewpoint = {(viewpoint != null ? viewpoint.name : "null")}（期望 Lake Viewpoint；Viewer 仍跟相机）");
+        if (viewpoint == null) ok = false;
+
         // Surface.MeshType 是 [SerializeReference] 内部字段，没有公开 API，走序列化读取。
         int meshType = CrestPerformanceMode.GetMeshType(water);
         W($"  Surface.MeshType = {meshType}（期望 1=Quad）");
         if (meshType != 1) ok = false;
 
-        W($"  LodLevels={water.LodLevels}（期望 3）, LodResolution={water.LodResolution}（期望 128）, " +
+        W($"  LodLevels={water.LodLevels}（期望 4）, LodResolution={water.LodResolution}（期望 128）, " +
           $"Depth={water.DepthLod.Resolution}, Foam={water.FoamLod.Resolution}, Clip={water.ClipLod.Resolution}（期望 128）");
-        if (water.LodLevels != 3 || water.LodResolution != 128) ok = false;
+        if (water.LodLevels != 4 || water.LodResolution != 128) ok = false;
         if (water.DepthLod.Resolution != 128 ||
             water.FoamLod.Resolution != 128 ||
             water.ClipLod.Resolution != 128) ok = false;

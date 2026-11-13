@@ -10,10 +10,10 @@ namespace FishDemo.Gameplay
     /// ── 为什么要一个 rig，而不是"两台相机同时开着" ──
     /// 有三处状态必须**跟着当前渲染相机走**，只换相机是不够的：
     ///
-    /// 1. **Crest 的视点**：`WaterRenderer.GetViewpoint()`（WaterRenderer.cs:99-112）
-    ///    取的是 `_Camera`（= `Viewer` 属性）。水面是以**视点**为中心铺开的 clipmap，
-    ///    视点停在没在渲染的相机上，水面就会跟着一个看不见的位置铺，出现「水在别处」。
-    ///    所以每次切换都要重写 `water.Viewer`。
+    /// 1. **Crest 的 Viewer**：`WaterRenderer.Viewer` 仍必须指向当前渲染相机——
+    ///    水下检测、反射，以及未设置固定 `Viewpoint` 时的 LOD 中心都取它。
+    ///    本工程把 LOD 中心固定在湖心（`Lake Viewpoint`，`_Viewpoint` 非空），
+    ///    所以水面数据不随相机漂移；但 `Viewer` 仍要随相机切换。
     ///
     /// 2. **SECTR 的 chunk 加载**：`SECTR_RegionLoader` 用**自身 transform** 判定
     ///    加载范围（SECTR_RegionLoader.cs:83-84），不看相机。所以每台相机各自挂一个
@@ -51,8 +51,18 @@ namespace FishDemo.Gameplay
         [Tooltip("自由飞行切换键。默认 F，与原 PegasusTourController 一致。")]
         [SerializeField] private KeyCode _flyToggleKey = KeyCode.F;
 
-        [Tooltip("自由飞行基础速度（米/秒）。滚轮可实时调整。")]
-        [SerializeField] private float _flyMoveSpeed = 120f;
+        [Header("自由飞行")]
+        [Tooltip("WASD 基础移动速度（米/秒）。原 120 太快，默认缩到 30。")]
+        [SerializeField] private float _flyMoveSpeed = 30f;
+
+        [Tooltip("滚轮调速上限（米/秒）。")]
+        [SerializeField] private float _flyMaxMoveSpeed = 120f;
+
+        [Tooltip("相对湖心的最大水平距离（米）。超过会被 LateUpdate 拉回。")]
+        [SerializeField] private float _flyRangeRadius = 600f;
+
+        [Tooltip("滚轮每格的调速步长。")]
+        [SerializeField] private float _flyScrollSpeedStep = 0.5f;
 
         [Tooltip("启动时先启用哪一台。true = 环湖轨道（默认展示湖）。")]
         [SerializeField] private bool _startOnOrbit = true;
@@ -133,6 +143,32 @@ namespace FishDemo.Gameplay
         }
 
         /// <summary>
+        /// 把自由飞行限制在湖心周围的水平圆内。
+        /// 必须放 LateUpdate：`PegasusFlyingCamera` 在 Update 里写 transform，
+        /// 这里晚一步执行才能覆盖它的位移；轨道脚本在飞行期间已 Paused，不会抢。
+        /// 只限制 XZ，不限制 Y —— 允许下潜看水下效果。
+        /// </summary>
+        private void LateUpdate()
+        {
+            if (_fly == null || _orbit == null) return;
+
+            var cam = ActiveCamera;
+            if (cam == null || _flyRangeRadius <= 0f) return;
+
+            var center = _orbit.LakeCenter;
+            var p = cam.transform.position;
+            var dx = p.x - center.x;
+            var dz = p.z - center.z;
+            var sqr = dx * dx + dz * dz;
+            if (sqr <= _flyRangeRadius * _flyRangeRadius) return;
+
+            var scale = _flyRangeRadius / Mathf.Sqrt(sqr);
+            p.x = center.x + dx * scale;
+            p.z = center.z + dz * scale;
+            cam.transform.position = p;
+        }
+
+        /// <summary>
         /// 进入 WASD 自由飞行。飞行组件挂在**当前渲染相机**上，两台相机都支持。
         ///
         /// ── 为什么必须暂停轨道脚本 ──
@@ -174,10 +210,12 @@ namespace FishDemo.Gameplay
             _fly.m_moveSpeed = _flyMoveSpeed;
             // 允许 WASD 直接移动，不必先按住右键；视角仍用右键拖动。
             _fly.m_requireRmbToMove = false;
-            _fly.m_maxMoveSpeed = 1000f;
+            _fly.m_maxMoveSpeed = Mathf.Max(_flyMaxMoveSpeed, _flyMoveSpeed);
+            _fly.m_scrollSpeedStep = _flyScrollSpeedStep;
 
             Debug.Log($"[LakeCameraRig] {cam.name} 进入 WASD 自由飞行" +
-                      "（WASD 移动 / QE 升降 / 右键转视角 / 滚轮调速 / F 退出）");
+                      $"（WASD 移动 / QE 升降 / 右键转视角 / 滚轮调速 / F 退出；" +
+                      $"速度 {_flyMoveSpeed}–{_flyMaxMoveSpeed} m/s，水平范围 {_flyRangeRadius}m）");
         }
 
         /// <summary>

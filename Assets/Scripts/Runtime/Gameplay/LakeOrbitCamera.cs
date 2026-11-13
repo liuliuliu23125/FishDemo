@@ -10,16 +10,16 @@ namespace FishDemo.Gameplay
     /// 1. 工程没有装 Cinemachine（`Packages/manifest.json` 里没有 `com.unity.cinemachine`），
     ///    为一个固定圆周运动引入整套依赖不划算。
     /// 2. 真正要处理的三件事它都帮不上：
-    ///    - Crest 的视点绑定（`WaterRenderer.Viewer` 必须是当前渲染相机）；
+    ///    - Crest 的 Viewer（`WaterRenderer.Viewer` 必须是当前渲染相机，用于水下/反射；
+    ///      LOD 中心已固定为 `Lake Viewpoint`，不随相机漂移）；
     ///    - SECTR chunk 加载（`SECTR_RegionLoader` 按**自身 transform** 判定范围，
     ///      `SECTR_RegionLoader.cs:83-84`，所以轨道相机也得有自己的 loader）；
     ///    - 相机启用/禁用切换。
     /// 3. 轨道运动本身就是 20 行三角函数，参数化反而更清楚。
     ///
     /// ── 为什么半径比 `LakeCarve.WaterHalfExtent`（280m）略大 ──
-    /// 站在水面上方看湖，水面是以**视点**为中心铺开的 clipmap，视点在岸外一点
-    /// 也能覆盖整个湖盆；半径 300m 时相机在岸外 20m，俯角 12° 能把 380m 直径的湖
-    /// 完整收进 60° FOV。
+    /// LOD 中心固定在湖心，水面数据始终覆盖整个湖盆；半径 300m 时相机在岸外 20m，
+    /// 俯角 12° 能把 380m 直径的湖完整收进 60° FOV。
     ///
     /// ── 高度为什么不用固定值 ──
     /// 碗沿地形在 266m 左右（`LakeCarve.WaterLevel` 264 + 岸线），固定 290m 在部分
