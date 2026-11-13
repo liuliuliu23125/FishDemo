@@ -20,7 +20,7 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | 帧率 / 机型 | 30fps / iQOO 16 |
 | 同屏角色上限 | 20 |
 | 联网 | 将来需要，**当前不实现网络层**，只保证客户端表现可承载多人 |
-| 合批 | **SRP Batcher 唯一路径；静态合批已关闭**（二者互相干扰） |
+| 合批 | **SRP Batcher 唯一路径；静态合批已关闭**（PlayerSettings Android/Standalone 0/0；GtsApplyMeshToChunks 不再标 static，存量标记保留但不再参与合批） |
 | **Android 图形 API** | **仅 Vulkan，排除 GLES**（`m_APIs=15000000`，`m_Automatic=0`） |
 
 **Android 仅 Vulkan 的原因**：草改 BRG 后，BRG shader 需要 `#pragma target 4.5` +
@@ -46,7 +46,7 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | **Terrain → Mesh 分块** | **GTS 已落地**：144 个 subTile，`saveResolution=Half` | 加 LOD 链、走 YooAsset | 同上 + [gts_srp_batcher](Docs/gts_srp_batcher.md) |
 | **地表合批** | **SRP Batcher 已生效**；静态合批已关；纹理数组 ASTC_8x8 | 维持 | [gts_srp_batcher](Docs/gts_srp_batcher.md) |
 | 大世界流式 | **SECTR**（承担全部 chunk 加载） | SECTR 降为区域级，chunk 走 YooAsset | 同上 |
-| **水体** | **Crest 5.10.0 已落地**：中心人工湖（湖心 `(192,96)` / 半径 190m / 水位 264m / 深 30m），Crest 包在 `Packages/com.waveharmonic.crest`；靠 Surface Clipping 裁出湖盆；旧 Gaia Water 已禁用保留；**当前渲染模式 = SimpleTransparency + Quad**（URP pass 4→1，水面 draw call 49→1）；环湖轨道相机 + C/F 键切换 | 真机验反射/水下开关 | [water](Docs/water.md) §11–§14 |
+| **水体** | **Crest 5.10.0 已落地**：中心人工湖（湖心 `(192,96)` / 半径 190m / 水位 264m / 深 30m），Crest 包在 `Packages/com.waveharmonic.crest`；靠 Surface Clipping 裁出湖盆；旧 Gaia Water 已禁用保留；**当前渲染模式 = SimpleTransparency + Quad**（URP pass 4→1，水面 draw call 49→1）；`LodLevels=3` / 分辨率 128（Gerstner 96）/ Depth SDF 关闭；Depth 只烘湖区 Terrain；环湖轨道相机 + C/F 键切换 | 真机验反射/水下开关 | [water](Docs/water.md) §11–§14 |
 | 昼夜/天气/大气雾 | **无**（仅一盏平行光） | Enviro 3 | [atmosphere](Docs/atmosphere.md) |
 | 体积雾/光 | 未接入 | Fog Mist 2 / Light Beam 2 / Lights 2 | 同上 |
 | 后处理 | URP 内置（主场景无 Volume） | 同 | [postprocess](Docs/postprocess.md) |
@@ -99,7 +99,7 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
   无 MSAA 时 alpha-to-coverage 退化，近景草会被切成亮绿碎屑。
 - tint / 类型尺寸走**材质属性**（每类型一个材质）而非 per-instance 数据，GPU buffer 保持 32B/实例。
 
-**Crest 水体（2026-11-13 落地，改水前必读 [water](Docs/water.md) §11/§12）**：
+**Crest 水体（2026-11-13 落地，改水前必读 [water](Docs/water.md) §11–§14）**：
 - **Crest 是海洋系统**：水面以**视点**为中心铺开 clipmap，`WaterRenderer` 的 transform XZ 对水面无意义，
   且最外圈能铺到 ε±数十公里。`WaterBody` 的剔除是整 chunk 粒度，**裁不出小湖**。
   只有一个办法：`ClipLod.DefaultClippingState = EverythingClipped` + `ClipLodInput(Cube, Inverted=true)`。
@@ -115,10 +115,16 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
   （场景未烘 GI，环境探针全黑）；② 对每个 `GTSMesh` 调 `Refresh()`（否则地表黑）。
 - 湖盆参数唯一来源是 `LakeCarve`（Center/Radius/WaterLevel/Depth）。改湖先改那里，
   再跑 `LakeCarve.Apply` → `LakeVegetationClear.Apply` → 重转 GTS → `LakeCrestSetup.Apply`。
+  `LakeCrestSetup.Apply` 现在保留根节点上的 `LakeCameraRig`，并会写回 Quad/分辨率/SDF/URP 开关；
+  若性能模式被 `CrestPerformanceMode.Restore` 回退过，重建后再跑一次 `CrestPerformanceMode.ApplyBoth`。
+  场景从零重建时相机节点不会自动出现，仍需 `LakeCameraSetup.Apply`。
 
-**水的透明度不是 alpha**（2026-11-13，详见 [water](Docs/water.md) §12.1）：
-- `CREST_SIMPLE_TRANSPARENCY (0)` 下 `o_Alpha` 恒为 1，透明靠折射合成 + 体积消光。
-  调透明度只动 `_Crest_Absorption` / `_Crest_Scattering`（找 alpha 是死路）。
+**水的透明度由模式决定**（2026-11-13，详见 [water](Docs/water.md) §12.1/§14.4）：
+- **当前 SimpleTransparency=1**：`o_Alpha = max(length(volumeOpacity), _Crest_TransparencyMinimumAlpha, foam, albedo.a)`
+  （`Fragment.hlsl:825-828`），min alpha=0.12，volumeOpacity 由 DepthLod 提供。
+  调透明度要同时看 `_Crest_TransparencyMinimumAlpha` 与 depth，不是只调 Absorption/Scattering。
+- 若切回 `CREST_SIMPLE_TRANSPARENCY (0)`：`o_Alpha` 恒为 1，透明靠折射合成 + 体积消光，
+  此时才只动 `_Crest_Absorption` / `_Crest_Scattering`（找 alpha 是死路）。
 - 水下效果开关是引擎自带的（离水面 >2m 自动关），不要自己写进水检测；
   但 `_Crest_AmbientTerm`/`_Crest_DirectTerm` 必须写在 **Water.mat（水面材质）**上——
   `UnderwaterRenderer.Effect.cs:247` 每帧把水面材质覆盖到 Volume 材质，只改后者静默失效。
@@ -141,6 +147,11 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 - 水面 chunk 不合批是**三重原因**：`CommandBuffer.DrawRenderer` 逐个提交（不进 SRP Batcher）、
   逐 chunk 的 `CrestChunkGeometryData` CBUFFER（`Geometry.hlsl:12-16`）、逐 chunk MPB。
   Quad 模式一次性绕开全部三条。
+- **当前 compute 规模**：`LodLevels=3`；Depth/Foam/Clip/AnimatedWaves/Level=128，ShapeGerstner=96，
+  Depth SDF 关闭。Depth 只对与湖区 AABB 相交的 active Terrain dispatch（`EverythingClipped` 时；
+  大洋模式不裁则保留全部；`CrestRenderProbe` 实测 15→6）。Foam 频率保持 30：
+  `PersistentLod` 在 substeps==0 时仍 dispatch 一次，
+  降频不减少 dispatch 次数。详细清单与吞吐估算见 water.md §14.5。
 
 **渲染分层**：Gameplay 层不得直接操作 `CommandBuffer` 或 `Graphics.*`。
 
@@ -161,7 +172,7 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | [Assets/Scripts](Assets/Scripts/AGENTS.md) | 66 | 写任何自研代码前（程序集边界、命名空间约定） |
 | [Assets/Scripts/Editor](Assets/Scripts/Editor/AGENTS.md) | 124 | 改 Gaia 世界生成工具链、草烘焙与 BRG 验证 |
 | [Assets/Scripts/Runtime](Assets/Scripts/Runtime/AGENTS.md) | 125 | 改资源层、接 YooAsset、改 BRG 草运行时、改相机 rig |
-| [Assets/Editor](Assets/Editor/AGENTS.md) | 250 | 改 SECTR 切块 / GTS 转换 / 地形调参 / 树的密度与 LOD / 验证脚本 |
+| [Assets/Editor](Assets/Editor/AGENTS.md) | 257 | 改 SECTR 切块 / GTS 转换 / 地形调参 / 树的密度与 LOD / 验证脚本 |
 | [Assets/Procedural Worlds](Assets/Procedural%20Worlds/AGENTS.md) | 105 | 用第三方插件、排查 Gaia/SECTR/GTS/Pegasus 问题 |
 | [Assets/Scenes](Assets/Scenes/AGENTS.md) | 85 | 改场景、重跑世界生成、重接草/Pegasus |
 | [Packages/com.tuyoogame.yooasset](Packages/com.tuyoogame.yooasset/AGENTS.md) | 90 | 改资源层代码前 |
@@ -183,9 +194,9 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | 文档 | 何时读 |
 |---|---|
 | [grass_brg_plan](Docs/grass_brg_plan.md) | 做草改 BRG、排查草渲染/剔除、查 Vulkan 约束、采样率与烘焙规模。**628 行，只跳读需要的节** |
-| [grass_brg_progress](Docs/grass_brg_progress.md) | **改任何草相关代码前先读**：当前落地状态、实测数据、13 条「草消失且无报错」的踩坑、复现命令。**264 行** |
-| [gts_srp_batcher](Docs/gts_srp_batcher.md) | 改 GTS shader、排查地形合批（SRP Batcher）不生效、mesh 地形与 Terrain 视觉不一致。**212 行** |
-| [world_implementation](Docs/world_implementation.md) | 重跑世界生成、排查 chunk 加载、改世界尺寸/海平面、核对"场景怎么来的"。**396 行，只跳读需要的节** |
+| [grass_brg_progress](Docs/grass_brg_progress.md) | **改任何草相关代码前先读**：当前落地状态、实测数据、13 条「草消失且无报错」的踩坑、复现命令。**370 行** |
+| [gts_srp_batcher](Docs/gts_srp_batcher.md) | 改 GTS shader、排查地形合批（SRP Batcher）不生效、mesh 地形与 Terrain 视觉不一致。**223 行** |
+| [world_implementation](Docs/world_implementation.md) | 重跑世界生成、排查 chunk 加载、改世界尺寸/海平面、核对"场景怎么来的"。**400 行，只跳读需要的节** |
 | [terrain_streaming](Docs/terrain_streaming.md) | 做地形、流式加载、SECTR |
 | [water](Docs/water.md) | 做水体、水下、反射、中心湖、性能模式。**改水/改湖前先读 §11**（落地配置 + 踩坑），§12 透明/水下/相机，§13 渲染开销实测，§14 性能模式。§1-10 是过时的选型分析 |
 | [atmosphere](Docs/atmosphere.md) | 做昼夜、天气、体积雾光 |
@@ -200,7 +211,7 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 |---|---|---|
 | [yooasset_3.0.7](Docs/yooasset_3.0.7.md) | 2039 | 要理解 YooAsset 内部链路/模块职责；改动包源码；排查"为什么这么设计"。**顶部有分节导读** |
 | [yooasset_practices](Docs/yooasset_practices.md) | 154 | 遇到具体症状：初始化失败、句柄失效、卸载不掉、参数依据。**顶部按症状分节** |
-| [project_todo](Docs/project_todo.md) | 49 | 查工程差距、待决策事项 |
+| [project_todo](Docs/project_todo.md) | 53 | 查工程差距、待决策事项 |
 | [collaboration_rules](Docs/collaboration_rules.md) | 75 | 协作方式、历史踩坑 |
 
 ## 6. 工程约定

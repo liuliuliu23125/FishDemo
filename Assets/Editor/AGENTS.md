@@ -29,6 +29,7 @@ SECTR 与 GTS 都没有自己的 asmdef，其编辑器 API（`SECTR_TerrainWindo
 | `TerrainChunkTuning.cs` | 批量改/还原 36 块 Terrain 渲染参数（可逆）；`DisableDetail` 单独关草 | `Report` / `ApplyMobile` / `RestoreDesktop` / `DisableDetail` |
 | `ChunkRenderStats.cs` | 静态统计 pass 数 / 树 / 草实例量 | `-executeMethod ChunkRenderStats.Run` |
 | `GraphicsApiSetup.cs` | Android 图形 API 改为仅 Vulkan、关 Automatic | `-executeMethod GraphicsApiSetup.SetAndroidVulkanOnly` |
+| `BatchingSetup.cs` | 查询/关闭平台静态合批（PlayerSettings 的 internal API，走反射） | `Report` / `FixAndroid` / `FixAll` |
 | `TerrainDetailProbe.cs` | 逐个 chunk 打印 detail 原型 / 当前 detail 距离与密度 / 各层实例数 | `-executeMethod TerrainDetailProbe.Run` |
 | `DetailMeshProbe.cs` | 对比三条路径能否拿到 detail 原型 mesh（决定运行时怎么取） | `-executeMethod DetailMeshProbe.Run` |
 | `DetailUvProbe.cs` | 打印 7 个原型的 UV 范围 / subMesh 数 / 图集尺寸（排查贴图采样错位） | `-executeMethod DetailUvProbe.Run` |
@@ -117,12 +118,18 @@ LakeCarve.Apply                 （挖碗形湖盆，改 2 个 chunk 的高度�
   → LakeVegetationClear.Apply   （清湖区树与草）
   → GtsConvertOne.Run × 受影响 chunk（一进程一块）→ GtsApplyMeshToChunks.RunAll
   → GtsFixMeshRendering.RunAll
-  → LakeCrestSetup.Apply        （重建 Crest Lake 节点）
+  → LakeCrestSetup.Apply        （重建 Crest Lake 节点，保留同名根上的 LakeCameraRig）
+  → CrestPerformanceMode.ApplyBoth（仅在性能模式被 Restore 过时需要；Apply 会保留当前模式）
   → LakeGeometryProbe.Run + LakeRenderVerify.Run（校验）
 ```
 
 湖盆参数的**唯一来源**是 `LakeCarve` 的常量（`Center` / `Radius` / `WaterLevel` / `Depth` / `Blend`）。
 改湖先改那里，不要手改 36 个 chunk 的高度图。
+
+> `LakeCrestSetup.Apply` 只保留**已存在**的 `LakeCameraRig`，不会新建相机节点。
+> 场景从零重建（没有 `Lake Orbit Camera` / rig）时，仍需跑 `LakeCameraSetup.Apply`。
+> 静态合批由 `BatchingSetup.FixAll` 关闭（Android/Standalone 0/0）；`GtsApplyMeshToChunks` 已改为
+> `go.isStatic = false`，重跑流水线不会再把 subTile 标成 static。
 
 `LakeCarve` 的溢出判据按**矩形 AABB** 而非圆形：水面由 Crest WaterBody 的矩形范围决定，
 AABB 外的地形再低也不会露出水面。详见 [water](../../Docs/water.md) §11.4。
@@ -134,7 +141,7 @@ AABB 外的地形再低也不会露出水面。详见 [water](../../Docs/water.m
 `TerrainChunkTuning.DisableDetail` 设成 `DetailObjectDistance=0` / `DetailObjectDensity=0`。
 
 - `detailObjectDistance = 0` 是 Unity 文档规定的「关闭 detail 渲染」方式，**不改 TerrainData 里的撒点数据**，随时可 `RestoreDesktop` 回滚。
-- **不要用 `drawTreesAndFoliage = false`**：它同时管树和草，会把 46.5 万棵树一起关掉。
+- **不要用 `drawTreesAndFoliage = false`**：它同时管树和草，会把 4.65 万棵树一起关掉。
 - 代价：CloverFlower / Daisy / Dandelions 这些花也是 detail 原型，一并消失。
   要保留花，应把花也做成 BRG 实例，而不是恢复 detail 渲染。
 

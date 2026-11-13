@@ -228,6 +228,8 @@ public float jittering = 0.5f;
 **冲突点**：
 1. Enviro 的 `renderPassEvent = BeforeRenderingTransparents - 1` 已经在透明之前，Fog Mist 2 如果也在类似位置，顺序不确定。
 2. 三者都读 depth → 必须确保 depth 已生成（`m_RequireDepthTexture = 1`）。
+   > 当前工程为 Crest SimpleTransparency，`m_RequireDepthTexture/m_RequireOpaqueTexture` 都是 0；
+   > 接入 Enviro / Fog Mist 前必须改回 1，否则静默失效（见 water.md §14.3、project_todo §1）。
 3. 三者都做 fullscreen blit → 应该尽量合并，或至少避免 ping-pong 过多。
 
 ## 9. 推荐方案组合

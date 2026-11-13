@@ -148,14 +148,14 @@ Terrain 仍保留的关键参数（草/树/碰撞仍由它负责）：
 | 字段 | 值 | 影响 |
 |---|---|---|
 | `m_DrawHeightmap` | **0** | 地表不再由 TerrainRenderer 绘制，改由 GTS mesh |
-| `m_DrawInstanced` | **1** | 草/细节走 instanced（§6.6 调优后） |
-| `m_DetailObjectDistance` | 70 | 草可见距离（§6.6 调优后） |
-| `m_TreeDistance` | 600 | 树可见距离（§6.6 调优后） |
-| `m_TreeBillboardDistance` | 60 | 树切 billboard 距离（§6.6 调优后） |
+| `m_DrawInstanced` | **1** | 草/细节走 instanced（草已改 BRG，detail 关闭） |
+| `m_DetailObjectDistance` | **0** | Terrain detail 关闭，草由 BRG 接管 |
+| `m_TreeDistance` | **450** | 树可见距离 |
+| `m_TreeBillboardDistance` | **35** | 树切 billboard 距离 |
 | `m_HeightmapPixelError` | 10 | |
 | `m_SplatMapDistance` | 512 | |
 | `m_TerrainData` | `World/TerrainSplits/Terrain_..._0-0-0.asset`（≈4.68MB） | 与主场景独立 |
-| TerrainData 内容 | 8 层 splat、13 树原型、7 细节原型、约 1.26 万树/块 | `Logs/Gaia/proto-materials.txt`、`rich-verify.txt` |
+| TerrainData 内容 | 8 层 splat、13 树原型、7 细节原型、约 1.26 万树/块（1/10 后约 1,300） | `Logs/Gaia/proto-materials.txt`、`rich-verify.txt` |
 
 ### 4.1 地表已切到 GTS Mesh（2026-11-09）
 
@@ -253,11 +253,10 @@ Terrain 仍保留的关键参数（草/树/碰撞仍由它负责）：
 
 | 问题 | 依据 | 影响 |
 |---|---|---|
-| ~~深度图未开~~ | **已修（2026-11-13）**：`m_RequireDepthTexture: 1` | ✅ Crest 水下/岸边泡沫依赖它，不开静默失效 |
-| ~~不透明图未开~~ | **已修（2026-11-13）**：`m_RequireOpaqueTexture: 1` | ✅ 同上 |
+| ~~深度图未开~~ | **当前按设计为 0**（Crest SimpleTransparency）：`m_RequireDepthTexture=0`、`m_RequireOpaqueTexture=0` | 水面不采样 opaque/depth；接入 Enviro/Fog、Gaia/GeNa VFX 等依赖 shader 前必须改回 1 |
 | 阴影距离 50m / 级联 1 | `UniversalRP.asset:48-49` | 3072m 世界下只有极近处有阴影 |
 | 主场景无 Volume | `World.unity` 无 Volume 组件 | 后处理（Bloom/Tonemap）当前无配置载体 |
-| 草走 Terrain detail | 8 层 splat + 单块约 570 万 detail 实例 | 违反 `rendering_rules` "不依赖 Terrain 自带 grass/detail" |
+| ~~草走 Terrain detail~~ | **已修**：BRG 接管，`DetailObjectDistance=0` / `DetailObjectDensity=0` | 不再与 BRG 重复绘制 |
 | 无反射/光照探针 | `!u!215` / `!u!220` 计数 = 0 | |
 
 > `m_DrawInstanced` / `m_DetailObjectDistance` 已于 2026-11-09 调整，见 §6.6。
@@ -266,32 +265,36 @@ Terrain 仍保留的关键参数（草/树/碰撞仍由它负责）：
 
 - 36 个 chunk × 512m；`LoadSize=768` 单点最多选中 4 块（`final-integrity.txt`）。
 - 每块 TerrainData ≈4.68MB，常驻 4 块 ≈19MB（未含贴图/树资源）。
-- 单块 1.26 万棵树 + 570 万 detail 密度，是 PC 桌面预设（`m_qualityPreset=Desktop`，`WorldPipeline.cs:127`）的量级。
+- 单块原 1.26 万棵树 + 570 万 detail 密度（PC 桌面预设，`m_qualityPreset=Desktop`，`WorldPipeline.cs:127`）；
+  树已按 1/10 抽样降到 46,472，Terrain detail 已关闭（BRG 接管草）。
 
 ### 6.6 chunk 渲染参数已调优（2026-11-09）
 
 **产物事实**：36 个活跃 chunk 的 Terrain 字段已由脚本批量修改，孤儿批次（140021）未动。
 
-| 字段 | 原值（Gaia Desktop） | 现值（移动端档） |
+| 字段 | 原值（Gaia Desktop） | 现值（移动端档 / BRG 后） |
 |---|---|---|
 | `m_DrawInstanced` | 0 | **1** |
-| `m_DetailObjectDistance` | 150 | **70** |
-| `m_DetailObjectDensity` | 0.5 | **0.35** |
-| `m_TreeDistance` | 1000 | **600** |
-| `m_TreeBillboardDistance` | 90 | **60** |
-| `m_TreeMaximumFullLODCount` | 50 | **32** |
+| `m_DetailObjectDistance` | 150 | **0**（BRG 接管草，detail 关闭） |
+| `m_DetailObjectDensity` | 0.5 | **0** |
+| `m_TreeDistance` | 1000 | **450** |
+| `m_TreeBillboardDistance` | 90 | **35** |
+| `m_TreeMaximumFullLODCount` | 50 | **16** |
 | `m_HeightmapPixelError` | 5 | **10** |
 | `m_SplatMapDistance` | 1024 | **512** |
+
+> 2026-11-09 的中间值（70 / 0.35 / 600 / 60 / 32）已被后续 BRG 与树 1/10 降密覆盖，
+> 以本表为准。当前 active chunk 的取值见 `World_SECTR ... 162007 *.unity:621-634`。
 
 **工具**：`Assets/Editor/TerrainChunkTuning.cs`，三个入口 `Report` / `ApplyMobile` / `RestoreDesktop`，双向可逆（`RestoreDesktop` 恢复的是 Gaia 原始值常量，不是猜测值）。
 
 **实测提交量变化**（`Logs/Gaia/chunk-render-stats*.txt`，静态统计，非 GPU 耗时）：
 
-| 指标 | 桌面档 | 移动档 | 变化 |
+| 指标 | 桌面档 | 当前 | 变化 |
 |---|---|---|---|
-| 草可见实例（密度×距离粗估） | 8,894,657 | **1,355,925** | **−85%** |
+| Terrain detail 实例 | 8,894,657 | **0**（detail 关闭） | 草改由 BRG 渲染（435 万实例） |
 | 地形 pass 数（全部 chunk） | 72 | 72 | 不变（仍 8 层） |
-| 树实例（36 块合计） | 464,843 | 464,843 | 不变（只改了可见距离） |
+| 树实例（36 块合计） | 464,843 | **46,472** | **−90%**（1/10 抽样） |
 
 **仍未解决**：8 层 splat 仍是每块 2 pass（`TerrainLitAdd`），要消除必须降到 4 层或走 GTS。这一项与 `m_DrawInstanced` 无关，是独立瓶颈。
 

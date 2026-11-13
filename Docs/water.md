@@ -254,7 +254,7 @@ Crest 自带 Gaia 集成（`Editor/Scripts/Integrations/Gaia/GRC_Crest.cs`）。
 | 1. 挖湖盆 | `LakeCarve.Apply` | 2 个 chunk 的高度图（113696 格） | `Restore`（`Tools/lake-backup/`，只备份受影响窗口） |
 | 2. 清植被 | `LakeVegetationClear.Apply` | 删 608 棵树 + 57531 株草 | `Restore`（`Tools/lake-veg-backup/`） |
 | 3. 重转 GTS | `GtsConvertOne.Run` ×2 → `GtsFixMeshRendering.RunAll` | 2 chunk 的地表 mesh | 重跑世界生成会覆盖 |
-| 4. 接 Crest | `LakeCrestSetup.Apply` | 主场景加 `Crest Lake` 节点；禁用旧 Gaia Water；开 URP Depth/Opaque | `Remove` |
+| 4. 接 Crest | `LakeCrestSetup.Apply` | 主场景加 `Crest Lake` 节点（保留 camera rig）；禁用旧 Gaia Water；按透明度模式设置 URP Depth/Opaque（当前 SimpleTransparency 为 0） | `Remove` |
 
 ### 11.4 踩坑记录（全部实测）
 
@@ -276,27 +276,30 @@ Crest 自带 Gaia 集成（`Editor/Scripts/Integrations/Gaia/GRC_Crest.cs`）。
    编辑器程序集访问不到。统计水面 chunk 数改用
    `GetComponentsInChildren<MeshRenderer>()` 按水面材质过滤。
 
-### 11.5 Crest 接入配置（最终，`LakeCrestSetup`）
+### 11.5 Crest 接入配置（2026-11-13；已按 §14 的性能模式更新）
 
 | 配置 | 值 | 理由 |
 |---|---|---|
 | 位置 | `(192, 264, 96)` | 湖心 + 水位 |
-| `LodLevels` | 4 | 默认 9 是无限海洋用的；湖半径 190m |
-| `LodResolution` | 160 | 默认 384 对小湖过密 |
+| `LodLevels` | 3 | 默认 9 是无限海洋用的；3 级已覆盖 560m 湖面 |
+| `LodResolution` | 128（Depth/Foam/Clip/AnimatedWaves/Level）；ShapeGerstner 96 | 默认 256/160/128 对小湖过密 |
 | `ScaleRange` | `(1, 16)` | 湖面不需要远视距放大 |
 | **Surface Clipping** | `EverythingClipped` + `ClipLodInput(Cube)` | 见下：这是「只在湖盆出水」的唯一正确做法 |
-| 模块 ON | AnimatedWaves / Foam / Depth / Level | 移动端 30fps 下的最小可用集 |
+| 模块 ON | AnimatedWaves / Foam / Depth / Level / Clip | 移动端 30fps 下的最小可用集 |
 | 模块 OFF | DynamicWaves / Flow / Shadow / Albedo / **Absorption / Scattering** | 吸收/散射仿真对小湖没有视觉收益，且多两个每帧 pass |
 | 平面反射 | **OFF** | 最贵的一项；Crest 无视锥剔除（§3） |
+| Depth SDF | **OFF** | 场景无 `DepthProbe`，开着会把深度纹理从 R16 变成 R16G16，白付带宽 |
+| Depth Terrain | **仅与湖区 AABB 相交的 Terrain** | `EverythingClipped` 下湖外水面不存在，湖外 Terrain 不会被采样 |
 | WaterBody | `Include`，AABB 半边长 280m，`Affects=Volume+Physics` | 只管水下体积与物理限域，**不负责裁水面** |
-| 水色 | absorption `(0.42,0.75,0.88,0.035)` / scattering `(0.10,0.42,0.50)` | 默认深海色配 30m 深湖盆会渲染成近黑 |
-| URP | `m_RequireDepthTexture=1`、`m_RequireOpaqueTexture=1` | 水下/岸边泡沫依赖，不开**静默失效** |
+| 水色 | absorption `(0.62,0.86,0.92,0.016)` / scattering `(0.012,0.026,0.036)` | 见 §12.1：30m 深湖盆需要更低的 extinction |
+| URP | `m_RequireDepthTexture=0`、`m_RequireOpaqueTexture=0`（SimpleTransparency）；非 SimpleTransparency 才需要 1 | 当前水面不请求 opaque/depth，开着只是白付 CopyColor/CopyDepth |
 
 **为什么必须用 Surface Clipping，而不是只靠 WaterBody**：
 Crest 的水面是以**视点**为中心的 clipmap（`LateUpdatePosition` 把 `Position` 设为
 `(视点.x, 水面y, 视点.z)`，各 chunk 相对它按 LOD 翻倍铺开，最外圈能到 ±数十公里）。
 `WaterRenderer` 的 transform XZ 对水面**没有意义**；WaterBody 的 AABB 剔除是**整 chunk 粒度**，
-挡不住巨型外圈 chunk（实测 49 个 chunk 只有 8 个被剔除，水面仍铺满全世界）。
+挡不住巨型外圈 chunk（Chunks 模式实测 49 个 chunk 只有 8 个被剔除，水面仍铺满全世界；
+Quad 模式虽然只有 1 次 DrawMesh，但那张 10000×10000 的四边形同样需要 Clip 才能只留在湖盆）。
 只有 Clip 的逐像素 SDF 能精确裁出湖盆。
 
 **`ClipLodInput.Inverted` 的语义（`ClipPrimitive.compute:99-104`）**：
@@ -349,6 +352,9 @@ Crest 的水面是以**视点**为中心的 clipmap（`LateUpdatePosition` 把 `
 
 ### 11.7 验收结果
 
+> **历史数据**：本节是 Chunks 模式（§14 之前）的结果。当前 Quad + SimpleTransparency 下
+> `CrestRenderProbe` 实测 chunk=0、URP pass=1、CopyColor/CopyDepth=0。
+
 `-executeMethod LakeRenderVerify.Run` → `Logs/Lake/lake-render.txt` + `lake-render.png`
 
 ```
@@ -373,8 +379,9 @@ Crest 的水面是以**视点**为中心的 clipmap（`LateUpdatePosition` 把 `
    真机 Play Mode 下应有正常起伏。**这一条未验证。**
 2. ~~**水面偏不透明**~~ —— **已解决**，见 §12.1（消光系数）与 §14.4
    （SimpleTransparency 下的 `_Crest_TransparencyMinimumAlpha`）。
-   当时的误判是"以为 alpha 混合没生效"；实际 Crest 的透明靠体积消光，
-   与 alpha 无关，详见 §12.1 的机制说明。
+   当时的误判是"以为 alpha 混合没生效"：**非 SimpleTransparency 下** Crest 的透明靠
+   体积消光、与 alpha 无关；**当前 SimpleTransparency 下** `o_Alpha` 会被写入并与
+   min alpha 取 max，见 §14.4。
 3. 截图里的**岸壁有拉伸条纹**（碗壁陡坡上 GTS 贴图被拉伸），
    是 30m 深碗的陡坡 + 256m/257 顶点的分辨率导致，属可接受范围。
 
@@ -384,22 +391,28 @@ Crest 的水面是以**视点**为中心的 clipmap（`LateUpdatePosition` 把 `
 - [ ] 钓鱼玩法需要 CPU 波高查询时，开 `com.waveharmonic.crest.cpu-queries` 附加包
 - [ ] Crest shader 变体数量未审计（Shader Control 待接入）
 - [ ] 旧 Gaia Water 已禁用保留在场景中；确认不再回退后可删
-- [ ] **水面仍会以视点为中心铺满全世界**（靠 Clip 裁掉），水面 chunk 数量不随湖缩小。
-      若真机 draw call 压力大，可考虑改用 `WaterMeshType.Quad`（单四边形 + 自定义网格）
+- [x] **水面 chunk 数量不随湖缩小** → 已改 `WaterMeshType.Quad`（单四边形 1 次 DrawMesh），见 §14
+- [x] `LodLevels 4 / LodResolution 160` → 已压到 `3 / 128`（Gerstner 96），见 §14.5
+- [x] `DepthLod` SDF 通道 → 已关闭（无 `DepthProbe`，R16G16 白付带宽）
+- [x] `DepthLod` 每帧烘全部 Terrain → 已按湖区 AABB 过滤（仅与 Include WaterBody 相交的 Terrain）
 
 ## 12. 水面透明 + 水下效果 + 环湖轨道相机（2026-11-13 落地）
 
 ### 12.1 水面透明：机制与参数
 
-**Crest 的"透明"不是 alpha 混合，是折射合成 + 体积消光**（代码事实）：
+**Crest 的透明有两种模式**（代码事实）：
 
-- `Fragment.hlsl:825-828`：只有 `d_Crest_SimpleTransparency` 分支才用 `volumeOpacity` 写
-  `o_Alpha`；而工程 `CREST_SIMPLE_TRANSPARENCY (0)`（`Settings.Crest.Default.hlsl:23`），
-  所以 `o_Alpha` 恒为 1，材质的 SrcAlpha 混合形同虚设。
-- 真正的透明来自 `Fragment.hlsl:625-670`：
-  `o_Emission *= 1-volumeOpacity; o_Emission += volumeLight*volumeOpacity`，其中
+- **当前 SimpleTransparency=1**：`Fragment.hlsl:825-828` 用 `volumeOpacity`、
+  `_Crest_TransparencyMinimumAlpha`、foam、albedo 一起写 `o_Alpha`，水面走 alpha 混合。
+  调透明度要动 `_Crest_TransparencyMinimumAlpha`（当前 0.12）和 DepthLod 的 volumeOpacity，
+  **不是只调 Absorption/Scattering**。
+- **非 SimpleTransparency (0)**：`o_Alpha` 恒为 1，材质的 SrcAlpha 混合形同虚设；
+  透明来自 `Fragment.hlsl:625-670` 的折射合成 + 体积消光：
+  `o_Emission *= 1-volumeOpacity; o_Emission += volumeLight*volumeOpacity`，
   `VolumeLighting.hlsl:22-25`：`volumeOpacity = 1 - exp(-(absorption+scattering) * 水中光程)`。
-- **结论：调透明度只动材质上的 `_Crest_Absorption` / `_Crest_Scattering`，别找 alpha**。
+  此时才只动材质上的 `_Crest_Absorption` / `_Crest_Scattering`。
+- 两种模式都保留了材质上的 absorption/scattering 系数；当前湖用它们做恒定水色，
+  不跑 Absorption/Scattering 仿真。
 
 **颜色→系数的换算**（`WaterRenderer.cs:519-527`）：
 `absorption = -color.a * 32/5 * ln(color.rgb)`。alpha 是密度（越小越清澈），
@@ -503,7 +516,10 @@ Volume 型 WaterBody（`Lake Body` 节点，`Exclusion=Include`）内、且相�
 > 它反射读 URP 的 `m_ActiveRenderPassQueue`（在 `beginCameraRendering` 里抓，因为
 > `Render()` 结束会清空队列），并统计 chunk 数。
 
-### 13.1 实测数据（当前配置）
+### 13.1 实测数据（历史：§14 之前的配置）
+
+> 本节测于 SimpleTransparency + Quad 之前（Chunks + 宏=0）。当前配置见 §14：
+> Quad、chunk=0、URP pass=1、LodLevels=3、LodResolution=128。
 
 ```
 MeshType = Chunks,  InjectionPoint = Default,  CREST_SIMPLE_TRANSPARENCY = 0
@@ -602,6 +618,9 @@ MPB 会打断 SRP Batcher 的批（这也是工程里 `terrain-batching-reality`
 
 ### 13.5 对本工程的建议（按收益/风险排序）
 
+> 本节是 §14 之前的建议；Quad、SimpleTransparency、LodLevels 4→3 已全部落地，
+> 实际结果与 compute 清单见 §14。
+
 | 措施 | 收益 | 风险 | 建议 |
 |---|---|---|---|
 | **`WaterMeshType.Quad`** | draw call 49→1，去掉全部 chunk CBUFFER/MPB | 湖面变平（法线仍在，高光仍有变化） | **值得试**。湖只有 190m，远景不需要 clipmap LOD |
@@ -690,13 +709,27 @@ Quad 就不够了 —— 那时应保留 Chunks 但把 `LodLevels` 压到 2~3。
 
 ### 14.5 还剩下的开销
 
-- **水下效果**：`Underwater.Enabled = true`，入水时才有 pass（引擎自带 >2m 关闭），
-  非入水时零成本。已是最优。
-- **波浪仿真**：`AnimatedWavesLod` + `ShapeGerstner` 每帧一个 compute pass。
-  Quad 模式下置换只贡献法线，仿真仍然在跑 —— 若要进一步省，可考虑
-  `LodResolution` 降到 96~128（湖 190m，视觉差异小）。
-- **49 → 0 chunk 的连带收益**：`WaterChunkRenderer.Bind()` 里的 MPB + SH 采样
-  （`WaterChunkRenderer.cs:185-202`）全部消失，CPU 侧也省了一笔。
+当前配置：`LodLevels=3`，Depth/Foam/Clip/AnimatedWaves/Level=128，ShapeGerstner=96，
+Depth SDF 关闭。每帧 compute 由以下几部分组成：
+
+- **DepthLod**：每个与湖区 AABB 相交的 active Terrain 一次 `DepthTexture.compute`（16×16×3）。
+  `CrestRenderProbe` 实测：`Terrain.activeTerrains`（与 DepthLod 的 `Terrain.GetActiveTerrains` 同源）=15，与湖 AABB 相交=6；
+  过滤后 Depth dispatch 从 15 降到 6（实际数随 SECTR 加载的 chunk 数变化）。湖外 Terrain 不再每帧重烘，
+  这是之前最大的一笔可消除浪费。
+- **AnimatedWaves**：Gerstner 生成（96²，z = 有效 cascade 数）、ShapeWavesTransfer（96²×3）、
+  3 次 ShapeCombine（128²）、PackLevel（128²×3）。Quad 下这些只喂法线，不能直接关。
+- **Foam**：`UpdateFoam` 每帧至少 1 次（`PersistentLod` 在 substeps==0 时也会做 delta=0 dispatch）。
+  降 `SimulationFrequency` 只减少完整仿真步，**不减少 dispatch 次数**。
+- **Clip**：`ClipPrimitive` 1 次（16×16×3）+ 2 次 `ClearBorder`（很小）。
+- **Underwater**：`Underwater.Enabled=true`，入水时才有 pass（>2m 自动关），非入水零成本。
+- **Queries**：没有 gameplay 注册查询时 0 次 dispatch（`Query.UpdateQueries` 检查 QueryCount）。
+
+**Crest 源码补丁**：`DepthLod.TerrainDepthInput` 增加了 Include WaterBody AABB 过滤。
+升级 Crest 时必须重打；否则会退回“每个 active Terrain 每帧一次”。
+过滤只在水面 `EverythingClipped` 时生效；大洋模式（默认不裁）保留全部 Terrain。
+
+**49 → 0 chunk 的连带收益**：`WaterChunkRenderer.Bind()` 里的 MPB + SH 采样
+（`WaterChunkRenderer.cs:185-202`）全部消失，CPU 侧也省了一笔。
 
 ### 14.6 还原
 
