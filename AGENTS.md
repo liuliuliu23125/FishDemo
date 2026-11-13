@@ -161,7 +161,7 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | [gts_srp_batcher](Docs/gts_srp_batcher.md) | 改 GTS shader、排查地形合批（SRP Batcher）不生效、mesh 地形与 Terrain 视觉不一致。**212 行** |
 | [world_implementation](Docs/world_implementation.md) | 重跑世界生成、排查 chunk 加载、改世界尺寸/海平面、核对"场景怎么来的"。**396 行，只跳读需要的节** |
 | [terrain_streaming](Docs/terrain_streaming.md) | 做地形、流式加载、SECTR |
-| [water](Docs/water.md) | 做水体、水下、反射 |
+| [water](Docs/water.md) | 做水体、水下、反射、中心湖。**改水/改湖前先读 §11**（落地配置 + 13 条踩坑），§1-10 是过时的选型分析 |
 | [atmosphere](Docs/atmosphere.md) | 做昼夜、天气、体积雾光 |
 | [vegetation](Docs/vegetation.md) | 做植被、树的密度/LOD/impostor/keyword、Shader 变体裁剪。**改树之前先读 §6** |
 | [postprocess](Docs/postprocess.md) | 调色、后处理 |

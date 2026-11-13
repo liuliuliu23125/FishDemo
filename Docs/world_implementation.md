@@ -116,7 +116,8 @@
 |---|---|
 | `Main Camera` | Camera + AudioListener + **`SECTR_RegionLoader`**（LoadSize 768/1000/768，UnloadBuffer 0.25） |
 | `Directional Light` | Light + URP `UniversalAdditionalLightData` |
-| `Gaia Water` | PrefabInstance → `Gaia Water/Water Prefabs/URP/Gaia Water.prefab`，scale 0.215，位置 `(0, 60, 0)` |
+| ~~`Gaia Water`~~ | PrefabInstance → `Gaia Water/Water Prefabs/URP/Gaia Water.prefab`，scale 0.215，位置 `(0, 60, 0)`。**2026-11-13 起 `SetActive(false)`**，水面改由下方 Crest 提供 |
+| **`Crest Lake`** | `WaterRenderer` + `WaterBody` + `ClipLodInput` + `ShapeGerstner`，位置 `(192, 264, 96)`。详见 [water](water.md) §11 |
 | `Terrain_0_0` … `Terrain_2_2`（9 个） | **只有 Sector×4 + Portal×4，无 Terrain 组件**（`!u!218` 计数 = 0） |
 | `Gaia Terrains` | 空容器（`GaiaSceneReadMe`） |
 | `Gaia Runtime` | `Terrain Loader Manager` + `Gaia Lighting` |
@@ -252,8 +253,8 @@ Terrain 仍保留的关键参数（草/树/碰撞仍由它负责）：
 
 | 问题 | 依据 | 影响 |
 |---|---|---|
-| 深度图未开 | `UniversalRP.asset:22` `m_RequireDepthTexture: 0` | 水下、雾、软粒子、水面深度依赖它 |
-| 不透明图未开 | `UniversalRP.asset:23` `m_RequireOpaqueTexture: 0` | 折射/热浪类效果不可用 |
+| ~~深度图未开~~ | **已修（2026-11-13）**：`m_RequireDepthTexture: 1` | ✅ Crest 水下/岸边泡沫依赖它，不开静默失效 |
+| ~~不透明图未开~~ | **已修（2026-11-13）**：`m_RequireOpaqueTexture: 1` | ✅ 同上 |
 | 阴影距离 50m / 级联 1 | `UniversalRP.asset:48-49` | 3072m 世界下只有极近处有阴影 |
 | 主场景无 Volume | `World.unity` 无 Volume 组件 | 后处理（Bloom/Tonemap）当前无配置载体 |
 | 草走 Terrain detail | 8 层 splat + 单块约 570 万 detail 实例 | 违反 `rendering_rules` "不依赖 Terrain 自带 grass/detail" |
@@ -378,7 +379,7 @@ Build Settings 重建为 37 个场景（含主场景），缺失 0
 | 地形走 SRP Batcher | **已落地**：改 GTS shader 加 `UnityPerMaterial` CBUFFER | ✅ 完成，见 [gts_srp_batcher](gts_srp_batcher.md) |
 | SECTR 仅作"区域级"可选流式 | SECTR 承担全部 chunk 流式 | 粒度是 512m 场景，场景切换有固定开销 |
 | YooAsset 唯一资源入口 | SECTR 直接 LoadSceneAsync | 未接线；GTS mesh 也未进 bundle |
-| Crest Water 5 | Gaia Water (URP) | Crest 未安装（只在 `Reference/`） |
+| Crest Water 5 | **已落地**：`Packages/com.waveharmonic.crest`（embedded），中心人工湖出水面 | ✅ 完成，见 [water](water.md) §11；Gaia Water 已禁用保留 |
 | Enviro 3 | 无大气系统 | 未安装；主场景只有一个平行光 |
 | 自研 GPU instancing 草 | Terrain detail 草（`drawInstanced=1`） | **未实现**，下一步 |
 | 夜晚光源 ≤ 6 + emissive | 无昼夜系统 | 未实现 |

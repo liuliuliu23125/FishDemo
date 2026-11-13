@@ -7,7 +7,7 @@
 | # | 问题 | 出处 | 处理 |
 |---|---|---|---|
 | 1 | 只有 2D Renderer，无 3D Renderer | `UniversalRP.asset: m_RendererDataList` → `Renderer2D.asset` | 新建 `UniversalRenderer` |
-| 2 | 深度图未开 | `m_RequireDepthTexture: 0` | 改 1（Crest/雾/焦散依赖） |
+| 2 | ~~深度图未开~~ | **已完成（2026-11-13）**：`m_RequireDepthTexture: 1`、`m_RequireOpaqueTexture: 1` | ✅ 见 [water](water.md) §11.5 |
 | 3 | 无 Git LFS | 无 `.gitattributes` | 添加并迁移大资源 |
 | 4 | 无 Entities | `manifest.json` | 装 Entities + Entities Graphics（GPU Baker 需要） |
 | 5 | 缺 Newtonsoft.Json | GPU Baker asmdef | 用 `com.unity.nuget.newtonsoft-json`（DOTween 已提供） |
@@ -25,7 +25,7 @@
 
 | 项 | 说明 |
 |---|---|
-| Crest 反射可见性跳过 | Crest 只有基于相机高度的 `SkipAbove`/`SkipBelow`（`WaterReflections.cs:240`），**没有视锥判断**。需自研补 `GeometryUtility.TestPlanesAABB` |
+| Crest 反射可见性跳过 | Crest 只有基于相机高度的 `SkipAbove`/`SkipBelow`（`WaterReflections.cs:240`），**没有视锥判断**。需自研补 `GeometryUtility.TestPlanesAABB`。**当前湖的平面反射是关闭的**（`Reflections.Enabled = false`），所以这条不阻塞 demo |
 | YooAsset 启动入口 | `YooAssetInitializer.InitializeAsync()` 目前**无任何调用方**，资源层尚未接线 |
 | 模拟构建产物 | 菜单 `YooAsset/FishDemo/执行模拟构建并注入路径` 未实际执行过 |
 
