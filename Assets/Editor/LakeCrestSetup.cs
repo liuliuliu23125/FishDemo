@@ -70,10 +70,17 @@ public static class LakeCrestSetup
 
     /// <summary>
     /// 固定 LOD 视点相对水面的高度（米）。
-    /// 取 26（与 LakeOrbitCamera 默认高度一致）：固定一个适中的 LOD 尺度，
-    /// 4 级 LOD 才能覆盖 560m 湖面；0m 时 scale=1，3/4 级都覆盖不到岸边。
+    /// 取 26（与 LakeOrbitCamera 默认高度一致）：固定一个适中的 LOD 尺度。
+    /// 26m 时 Scale=16；5 级 LOD 最外层 cascade 半边长 = 2*Scale*2^4 = 512m（宽度 1024m）。
     /// </summary>
     private const float ViewpointHeightAboveWater = 26f;
+
+    /// <summary>
+    /// Clip 盒体半边长（米）。R=190 的湖需要 >190m；当前取 320m（640 方形），
+    /// 让方形水面边界远离湖岸。高度网格检查：半径外、半边长 320m 内所有采样点
+    /// 都高于水位 264（最低 264.87）；到 384m 时南侧有一个 263.71 的低点，不能再大。
+    /// </summary>
+    private const float ClipHalfExtent = 320f;
 
     public static void Apply() { Run("apply"); }
     public static void Remove() { Run("remove"); }
@@ -245,8 +252,13 @@ public static class LakeCrestSetup
 
             // ── LOD：湖很小，压到最低档 ──
             // 默认 9 级是给"无限海洋"的，每级翻倍覆盖范围，9 级能铺到几十公里。
-            // 湖盆半径 190m，3 级已覆盖 560m 湖面；每级都有仿真开销。
-            water.LodLevels = 4;
+            //
+            // 固定视点 26m 时 Scale = 2^floor(log2(26-4)) = 16。
+            // cascade 世界宽度 = 4 * Scale * 2^slice（半边长 = 2 * Scale * 2^slice）：
+            //   4 级最外层半边长 = 2*16*2^3 = 256m，方形边界离 R=190m 的岸线只有 66m；
+            //   5 级最外层半边长 = 2*16*2^4 = 512m，把方形边界推到湖岸之外。
+            // Clip 盒体半边长 320m，所以最终可见方形边界由 Clip 的 640m 决定。
+            water.LodLevels = 5;
             // 默认 384 对 190m 的湖太浪费；128 在湖边看水面起伏已足够。
             water.LodResolution = 128;
             // ScaleRange 下限压到 1：水面网格跟着相机高度缩放，湖面不需要放大。
@@ -334,8 +346,8 @@ public static class LakeCrestSetup
             var clipGo = new GameObject("Lake Clip Area");
             clipGo.transform.SetParent(root.transform, false);
             clipGo.transform.localPosition = Vector3.zero;
-            clipGo.transform.localScale = new Vector3(LakeCarve.WaterHalfExtent * 2f,
-                                                      DepthForClip(water), LakeCarve.WaterHalfExtent * 2f);
+            clipGo.transform.localScale = new Vector3(ClipHalfExtent * 2f,
+                                                      DepthForClip(water), ClipHalfExtent * 2f);
             var clip = clipGo.AddComponent<ClipLodInput>();
             clip.Primitive = LodInputPrimitive.Cube;
             // ── Inverted 的语义（读 ClipPrimitive.compute:99-104 精确推导）──
@@ -614,9 +626,9 @@ public static class LakeCrestSetup
         W($"  Surface.MeshType = {meshType}（期望 1=Quad）");
         if (meshType != 1) ok = false;
 
-        W($"  LodLevels={water.LodLevels}（期望 4）, LodResolution={water.LodResolution}（期望 128）, " +
+        W($"  LodLevels={water.LodLevels}（期望 5）, LodResolution={water.LodResolution}（期望 128）, " +
           $"Depth={water.DepthLod.Resolution}, Foam={water.FoamLod.Resolution}, Clip={water.ClipLod.Resolution}（期望 128）");
-        if (water.LodLevels != 4 || water.LodResolution != 128) ok = false;
+        if (water.LodLevels != 5 || water.LodResolution != 128) ok = false;
         if (water.DepthLod.Resolution != 128 ||
             water.FoamLod.Resolution != 128 ||
             water.ClipLod.Resolution != 128) ok = false;
@@ -650,7 +662,15 @@ public static class LakeCrestSetup
         W($"  ClipLodInput 数量 = {clipInputs.Length}（期望 >= 1）");
         if (clipInputs.Length == 0) ok = false;
         foreach (var c in clipInputs)
+        {
             W($"    {c.name}: Primitive={c.Primitive} Inverted={c.Inverted} scale={c.transform.lossyScale}");
+            if (Mathf.Abs(c.transform.lossyScale.x - ClipHalfExtent * 2f) > 0.1f ||
+                Mathf.Abs(c.transform.lossyScale.z - ClipHalfExtent * 2f) > 0.1f)
+            {
+                W($"    FAIL：Clip 盒体 XZ 期望 {ClipHalfExtent * 2f}，实际 {c.transform.lossyScale}");
+                ok = false;
+            }
+        }
 
         // 旧水必须已禁用
         var gaia = GameObject.Find("Gaia Water");

@@ -47934,7 +47934,7 @@ MonoBehaviour:
     rid: 4672384863656214528
   _ScaleRange: {x: 1, y: 16}
   _DropDetailHeightBasedOnWaves: 0.2
-  _Slices: 4
+  _Slices: 5
   _RenderMaximumLOD: 1
   _Resolution: 128
   _GeometryDownSampleFactor: 2
@@ -92884,7 +92884,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 560, y: 200, z: 560}
+  m_LocalScale: {x: 640, y: 200, z: 640}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 1199125459}
