@@ -281,10 +281,10 @@ Crest 自带 Gaia 集成（`Editor/Scripts/Integrations/Gaia/GRC_Crest.cs`）。
 | 配置 | 值 | 理由 |
 |---|---|---|
 | 位置 | `(192, 264, 96)` | 湖心 + 水位 |
-| `LodLevels` | 3 | 默认 9 是无限海洋用的；3 级已覆盖 560m 湖面 |
+| `LodLevels` | 5 | 固定视点 26m 时 Scale=16；4 级最外层半边长 256m（离岸仅 66m，像方框），5 级 512m |
 | `LodResolution` | 128（Depth/Foam/Clip/AnimatedWaves/Level）；ShapeGerstner 96 | 默认 256/160/128 对小湖过密 |
 | `ScaleRange` | `(1, 16)` | 湖面不需要远视距放大 |
-| **Surface Clipping** | `EverythingClipped` + `ClipLodInput(Cube)` | 见下：这是「只在湖盆出水」的唯一正确做法 |
+| **Surface Clipping** | `EverythingClipped` + `ClipLodInput(Cube 640×640，半边长 320m)` | 见下：这是「只在湖盆出水」的唯一正确做法；320m 内湖外地形全部高于水位 |
 | 模块 ON | AnimatedWaves / Foam / Depth / Level / Clip | 移动端 30fps 下的最小可用集 |
 | 模块 OFF | DynamicWaves / Flow / Shadow / Albedo / **Absorption / Scattering** | 吸收/散射仿真对小湖没有视觉收益，且多两个每帧 pass |
 | 平面反射 | **OFF** | 最贵的一项；Crest 无视锥剔除（§3） |
@@ -392,7 +392,7 @@ Quad 模式虽然只有 1 次 DrawMesh，但那张 10000×10000 的四边形同�
 - [ ] Crest shader 变体数量未审计（Shader Control 待接入）
 - [ ] 旧 Gaia Water 已禁用保留在场景中；确认不再回退后可删
 - [x] **水面 chunk 数量不随湖缩小** → 已改 `WaterMeshType.Quad`（单四边形 1 次 DrawMesh），见 §14
-- [x] `LodLevels 4 / LodResolution 160` → 已压到 `3 / 128`（Gerstner 96），见 §14.5
+- [x] `LodLevels` 最终为 5（固定视点 26m 时 4 级半边长 256m，离岸只有 66m；5 级 512m），分辨率 128（Gerstner 96），见 §14.5
 - [x] `DepthLod` SDF 通道 → 已关闭（无 `DepthProbe`，R16G16 白付带宽）
 - [x] `DepthLod` 每帧烘全部 Terrain → 已按湖区 AABB 过滤（仅与 Include WaterBody 相交的 Terrain）
 
@@ -519,7 +519,7 @@ Volume 型 WaterBody（`Lake Body` 节点，`Exclusion=Include`）内、且相�
 ### 13.1 实测数据（历史：§14 之前的配置）
 
 > 本节测于 SimpleTransparency + Quad 之前（Chunks + 宏=0）。当前配置见 §14：
-> Quad、chunk=0、URP pass=1、LodLevels=3、LodResolution=128。
+> Quad、chunk=0、URP pass=1、LodLevels=5、LodResolution=128。
 
 ```
 MeshType = Chunks,  InjectionPoint = Default,  CREST_SIMPLE_TRANSPARENCY = 0
@@ -618,8 +618,9 @@ MPB 会打断 SRP Batcher 的批（这也是工程里 `terrain-batching-reality`
 
 ### 13.5 对本工程的建议（按收益/风险排序）
 
-> 本节是 §14 之前的建议；Quad、SimpleTransparency、LodLevels 4→3 已全部落地，
-> 实际结果与 compute 清单见 §14。
+> 本节是 §14 之前的建议；Quad、SimpleTransparency 已落地。LodLevels 最终为 5：
+> 固定视点 26m 时 4 级最外层半边长 256m，方形边界离 R=190m 的岸线只有 66m，
+> 观感像方框；5 级半边长 512m。实际结果与 compute 清单见 §14。
 
 | 措施 | 收益 | 风险 | 建议 |
 |---|---|---|---|
@@ -709,18 +710,18 @@ Quad 就不够了 —— 那时应保留 Chunks 但把 `LodLevels` 压到 2~3。
 
 ### 14.5 还剩下的开销
 
-当前配置：`LodLevels=3`，Depth/Foam/Clip/AnimatedWaves/Level=128，ShapeGerstner=96，
+当前配置：`LodLevels=5`，Depth/Foam/Clip/AnimatedWaves/Level=128，ShapeGerstner=96，
 Depth SDF 关闭。每帧 compute 由以下几部分组成：
 
-- **DepthLod**：每个与湖区 AABB 相交的 active Terrain 一次 `DepthTexture.compute`（16×16×3）。
+- **DepthLod**：每个与湖区 AABB 相交的 active Terrain 一次 `DepthTexture.compute`（16×16×5）。
   `CrestRenderProbe` 实测：`Terrain.activeTerrains`（与 DepthLod 的 `Terrain.GetActiveTerrains` 同源）=15，与湖 AABB 相交=6；
   过滤后 Depth dispatch 从 15 降到 6（实际数随 SECTR 加载的 chunk 数变化）。湖外 Terrain 不再每帧重烘，
   这是之前最大的一笔可消除浪费。
-- **AnimatedWaves**：Gerstner 生成（96²，z = 有效 cascade 数）、ShapeWavesTransfer（96²×3）、
-  3 次 ShapeCombine（128²）、PackLevel（128²×3）。Quad 下这些只喂法线，不能直接关。
+- **AnimatedWaves**：Gerstner 生成（96²，z = 有效 cascade 数）、ShapeWavesTransfer（96²×5）、
+  5 次 ShapeCombine（128²）、PackLevel（128²×5）。Quad 下这些只喂法线，不能直接关。
 - **Foam**：`UpdateFoam` 每帧至少 1 次（`PersistentLod` 在 substeps==0 时也会做 delta=0 dispatch）。
   降 `SimulationFrequency` 只减少完整仿真步，**不减少 dispatch 次数**。
-- **Clip**：`ClipPrimitive` 1 次（16×16×3）+ 2 次 `ClearBorder`（很小）。
+- **Clip**：`ClipPrimitive` 1 次（16×16×5）+ 2 次 `ClearBorder`（很小）。
 - **Underwater**：`Underwater.Enabled=true`，入水时才有 pass（>2m 自动关），非入水零成本。
 - **Queries**：没有 gameplay 注册查询时 0 次 dispatch（`Query.UpdateQueries` 检查 QueryCount）。
 

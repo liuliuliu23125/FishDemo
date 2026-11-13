@@ -46,7 +46,7 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | **Terrain → Mesh 分块** | **GTS 已落地**：144 个 subTile，`saveResolution=Half` | 加 LOD 链、走 YooAsset | 同上 + [gts_srp_batcher](Docs/gts_srp_batcher.md) |
 | **地表合批** | **SRP Batcher 已生效**；静态合批已关；纹理数组 ASTC_8x8 | 维持 | [gts_srp_batcher](Docs/gts_srp_batcher.md) |
 | 大世界流式 | **SECTR**（承担全部 chunk 加载） | SECTR 降为区域级，chunk 走 YooAsset | 同上 |
-| **水体** | **Crest 5.10.0 已落地**：中心人工湖（湖心 `(192,96)` / 半径 190m / 水位 264m / 深 30m），Crest 包在 `Packages/com.waveharmonic.crest`；靠 Surface Clipping 裁出湖盆；旧 Gaia Water 已禁用保留；**当前渲染模式 = SimpleTransparency + Quad**（URP pass 4→1，水面 draw call 49→1）；`LodLevels=3` / 分辨率 128（Gerstner 96）/ Depth SDF 关闭；Depth 只烘湖区 Terrain；环湖轨道相机 + C/F 键切换 | 真机验反射/水下开关 | [water](Docs/water.md) §11–§14 |
+| **水体** | **Crest 5.10.0 已落地**：中心人工湖（湖心 `(192,96)` / 半径 190m / 水位 264m / 深 30m），Crest 包在 `Packages/com.waveharmonic.crest`；靠 Surface Clipping 裁出湖盆；旧 Gaia Water 已禁用保留；**当前渲染模式 = SimpleTransparency + Quad**（URP pass 4→1，水面 draw call 49→1）；`LodLevels=5` / 分辨率 128（Gerstner 96）/ Depth SDF 关闭；Depth 只烘湖区 Terrain；环湖轨道相机 + C/F 键切换 | 真机验反射/水下开关 | [water](Docs/water.md) §11–§14 |
 | 昼夜/天气/大气雾 | **无**（仅一盏平行光） | Enviro 3 | [atmosphere](Docs/atmosphere.md) |
 | 体积雾/光 | 未接入 | Fog Mist 2 / Light Beam 2 / Lights 2 | 同上 |
 | 后处理 | URP 内置（主场景无 Volume） | 同 | [postprocess](Docs/postprocess.md) |
@@ -147,7 +147,7 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 - 水面 chunk 不合批是**三重原因**：`CommandBuffer.DrawRenderer` 逐个提交（不进 SRP Batcher）、
   逐 chunk 的 `CrestChunkGeometryData` CBUFFER（`Geometry.hlsl:12-16`）、逐 chunk MPB。
   Quad 模式一次性绕开全部三条。
-- **当前 compute 规模**：`LodLevels=3`；Depth/Foam/Clip/AnimatedWaves/Level=128，ShapeGerstner=96，
+- **当前 compute 规模**：`LodLevels=5`（固定视点 26m 下 4 级最外层半边长 256m，离岸仅 66m；5 级 512m）；Depth/Foam/Clip/AnimatedWaves/Level=128，ShapeGerstner=96，
   Depth SDF 关闭。Depth 只对与湖区 AABB 相交的 active Terrain dispatch（`EverythingClipped` 时；
   大洋模式不裁则保留全部；`CrestRenderProbe` 实测 15→6）。Foam 频率保持 30：
   `PersistentLod` 在 substeps==0 时仍 dispatch 一次，
