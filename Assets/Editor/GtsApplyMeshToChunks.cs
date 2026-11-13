@@ -135,8 +135,10 @@ public static class GtsApplyMeshToChunks
                 mr.sharedMaterial = material;
                 mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
                 mr.receiveShadows = true;
-                // 静态标记：让静态合批/光照贴图能吃到（Terrain 本体不吃这两项）
-                go.isStatic = true;
+                // 不要标 static：静态合批会在构建期把 subTile 合成大 VBO，
+                // 破坏 SRP Batcher 的按材质归并粒度。静态合批本身由 BatchingSetup 关闭，
+                // 这里双重保证，避免重跑流水线后又把标记加回来。
+                go.isStatic = false;
                 created++;
             }
 
