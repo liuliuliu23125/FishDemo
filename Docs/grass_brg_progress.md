@@ -1,6 +1,6 @@
 # 草 BRG 化 · 实施进度
 
-> 最后更新：2026-11-12
+> 最后更新：2026-11-17（同步湖区清草后的场景实例数与内存估算）
 > 对应方案：[grass_brg_plan.md](grass_brg_plan.md)
 > 本文只记录**已落地且有实测证据**的内容。未验证项一律标注「未开始/待验证」。
 
@@ -280,14 +280,16 @@ BRG 单 batch 的 raw buffer 上限 16MB（`EntitiesGraphicsSystem.cs:1156`）�
 
 ### 4.5 内存占用
 
+> 按 435 万实例（32B/实例）估算。场景当前 429 万（湖区清草后），数值略低。
+
 | 项 | 大小 |
 |---|---|
-| CPU `GrassInstance[]` | 133 MB |
-| CPU `_positions`（float3 副本） | 145 MB |
-| GPU 实例 buffer | 133 MB |
-| **合计** | **≈ 917 MB** |
+| CPU `GrassInstance[]` | 133 MiB |
+| CPU `_positions`（float3 副本） | ≈ 50 MiB |
+| GPU 实例 buffer | 133 MiB |
+| **合计** | **≈ 316 MiB（约 320MB）** |
 
-桌面可接受，**移动端必须靠流式加载**。
+桌面可接受，**移动端必须靠流式加载**。旧的 917MB 是 1265 万实例时的数据，已失效。
 
 ## 5. 踩坑记录（都会导致「草消失且无报错」）
 
@@ -304,7 +306,7 @@ BRG 单 batch 的 raw buffer 上限 16MB（`EntitiesGraphicsSystem.cs:1156`）�
 | 9 | `[ExecuteAlways]` + `AddComponent` | 验证脚本改参数不生效 | `Configure*ForValidation` 内部先 `Shutdown()` |
 | 10 | `_scaleMultiplier=8` 残留 | 密度看似正常但顶点爆炸（LOD 距离被放大 8 倍） | 阶段切换必须清理上一阶段的权宜参数 |
 | 11 | 运行时按名字找 detail 原型 mesh | `Resources.FindObjectsOfTypeAll<Mesh>()` 实测 0 命中，7 种植物长一样，`LOD0 三角形 = 24` | 编辑器期用 `AssetDatabase` 拿引用、序列化进组件（`DetailBrgSetup`）；且 FBX 内 mesh 名带 `_E` 后缀 |
-| 12 | 与 Terrain detail 重复绘制 | 同一处画两遍草，且 detail 无法与 BRG 合批 | `DetailObjectDistance = 0`；**不要用 `drawTreesAndFoliage=false`**（会关掉 4.65 万棵树） |
+| 12 | 与 Terrain detail 重复绘制 | 同一处画两遍草，且 detail 无法与 BRG 合批 | `DetailObjectDistance = 0`；**不要用 `drawTreesAndFoliage=false`**（会关掉 46,472 棵树） |
 | 13 | 打包后草消失 | `Assets/` 不存在，`File.ReadAllBytes` 失败 → 静默回退合成方阵 | 正式版改走 YooAsset（M3） |
 | 14 | `[Toggle]` 属性设了但没 EnableKeyword | `shader_feature` 变体不切换：LOD0 花仍是绿色、无 alpha 裁剪，**静默失效** | 代码里必须显式 `mat.EnableKeyword("_USE_ALBEDO_TEX")`，`SetFloat` 只影响属性值不影响变体 |
 | 15 | 只传 tint 不给贴图 | 花仍是纯绿（tint 乘在绿色渐变上，乘什么都是绿） | 花色在图集里，必须采样 + `clip(a - _Cutoff)` |

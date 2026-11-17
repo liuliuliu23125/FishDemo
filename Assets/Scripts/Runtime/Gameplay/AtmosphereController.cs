@@ -465,7 +465,10 @@ namespace FishDemo.Gameplay
         }
 
         /// <summary>
-        /// 左上角 HUD：时刻 / 天气 / 时间流速 / 操作提示。
+        /// 左上角 HUD：**昼夜/天气操作说明置顶**，其下是时刻 / 天气 / 时间流速，末尾是相机操作。
+        ///
+        /// ── 为什么操作说明放最上面 ──
+        /// 演示时需要先看到怎么操作，再看当前状态；原先提示在最底部，容易被当成脚注忽略。
         ///
         /// ── 为什么用 OnGUI 而不是 Canvas ──
         /// 工程没有 UI 系统（`manifest.json` 无 Input System / uGUI 场景），
@@ -506,11 +509,14 @@ namespace FishDemo.Gameplay
                 : "夜晚";
 
             string text =
+                "<b>昼夜 / 天气操作</b>\n" +
+                "<size=-2><color=#cccccc>" +
+                "1-5 天气  |  T 暂停/继续时间  |  [ ] 前后 1 小时  |  \\ 切时间流速" +
+                "</color></size>\n" +
                 $"<b>时间 {hh:00}:{mm:00}</b>（{phase}）{(IsTimeRunning ? "" : "  <color=#ffcc66>[已暂停]</color>")}\n" +
                 $"天气 <b>{CurrentWeatherName}</b>\n" +
                 $"流速 {CycleLabels[Mathf.Clamp(_cycleIndex, 0, CycleLabels.Length - 1)]}\n" +
                 "<size=-2><color=#cccccc>" +
-                "1-5 天气  |  T 暂停/继续时间  |  [ ] 前后 1 小时  |  \\ 切时间流速\n" +
                 "C 切相机  |  F 自由飞行（WASD/QE/右键/滚轮）" +
                 "</color></size>";
 

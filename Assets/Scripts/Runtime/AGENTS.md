@@ -2,7 +2,7 @@
 
 > 三个子目录，**两套程序集**：`Resources/`（`FishDemo.Resources`）、
 > `Rendering/`（`FishDemo.Rendering`）、`Gameplay/`（**无 asmdef**，编进 `Assembly-CSharp`）。
-> 本文件约 96 行，建议一次读完。
+> 建议一次读完。
 
 ## 1. 目录与程序集
 
@@ -45,7 +45,7 @@ Pegasus 没有 asmdef、编在 `Assembly-CSharp`。asmdef 程序集引用不到�
 | `Gameplay/PegasusTourController.cs` | 原 F 键巡游/手动飞行切换。**已被 `LakeCameraRig` 接管 F 键后禁用**（保留不删，可随时改回） |
 | `Gameplay/LakeOrbitCamera.cs` | 环湖轨道运动：半径 300m / **高度跟随地形**（地表+18m，且不低于水位+26m，指数平滑）/ 120s 一圈 / 俯仰 12°±3°；`Paused` 让出 transform |
 | `Gameplay/LakeCameraRig.cs` | **C** 切相机（巡游 ⇄ 轨道）+ **F** 自由飞行；同步 Crest `Viewer`、SECTR loader、MainCamera tag、**Enviro `ChangeCamera`** |
-| `Gameplay/AtmosphereController.cs` | 大气运行时配置：质量档、时间流速、天气轮换、草风桥接、水下雾开关；**左上角 HUD 显示时刻/天气/流速**；热键 `1-5` 天气 / `T` 暂停时间 / `[` `]` ±1 小时 / `\` 切流速 |
+| `Gameplay/AtmosphereController.cs` | 大气运行时配置：质量档、时间流速、天气轮换、草风桥接、水下雾开关；**左上角 HUD 顶部为昼夜/天气操作说明**，其下显示时刻/天气/流速；热键 `1-5` 天气 / `T` 暂停时间 / `[` `]` ±1 小时 / `\` 切流速 |
 
 三条容易踩的：
 1. **切相机必须同步四样东西**：`WaterRenderer.Viewer`（水面 clipmap 以它为中心）、
@@ -68,6 +68,10 @@ Pegasus 没有 asmdef、编在 `Assembly-CSharp`。asmdef 程序集引用不到�
 
 **它属于 Render Data 层**，可以碰 `BatchRendererGroup` / `GraphicsBuffer`；
 Gameplay 层不得直接操作 `CommandBuffer` / `Graphics.*`（[rendering_rules](../../../Docs/rendering_rules.md) §1）。
+
+**即使在这里也不得新增每帧全屏 Blit / ping-pong。** 新增 pass 先按
+[rendering_rules](../../../Docs/rendering_rules.md) §1 交性能账：pass 数、全屏 RT 数、
+blit 数、依赖哪张 depth/opaque、能否复用已有上下文纹理。
 
 三条最容易踩的实现约束（细节见 [grass_brg_progress](../../../Docs/grass_brg_progress.md) §5）：
 

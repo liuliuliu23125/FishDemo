@@ -1,7 +1,7 @@
 # Assets/Editor 规约（SECTR + GTS 流水线）
 
 > 默认程序集 `Assembly-CSharp-Editor`（**没有 asmdef**）。
-> 本文件约 166 行，改这些脚本前建议一次读完。
+> 改这些脚本前建议一次读完。
 
 ## 1. 为什么这个目录不能加 asmdef
 
@@ -49,7 +49,7 @@ SECTR 与 GTS 都没有自己的 asmdef，其编辑器 API（`SECTR_TerrainWindo
 | `LakeCameraSetup.cs` | 环湖轨道相机 + 切换 rig 写进主场景（幂等）；`Remove` 撤并复原原相机 | `Apply` / `Remove` / `Report` |
 | `LakeWaterVerify.cs` | **需真实图形设备**：水面透明 / 水下效果开·关对照 / 水上不误开，6 项像素判定 | `-executeMethod LakeWaterVerify.Run` |
 | `LakeOrbitVerify.cs` | 轨道几何（半径 / **地形跟随不穿模** / 朝向 / 切换） + Crest 视点 / SECTR loader / tag 跟随（可 `-nographics`） | `-executeMethod LakeOrbitVerify.Run` |
-| `CrestRenderProbe.cs` | **只读**：反射读 URP pass 队列，统计 CopyColor/CopyDepth 次数、水面 chunk 数与 MeshType | `-executeMethod CrestRenderProbe.Run` |
+| `CrestRenderProbe.cs` | **只读**：在 `beginCameraRendering` 读队列，统计 **Crest/自定义 feature** 的 CopyColor/CopyDepth、水面 chunk 数与 MeshType。**看不到 URP 在 `renderer.Setup()` 里入队的 CopyDepthPass**，确认 URP 拷贝要用 Frame Debugger | `-executeMethod CrestRenderProbe.Run` |
 | `ChunkLoadScope.cs` | 验证脚本共用：按区域筛选 chunk（36→8），避免全量加载 | 由验证脚本调用 |
 | `CrestPerformanceMode.cs` | 切水面性能模式（SimpleTransparency / Quad），三项联动可逆 | `ApplySimpleTransparency` / `ApplyQuad` / `ApplyBoth` / `Restore` / `Report` |
 | `AtmosphereSetup.cs` | 把 Enviro 3 接进 World/URP：宏、模块、质量档、RendererFeature、depth；幂等可撤 | `EnsureDefines` / `Apply` / `Remove` / `Report` |
@@ -133,9 +133,11 @@ LakeCarve.Apply                 （挖碗形湖盆，改 2 个 chunk 的高度�
 > 场景从零重建（没有 `Lake Orbit Camera` / rig）时，仍需跑 `LakeCameraSetup.Apply`。
 > 静态合批由 `BatchingSetup.FixAll` 关闭（Android/Standalone 0/0）；`GtsApplyMeshToChunks` 已改为
 > `go.isStatic = false`，重跑流水线不会再把 subTile 标成 static。
+> 接了大气候，`LakeCrestSetup.Apply` 的 `HasOtherDepthOrOpaqueConsumers` 会检测到 Enviro，
+> **保持 `m_RequireDepthTexture=1`**、opaque 仍为 0；不要手动把 depth 改回 0。
 
 `LakeCarve` 的溢出判据按**矩形 AABB** 而非圆形：水面由 Crest WaterBody 的矩形范围决定，
-AABB 外的地形再低也不会露出水面。详见 [water](../../Docs/water.md) §11.4。
+AABB 外的地形再低也不会露出水面。详见 [water](../../Docs/water.md) §2。
 
 ### 3.5.3 大气（Enviro）接入也会被重跑覆盖
 
@@ -161,7 +163,7 @@ AtmosphereSetup.EnsureDefines   （干净导入/换机时一次；加 ENVIRO_URP
 `TerrainChunkTuning.DisableDetail` 设成 `DetailObjectDistance=0` / `DetailObjectDensity=0`。
 
 - `detailObjectDistance = 0` 是 Unity 文档规定的「关闭 detail 渲染」方式，**不改 TerrainData 里的撒点数据**，随时可 `RestoreDesktop` 回滚。
-- **不要用 `drawTreesAndFoliage = false`**：它同时管树和草，会把 4.65 万棵树一起关掉。
+- **不要用 `drawTreesAndFoliage = false`**：它同时管树和草，会把 46,472 棵树一起关掉。
 - 代价：CloverFlower / Daisy / Dandelions 这些花也是 detail 原型，一并消失。
   要保留花，应把花也做成 BRG 实例，而不是恢复 detail 渲染。
 
@@ -224,7 +226,17 @@ ForceDomainReload)`，实测 **20s 资产重导入 + 10s 备份场景落盘**。
 其中脚本内实际只有 ~17s（打开 World 7s + 加载 chunk 9.5s + 4 张截图 1.9s），
 其余是 Unity 启动与脚本编译 —— 属环境固有开销，改脚本无收益。
 
-### 3.11 需要真实图形设备的验证不能加 `-nographics`
+### 3.11 新增 pass / RendererFeature 的验收（2026-11-17）
+
+任何新增 pass 或后处理都必须按 [rendering_rules](../../Docs/rendering_rules.md) §1 交性能账：
+
+- `CrestRenderProbe` 只能数 Crest/自定义 feature 的 pass；URP 内部 `CopyDepthPass` 要用 Frame Debugger；
+- 确认没有在已有纹理上再 `GetTemporary(cameraTargetDescriptor)` 做 ping-pong；
+- 若确需打开 `m_RequireDepthTexture` / `m_RequireOpaqueTexture`，写明消费者与
+  为什么不能复用已有 depth/opaque；
+- 验收脚本输出 pass 数，不只截图。
+
+### 3.12 需要真实图形设备的验证不能加 `-nographics`
 
 BRG 的剔除回调在 `-nographics` 下不执行，`LastVisibleCount` 恒为 `-1`，
 「草没被画出来」和「草被正确剔除」无法区分。

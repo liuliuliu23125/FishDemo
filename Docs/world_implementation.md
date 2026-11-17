@@ -110,18 +110,25 @@
 
 ## 3. World.unity 实际构成
 
-**产物事实**（解析 YAML 得到）。共 14 个根对象：
+**产物事实**（解析 YAML 得到）。共 20 个根对象：
 
 | 根对象 | 内容 |
 |---|---|
-| `Main Camera` | Camera + AudioListener + **`SECTR_RegionLoader`**（LoadSize 768/1000/768，UnloadBuffer 0.25） |
-| `Directional Light` | Light + URP `UniversalAdditionalLightData` |
-| ~~`Gaia Water`~~ | PrefabInstance → `Gaia Water/Water Prefabs/URP/Gaia Water.prefab`，scale 0.215，位置 `(0, 60, 0)`。**2026-11-13 起 `SetActive(false)`**，水面改由下方 Crest 提供 |
-| **`Crest Lake`** | `WaterRenderer` + `WaterBody` + `ClipLodInput` + `ShapeGerstner`，位置 `(192, 264, 96)`。详见 [water](water.md) §11 |
+| `Main Camera` | Camera（`m_ClearFlags=1` Skybox）+ AudioListener + **`SECTR_RegionLoader`**（LoadSize 768/1000/768，UnloadBuffer 0.25） |
+| `Lake Orbit Camera` | 环湖轨道相机 + `LakeCameraRig`（C 切相机 / F 飞行）；见 [water](water.md) §5 |
+| ~~`Directional Light`~~ | Light 组件 **`m_Enabled=0`**（2026-11-15）；Enviro 的 Sun/Moon 是唯一启用主光 |
+| **`Crest Lake`** | `WaterRenderer` + `WaterBody` + `ClipLodInput` + `ShapeGerstner`，位置 `(192, 264, 96)`。详见 [water](water.md) §1 |
 | `Terrain_0_0` … `Terrain_2_2`（9 个） | **只有 Sector×4 + Portal×4，无 Terrain 组件**（`!u!218` 计数 = 0） |
 | `Gaia Terrains` | 空容器（`GaiaSceneReadMe`） |
 | `Gaia Runtime` | `Terrain Loader Manager` + `Gaia Lighting` |
 | `Gaia Tools` | `Session Manager` + `Alpine Meadow Biome` |
+| **`GrassBRG (M1)`** | `GrassBRGManager`，烘焙 435 万 / 场景当前 429 万实例 |
+| **`Pegasus Tour`** | `PegasusManager` + `PegasusTourController`（16 个 POI 为子对象） |
+| **`Enviro 3`** | `EnviroManager` + Sun/Moon 方向光 + Effects/Audio/粒子层级 |
+| **`Atmosphere`** | `AtmosphereController`（质量档/时间流速/天气/草风桥接） |
+
+> **当前场景已无 `Gaia Water` 节点**（YAML 里没有任何名字含 `Water` 的 GameObject）。
+> 水面唯一来源是 `Crest Lake`；旧 Gaia Water 相关内容只在本节与 §6.1 作为历史记录保留。
 
 另有 10 个 `Alpine Meadow-*` 撒点器对象（Textures/Trees/Grass/Stone/Bushes/Fern/Mushrooms/VFX/Audio/Tree Leaves Texture），多数位于 `(768, 0, 768)`，且**每个都挂着 Gaia `TerrainLoader` 组件**。
 
@@ -208,7 +215,11 @@ Terrain 仍保留的关键参数（草/树/碰撞仍由它负责）：
 
 > 本节只记录 World 实现相关的问题。其他工程差距见 [project_todo](project_todo.md)。
 
-### 6.1 海平面三处不一致（会互相覆盖）
+### 6.1 海平面三处不一致（历史：Gaia Water 已不在场景）
+
+> **2026-11-17 事实**：场景里已没有 `Gaia Water`，当前水位唯一来源是
+> `LakeCarve.WaterLevel=264`（见 [water](water.md) §1/§2）。本节只用于理解 Gaia 生成链
+> 或回滚旧水面，**不要按这里的 60/85 去调当前湖**。
 
 | 位置 | 值 | 依据 |
 |---|---|---|
@@ -253,7 +264,7 @@ Terrain 仍保留的关键参数（草/树/碰撞仍由它负责）：
 
 | 问题 | 依据 | 影响 |
 |---|---|---|
-| ~~深度图未开~~ | **当前按设计为 0**（Crest SimpleTransparency）：`m_RequireDepthTexture=0`、`m_RequireOpaqueTexture=0` | 水面不采样 opaque/depth；接入 Enviro/Fog、Gaia/GeNa VFX 等依赖 shader 前必须改回 1 |
+| ~~深度图未开~~ | **当前 `m_RequireDepthTexture=1`、`m_RequireOpaqueTexture=0`**：depth 是 Enviro 体积雾/云的硬依赖；Crest SimpleTransparency 自身不采样这两张图 | 不接大气时可改回 0，省一次 CopyDepth；opaque 保持 0（见 [rendering_rules](rendering_rules.md) §1.2） |
 | 阴影距离 50m / 级联 1 | `UniversalRP.asset:48-49` | 3072m 世界下只有极近处有阴影 |
 | 主场景无 Volume | `World.unity` 无 Volume 组件 | 后处理（Bloom/Tonemap）当前无配置载体 |
 | ~~草走 Terrain detail~~ | **已修**：BRG 接管，`DetailObjectDistance=0` / `DetailObjectDensity=0` | 不再与 BRG 重复绘制 |
@@ -382,10 +393,10 @@ Build Settings 重建为 37 个场景（含主场景），缺失 0
 | 地形走 SRP Batcher | **已落地**：改 GTS shader 加 `UnityPerMaterial` CBUFFER | ✅ 完成，见 [gts_srp_batcher](gts_srp_batcher.md) |
 | SECTR 仅作"区域级"可选流式 | SECTR 承担全部 chunk 流式 | 粒度是 512m 场景，场景切换有固定开销 |
 | YooAsset 唯一资源入口 | SECTR 直接 LoadSceneAsync | 未接线；GTS mesh 也未进 bundle |
-| Crest Water 5 | **已落地**：`Packages/com.waveharmonic.crest`（embedded），中心人工湖出水面 | ✅ 完成，见 [water](water.md) §11；Gaia Water 已禁用保留 |
-| Enviro 3 | 无大气系统 | 未安装；主场景只有一个平行光 |
-| 自研 GPU instancing 草 | Terrain detail 草（`drawInstanced=1`） | **未实现**，下一步 |
-| 夜晚光源 ≤ 6 + emissive | 无昼夜系统 | 未实现 |
+| Crest Water 5 | **已落地**：`Packages/com.waveharmonic.crest`（embedded），中心人工湖出水面 | ✅ 完成，见 [water](water.md) §1；Gaia Water 已不在场景 |
+| Enviro 3 | **已落地**：Enviro 3.3.2b（昼夜/天气/体积雾/体积光），旧 `Directional Light` 已禁用 | ✅ 完成，见 [atmosphere](atmosphere.md) §0 |
+| 自研 GPU instancing 草 | **已落地**：BRG 435 万实例 / 133MiB，Terrain detail 已关 | ✅ 完成，见 [grass_brg_progress](grass_brg_progress.md) |
+| 夜晚光源 ≤ 6 + emissive | Enviro 昼夜已接入；玩法光源尚未落地 | 部分完成 |
 
 ## 9. 改动前必读
 

@@ -1,7 +1,7 @@
 # Assets/Scripts 规约
 
 > 本目录是**自研代码**，与 `Assets/Procedural Worlds/`（第三方）、`Packages/`（嵌入式包）区分开。
-> 本文件约 66 行，建议一次读完。
+> 建议一次读完。
 
 ## 1. 三个程序集 + 一个"无程序集"目录，边界不能越
 
@@ -43,6 +43,10 @@ Editor/                     Gaia 世界生成工具链 + 草烘焙/验证（菜�
 
 **渲染分层**：`Runtime/Rendering/` 属于 Render Data 层，可以碰 `BatchRendererGroup` / `GraphicsBuffer`；
 `Runtime/Gameplay/` 不得直接操作 `CommandBuffer` 或 `Graphics.*`（见 [rendering_rules](../../Docs/rendering_rules.md) §1）。
+
+**新增 pass / RendererFeature 前**必须先读 [rendering_rules](../../Docs/rendering_rules.md) §1：
+说明 pass 数、全屏 RT / blit 数、依赖哪张 depth/opaque、走哪条批处理路径。
+不要为功能方便打开 `m_RequireOpaqueTexture` 或新增全屏 ping-pong。
 
 ## 4. 当前状态
 

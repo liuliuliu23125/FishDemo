@@ -1,16 +1,16 @@
 # Assets/Scenes 规约
 
-> 本文件约 85 行，改场景或重跑世界生成前建议一次读完。
+> 改场景或重跑世界生成前建议一次读完。
 
 ## 1. World.unity 是产物，不是手搭场景
 
 `Assets/Scenes/World.unity` 及其 `World/` 子目录全部由批处理脚本生成：
 
 ```
-Assets/Scenes/World.unity                    主场景（17 个根对象）
+Assets/Scenes/World.unity                    主场景（20 个根对象）
 Assets/Scenes/World/Chunks/*.unity           36 个 chunk 场景（按批次命名）
 Assets/Scenes/World/TerrainSplits/*.asset    36 份 chunk TerrainData
-Assets/Scenes/World/GrassData/*.bytes        36 份 BRG 草烘焙数据（387MB）
+Assets/Scenes/World/GrassData/*.bytes        36 份 BRG 草烘焙数据（132.8 MiB）
 ```
 
 **手改会在下次重跑时被覆盖。** 要改结果，改脚本参数后重跑，或改完立即提交并接受"重跑会丢"的代价。
@@ -47,26 +47,30 @@ World_SECTR Terrain_0_0-20261109 - 162007 0-1-0 Sector.unity
 
 | 根对象 | 说明 |
 |---|---|
-| `Main Camera` | 挂 `SECTR_RegionLoader`（加载中心）；Pegasus 巡游也用它作 target |
-| `Directional Light` | 唯一光源 |
-| ~~`Gaia Water`~~ | **已禁用（2026-11-13）**：水面改由 Crest 提供，见下 |
+| `Main Camera` | 挂 `SECTR_RegionLoader`（加载中心）；Pegasus 巡游也用它作 target；`m_ClearFlags=1`（Skybox） |
+| `Lake Orbit Camera` | 环湖轨道相机 + `LakeCameraRig`（C 切相机 / F 飞行），见 [water](../../Docs/water.md) §5 |
+| ~~`Gaia Water`~~ | **当前场景已无此节点**（YAML 里没有任何名字含 `Water` 的 GameObject）；水面由 `Crest Lake` 提供 |
 | **`Crest Lake`** | Crest 水面 + `WaterBody` + `ClipLodInput`（湖盆裁剪）。位置 `(192,264,96)` |
 | `Terrain_x_x` ×9 | 只有 Sector×4 + Portal×4，**无 Terrain 组件**（地形在 chunk 里） |
 | `Gaia Terrains` / `Gaia Runtime` / `Gaia Tools` | Gaia 运行时容器 |
 | `Alpine Meadow-*` ×10 | 撒点器，挂着空转的 Gaia `TerrainLoader` |
-| **`GrassBRG (M1)`** | 挂 `GrassBRGManager`（`FishDemo.Rendering`）。锚点 `(0, 329.6, -1151.8)`，`_grassDataDir=Assets/Scenes/World/GrassData`，`_instanceCount=12652005` |
+| **`GrassBRG (M1)`** | 挂 `GrassBRGManager`（`FishDemo.Rendering`）。锚点 `(0, 329.6, -1151.8)`，`_grassDataDir=Assets/Scenes/World/GrassData`，`_instanceCount=4292694`（烘焙总数 4,350,225，湖区清草后减少） |
 | **`Pegasus Tour`** | 挂 `PegasusManager`（16 个 POI 是它的子对象，不入根列表）+ `PegasusTourController` |
 | **`Enviro 3`** | Enviro 3.3.2b 运行时根：`EnviroManager` + Sun/Moon 方向光 + Effects/Audio/粒子层级。**预制体实例化后由 Enviro 在编辑器 OnEnable 里自行 Unpack**，场景里是普通层级，不要再按 prefab override 处理 |
 | **`Atmosphere`** | 挂 `AtmosphereController`（`FishDemo.Gameplay`）：质量档、时间流速、天气轮换、草风桥接 |
 | ~~`Directional Light`~~ | **Light 组件 `m_Enabled=0`**（2026-11-15）：Enviro 自带 Sun/Moon 方向光。保留对象便于 `AtmosphereSetup.Remove` 回滚；不要再启用 |
 
-**`GrassBRG (M1)` 名字里的 M1 是历史遗留**，它现在跑的是 M2.2 的全量烘焙数据
-（36 chunk / 1265 万实例），不是 M1 的 1000 个方阵实例。改名要连同
+**天空盒**：`RenderSettings.m_SkyboxMaterial` 是 Enviro/Skybox，`m_AmbientMode=0`（Skybox）。
+Enviro 运行时也会写 `RenderSettings.skybox`。**不要加第二个天空盒或换成默认天空盒**；
+清空会让环境光变黑。详见 [rendering_rules](../../Docs/rendering_rules.md) §1.1。
+
+**`GrassBRG (M1)` 名字里的 M1 是历史遗留**，它现在跑的是全量烘焙数据
+（36 chunk；烘焙 435 万、场景当前 429 万），不是 M1 的 1000 个方阵实例。改名要连同
 `GrassSceneSetupM2` / `DetailBrgSetup` 里的 `NodeName` 常量一起改。
 
 **不要**往主场景加地形或静态大物件 —— 它们不会被 SECTR 分块，会常驻内存。可流式的内容应放进 chunk 或走资源层。
 
-**例外：BRG 草是全量常驻的**（917MB），不随 SECTR 流式。这是 M3 的待办，
+**例外：BRG 草是全量常驻的**（≈320MB），不随 SECTR 流式。这是 M3 的待办，
 不是设计意图（[grass_brg_progress](../../Docs/grass_brg_progress.md) §6）。
 
 ## 4. Build Settings
@@ -88,4 +92,5 @@ World_SECTR Terrain_0_0-20261109 - 162007 0-1-0 Sector.unity
 | [world_implementation](../../Docs/world_implementation.md) | 重跑生成、排查 chunk、查已知缺陷 |
 | [grass_brg_progress](../../Docs/grass_brg_progress.md) | 改草数据/场景接入、排查草消失 |
 | [../Editor/AGENTS.md](../Editor/AGENTS.md) | 切块/收尾/验证脚本的约定 |
+| [rendering_rules](../../Docs/rendering_rules.md) | 写任何渲染代码前（管线铁律 / Copy / Blit） |
 | [pooling_lod](../../Docs/pooling_lod.md) | chunk 加载与缓存策略 |

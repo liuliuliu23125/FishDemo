@@ -7,9 +7,9 @@
 > [grass_brg_plan](grass_brg_plan.md)。本文的选型结论（Amplify Impostors / Shader Control）
 > 仍然有效，草的具体实现以 grass_brg_plan 为准。
 >
-> **2026-11-11 更新**：草 BRG **已落地**（36 chunk / 1265 万实例 / Terrain detail 已关），
-> 状态与实测见 [grass_brg_progress](grass_brg_progress.md)。
-> **树仍未改动**，仍走 Terrain；树的分析结论见本文 §5。
+> **2026-11-12 更新**：草 BRG **已落地**（36 chunk 烘焙 435 万实例 / 133MiB；
+> 湖区清草后场景当前 429 万；Terrain detail 已关），状态与实测见
+> [grass_brg_progress](grass_brg_progress.md)。**树仍走 Terrain**；树的分析见本文 §6。
 
 ## 结论速览
 
@@ -147,15 +147,15 @@ depth and keep early-z.
 | 项 | 值 | 来源 |
 |---|---|---|
 | 路径 | BRG（`GrassBRGManager` + `GrassBRG.shader`） | 代码 |
-| 实例 | 36 chunk / **12,652,005** | `Logs/final-detail.log` |
-| 烘焙产物 | 386 MB，32B/实例 | `GrassData/*.bytes` |
+| 实例 | 烘焙 **4,350,225**；场景当前 **4,292,694**（湖区清草后） | `Logs/Grass/bake-report.txt`、`World.unity` |
+| 烘焙产物 | **132.8 MiB**，32B/实例 | `GrassData/*.bytes` |
 | 烘焙采样率 | `0.035`（≈0.82 株/m²） | `GrassBaker.cs:58` |
-| LOD | 3 级，阈值 100/25/8 px | `GrassBRGManager.cs` |
-| 剔除 | 32m 空间分块 + 块级距离剔除，21.9ms/帧 | `Logs/Grass/perf-probe.txt` |
+| LOD | 3 级，阈值 100/25/8 px，三层均采 albedo 图集精灵格 | `GrassBRGManager.cs` |
+| 剔除 | 32m 空间分块 + 块级距离剔除；21.9ms 是 1265 万实例旧测，当前未重测 | `Logs/Grass/perf-probe.txt` |
 | Terrain detail | **已关**（`DetailObjectDistance=0`） | 36 个 chunk 场景 |
-| 内存 | ≈917 MB（全量常驻） | 同上 |
+| 内存 | **≈320 MB**（CPU 133 + 位置 50 + GPU 133 MiB，全量常驻） | 估算，未重测 |
 
-**尚未做**：SECTR 流式、真机验证、阴影/透光/贴图、花的迁移。
+**尚未做**：SECTR 流式、真机验证、阴影/透光。
 
 详见 [grass_brg_progress](grass_brg_progress.md)。
 

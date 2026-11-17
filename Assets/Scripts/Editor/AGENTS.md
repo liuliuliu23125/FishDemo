@@ -1,7 +1,7 @@
 # Assets/Scripts/Editor 规约（Gaia 世界生成工具链）
 
 > 程序集 `FishDemo.Editor`，命名空间 `FishDemo.EditorTools`。
-> 本文件约 124 行，改这些脚本前建议一次读完。
+> 改这些脚本前建议一次读完。
 
 ## 1. 这些脚本干什么
 
@@ -19,7 +19,7 @@
 | `YooAssetSetup.cs` | 生成资源收集配置 | 菜单 `YooAsset/FishDemo/初始化资源收集配置` |
 | `YooAssetEditorBootstrap.cs` | 模拟构建 + 注入包根目录 | 菜单 `YooAsset/FishDemo/执行模拟构建并注入路径` |
 
-完整工序与参数见 [world_implementation)](../../../Docs/world_implementation.md)。
+完整工序与参数见 [world_implementation](../../../Docs/world_implementation.md)。
 
 ## 1.1 草 BRG 工具链（菜单编号 `FishDemo/Rendering/①~⑮`）
 
@@ -28,7 +28,7 @@
 
 | 脚本 | 菜单 | 职责 |
 |---|---|---|
-| `GrassBaker.cs` | ⑧ | 读 36 chunk 的 TerrainData detail 层 → 烘焙 `.bytes`（`SamplingRate=0.035`） |
+| `GrassBaker.cs` | ⑧ | 读 36 chunk 的 TerrainData detail 层 → 烘焙 `.bytes`（`SamplingRate=0.035`，435 万实例 / 133MiB） |
 | `DetailBrgSetup.cs` | ⑮ | 把 7 种 detail 原型的 **LOD0 mesh + albedo 图集 + tint** 写进场景里的 `GrassBRGManager` |
 | `WorldProbe.cs` | ③ | 地表高度探测（烘焙 / 相机摆位要用） |
 | `GrassM1Verify.cs` | ① | BRG 链路端到端（离屏渲染 + 像素回读 + 负向剔除） |
@@ -118,7 +118,7 @@ detail 原型的 FBX 只被 `TerrainData` 以子资源引用，运行时
 | 文档 | 何时读 |
 |---|---|
 | [grass_brg_progress](../../../Docs/grass_brg_progress.md) | 改草烘焙/验证工具、排查草消失 |
-| [world_implementation)](../../../Docs/world_implementation.md) | 要重跑世界生成、排查 chunk 问题、核对参数 |
-| [terrain_streaming)](../../../Docs/terrain_streaming.md) | 做地形选型、流式方案对比 |
+| [world_implementation](../../../Docs/world_implementation.md) | 要重跑世界生成、排查 chunk 问题、核对参数 |
+| [terrain_streaming](../../../Docs/terrain_streaming.md) | 做地形选型、流式方案对比 |
 | [../AGENTS.md](../AGENTS.md) | 程序集边界、命名空间约定 |
 | [../../Editor/AGENTS.md](../../Editor/AGENTS.md) | 改 SECTR / Pegasus 那一半流水线 |

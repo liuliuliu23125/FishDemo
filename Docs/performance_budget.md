@@ -1,6 +1,6 @@
 # 性能预算与验证标准
 
-> 目标：iQOO 16，30fps（33.3ms/帧）。以下为**初始目标**，需实机 Profile 后回写真实数据。
+> 目标 iQOO 16 / 30fps（33.3ms）。下表是**初始预算**，需实机 Profile 后回写。
 
 ## 1. GPU 预算
 
@@ -16,35 +16,35 @@
 | 水下后处理 | ≤ 1.5ms |
 | UI + 余量 | ≤ 4ms |
 
-> 水面当前配置：SimpleTransparency + Quad，平面反射关闭、CopyColor/CopyDepth=0；
-> Crest 的 compute 清单见 [water](water.md) §14.5。5ms 预算包含反射，当前反射关闭后余量更大。
->
-> 大气当前配置（2026-11-15）：Enviro 3.3.2b；`m_RequireDepthTexture=1`（多一次 depth prepass）；
-> 体积雾 Low（1/4 res raymarch + 双边模糊上采样，steps 32，maxRange 600m）；体积云关闭、flat clouds 开启；
-> 全局反射探针关闭；环境探针 0.5s。天空/大气 1.5ms 与体积雾+光 3ms 现在有实际内容，但数值仍是估值，
-> 需 iQOO 16 实机 Profile 后回写。
+当前：水面 SimpleTransparency + Quad（平面反射关闭，1 次 DrawMesh）；Enviro 体积雾 Low（1/4 res、steps 32）、体积云关。均为估值，待实机校准。
 
-## 2. 规模上限
+## 2. 管线 pass / 带宽预算
+
+| 项 | 当前值 | 约束 |
+|---|---|---|
+| CopyColor | 0 | 新增消费者前必须证明必要 |
+| CopyDepth | **1（Enviro）** | URP 14 在“透明后采样深度”下不可避免；不要用 ForcePrepass 换取取消（会重绘不透明几何），详见 [rendering_rules](rendering_rules.md) §1.2 |
+| 全屏 blit | Enviro 雾 1 copy + 1 合成 | 不允许再叠全屏 ping-pong |
+| 水面 | 1 次 DrawMesh | 不开第二个水面 pass |
+| 体积雾中间 RT | 1/4 分辨率 | 不改全分辨率 |
+| 后处理 | URP 内置 Uber pass 1 次 | ACES/LUT/调色共用，不另起 pass |
+
+**带宽原则**：每个全屏 copy/blit 都是一次 tile load+store。1080p 深度拷贝约 8MB 读 + 8MB 写，30fps ≈ 0.5GB/s。新增 pass 前先算这一笔，并说明能否用 pass 顺序或已有 RT 替代。
+
+## 3. 规模上限
 
 - Draw Call：< 300（SRP Batcher 阶段）/ < 100（BRG 阶段）
 - 三角形：< 1.5M / 帧
 - 夜晚动态光源：≤ 6（其余靠 emissive + Bloom）
 - 同屏角色：≤ 20
 
-## 3. 验证要求
+## 4. 验证要求
 
 渲染改动必须提供证据之一，否则不算完成：
 
-1. **Frame Debugger 截图**：draw call 数、合批情况符合预期。
-2. **Profiler 数据**：单项 GPU 耗时在预算内。
-3. **iQOO 16 实机日志**：30fps 稳定。
+1. **Frame Debugger**：draw call、合批、CopyColor/CopyDepth 次数、全屏 blit 次数符合预期。
+2. **Profiler**：单项 GPU 耗时在预算内。
+3. **iQOO 16 实机**：30fps 稳定。
 4. **降级验证**：最低画质档不崩、无 shader 报错。
 
-禁止"应该没问题"式结论。
-
-## 4. 预算超标时的处理
-
-任何新增效果若单项超过预算 10%，必须给出取舍理由：
-- 关掉了什么来换
-- 或者在哪个画质档位下关闭
-- 或者明确的优化计划与时间点
+禁止“应该没问题”式结论。单项超预算 10% 必须给出取舍：关掉了什么、哪个画质档关闭、或明确的优化计划。

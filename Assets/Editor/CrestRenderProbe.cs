@@ -15,22 +15,26 @@ using WaveHarmonic.Crest;
 /// <summary>
 /// Crest 渲染开销诊断：**只读**，不修改任何资产。
 ///
-/// ── 要回答的三个问题 ──
-/// 1. URP 的 `_CameraOpaqueTexture` / `_CameraDepthTexture` 每帧被 copy 几次？
-///    Crest 在 URP 14 下用反射复用 URP 私有的 `m_OpaqueColor` / `m_DepthTexture`，
-///    再 enqueue 自己 new 的 CopyColorPass/CopyDepthPass。若 URP 自己也 enqueue 了
-///    （非 SimpleTransparency 时 asset 上 `m_RequireOpaqueTexture=1`，或 Crest 的 ConfigureInput 请求；
-///      当前 SimpleTransparency 下 asset 为 0，正常应是 0 次），
-///    那就是同一张 RT 被写两遍 —— 纯浪费。
-/// 2. 水面 chunk 有多少个、可见多少个、每帧提交多少次 DrawRenderer？
-///    Crest 的 Chunks 模式用 `CommandBuffer.DrawRenderer` 逐 chunk 提交
-///    （SurfaceRenderer.cs:921-967），这是它无法被 SRP Batcher 合并的直接原因。
-/// 3. 当前走的是哪条路径（Chunks / Quad / Custom），以及 SimpleTransparency 是否开启。
+/// ── 这个工具能看到什么 ──
+/// 1. **Crest / 自定义 RendererFeature 自己 enqueue 的 pass**：Crest 在 URP 14 下会
+///    用反射复用 URP 私有的 `m_OpaqueColor` / `m_DepthTexture`，再 enqueue 自己 new 的
+///    CopyColorPass/CopyDepthPass。这里统计的是这部分。
+/// 2. 水面 chunk 数量、可见数、每帧提交次数（Chunks 模式是 `CommandBuffer.DrawRenderer`
+///    逐个提交，见 `SurfaceRenderer.cs:921-967`，这是它不能进 SRP Batcher 的直接原因）。
+/// 3. 当前路径（Chunks / Quad / Custom）与 SimpleTransparency 是否开启。
+///
+/// ── 重要限制：看不到 URP 内部的 copy ──
+/// `beginCameraRendering` 触发在 URP `renderer.Setup()` **之前**；URP 自己的
+/// `CopyDepthPass` 是在 `Setup()` 里入队的（`UniversalRenderer.cs:1151-1154`）。
+/// 所以本工具输出 `CopyDepthPass = 0` **不代表管线没有 depth copy**。
+/// 例如当前 Enviro 需要 `_CameraDepthTexture`，管线实际有 1 次 CopyDepth，
+/// 但本工具仍然只能看到 Crest 入队的那 1 个 pass。要确认 URP 内部 copy，
+/// 用 Frame Debugger（或按 URP 源码 + `m_RequireDepthTexture` 判断）。
 ///
 /// ── 为什么用反射读 pass 队列 ──
 /// `ScriptableRenderer.m_ActiveRenderPassQueue` 是 internal，URP 没有公开 API。
-/// 反射读它比"按代码推断"可靠：能拿到**本帧实际入队**的 pass 实例，
-/// 直接数出 CopyColorPass / CopyDepthPass 的个数。
+/// 在 `beginCameraRendering` 读它，能拿到 **Crest/自定义 feature 本帧已入队**的 pass；
+/// 再晚就读不到了（URP 在 `Render()` 结束会清空）。
 ///
 /// 用法：-executeMethod CrestRenderProbe.Run
 /// 输出 Logs/Crest/crest-render-probe.txt
@@ -113,7 +117,9 @@ public static class CrestRenderProbe
 
             // 必须在这里挂钩：URP 每次 Render() 结束会清空 m_ActiveRenderPassQueue，
             // Update 里读永远是空表（实测 pass 总数 = 0）。
-            // beginCameraRendering 在 URP 入队完成之后、执行之前触发，是唯一能拿到本帧真实队列的时机。
+            // beginCameraRendering 在 URP renderer.Setup()（它才入队内部 copy pass）之前触发，
+            // 所以这里只能看到 Crest / 自定义 feature 已入队的 pass；URP 内部的 CopyDepthPass
+            // 不在此列表里。需要确认 URP 拷贝请用 Frame Debugger。
             RenderPipelineManager.beginCameraRendering += OnBeginCamera;
 
             // 把相机摆到湖边（触发 SECTR 加载），并确保轨道相机在渲染。
@@ -294,9 +300,11 @@ public static class CrestRenderProbe
             }
             else
             {
-                _sb.AppendLine($"pass 总数 = {_passSnapshot.Count}");
-                _sb.AppendLine($"CopyColorPass 个数 = {_copyColorCount}  ← 每多一个就是一次全屏 color copy");
-                _sb.AppendLine($"CopyDepthPass 个数 = {_copyDepthCount}  ← 每多一个就是一次全屏 depth copy");
+                _sb.AppendLine($"feature 入队 pass 总数 = {_passSnapshot.Count}（不含 URP 内部 pass）");
+                _sb.AppendLine($"Crest/自定义 CopyColorPass = {_copyColorCount}  ← 每多一个就是一次全屏 color copy");
+                _sb.AppendLine($"Crest/自定义 CopyDepthPass = {_copyDepthCount}  ← 每多一个就是一次全屏 depth copy");
+                _sb.AppendLine("注意：URP 在 renderer.Setup() 里入队的 CopyDepthPass 在这里看不见；");
+                _sb.AppendLine("      当前 Enviro 的 1 次 CopyDepth 需要 Frame Debugger 确认。");
                 _sb.AppendLine("");
                 _sb.AppendLine("完整队列：");
                 foreach (var line in _passSnapshot) _sb.AppendLine(line);
@@ -314,7 +322,7 @@ public static class CrestRenderProbe
                                $"可见 {visible} 个 ≈ {visible} 次 draw call（SRP Batcher 合并不了，" +
                                $"因为是 CommandBuffer.DrawRenderer 逐个提交）");
             }
-            _sb.AppendLine("• 若 CopyColorPass/CopyDepthPass 各 >1，说明 URP 与 Crest 各做了一次，同一张 RT 写两遍");
+            _sb.AppendLine("• 本列表只含 Crest/自定义 feature 的 pass；URP 内部 CopyDepthPass 不可见，别把 0 当成“管线没有拷贝”");
 
             Finish();
         }

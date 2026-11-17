@@ -87,10 +87,10 @@ VAT（Vertex Animation Texture）+ 骨骼矩阵贴图方案。
 | 依赖 | 状态 | 说明 |
 |---|---|---|
 | Unity 2022.2.20f1+ | ✅ 满足 | Manual 要求 |
-| Entities 1.0.8+ | ❌ **未安装** | 必须补 |
-| Entities Graphics | ❌ **未安装** | 必须补 |
-| DOTween.dll | ✅ 已提供 | 用户已加入 DOTween Pro |
-| Newtonsoft.Json.dll | ⚠️ 需确认 | 通过 `com.unity.nuget.newtonsoft-json` |
+| Entities 1.0.8+ | ✅ **已安装 1.4.8** | `Packages/manifest.json` |
+| Entities Graphics | ✅ **已安装 1.4.21** | `Packages/manifest.json` |
+| DOTween.dll | ✅ 已存在 | `Assets/Plugins/Demigiant/DOTween/DOTween.dll` |
+| Newtonsoft.Json.dll | ✅ 3.2.2 | `com.unity.nuget.newtonsoft-json` |
 
 asmdef 原文：
 
@@ -160,8 +160,7 @@ GPU Baker 的 VAT 是 ShaderGraph Subgraph，可以插入项目 PBR shader。但
 | 风险 | 等级 | 应对 |
 |---|---|---|
 | GPU Baker 已下架 | 🔴 高 | **必须 vendor 进仓库** |
-| Entities 未安装 | 🔴 高 | 先装并验证兼容性 |
-| Newtonsoft.Json 来源 | 🟡 中 | 用 `com.unity.nuget.newtonsoft-json` |
+| Entities 1.4.8 与 URP 14 的实际兼容性 | 🟡 中 | 包已装，启用 VAT 前先做最小验证 |
 | 无 Forward+ | 🟡 中 | 接受，靠 emissive |
 | 两套 shader 不一致 | 🟡 中 | 用 keyword 统一 |
 | VAT 贴图内存 | 🟡 中 | 控制动画数量/帧率 |

@@ -33,6 +33,9 @@
 | Crest 源码补丁 | `DepthLod.TerrainDepthInput` 已加“只烘湖区 Include WaterBody AABB 内 Terrain”的过滤。升级 Crest 时必须重打，否则每个 active Terrain 都会每帧 dispatch 一次 |
 | YooAsset 启动入口 | `YooAssetInitializer.InitializeAsync()` 目前**无任何调用方**，资源层尚未接线 |
 | 模拟构建产物 | 菜单 `YooAsset/FishDemo/执行模拟构建并注入路径` 未实际执行过 |
+| 后处理未接入 | 主场景无 Volume，ACES / Color Grading / LUT / Bloom 均未配置；接入规则见 [postprocess](postprocess.md) §0 |
+| Enviro 雾的固有全屏 pass | 每帧 1 次全屏 color copy + 1 次合成；体积云开启后还会加全分辨率 temp。要优化必须改 Enviro 并打 `[FishDemo]` 标记，见 [atmosphere](atmosphere.md) §0.7 |
+| 草 BRG 未接 SECTR 流式 | 435 万实例全量常驻 ≈320MB；M3 待办，见 [grass_brg_progress](grass_brg_progress.md) §1 |
 
 ## 3. 待决策
 
