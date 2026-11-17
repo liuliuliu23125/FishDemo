@@ -256,7 +256,7 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 - **Pegasus 同样无 asmdef**：`PegasusTourController.cs` 因此放在 `Assets/Scenes` 之外的
   `Assets/Scripts/Runtime/Gameplay/`——该目录**没有 asmdef**，编进 `Assembly-CSharp`，
   才能引用 Pegasus 类型。给 Gameplay 加 asmdef 会让这个脚本编不过。
-- **注释**：代码不写注释，只留锚点（第三方补丁 `[FishDemo]`、`TODO`/`FIXME`）；
-  从代码推不出的「为什么」写进本文件或 `Docs/`。规则见全局 AGENTS.md「代码不写注释」。
+- **注释**：自研代码（含 shader）不保留任何注释；从代码推不出的「为什么」写进本文件或 `Docs/`。
+  第三方源码不改动，`[FishDemo]` 等补丁标记留在原处。规则见全局 AGENTS.md「代码不写注释」。
 - **全局配置留档**：本机全局指令文件 `~/.zcode/AGENTS.md` 的镜像在仓库 `global/AGENTS.md`
   （不在 `Assets/` 下，不进 Unity 构建）。改任意一边必须同步另一边，`diff` 校验后一起提交推送。
