@@ -30,7 +30,7 @@
 **尚未完成的关键项**：
 - ❌ 真机（Vulkan / iQOO 16）未验证
 - ❌ 阴影/透光（当前是包裹式 Lambert + 常量环境光 + 顶点风摆）
-- ✅ SECTR 流式已接（Play Mode 驻留量随 chunk 范围浮动，约 80MB/15 块）
+- ✅ SECTR 流式已接（Play Mode 驻留量随 chunk 范围浮动，bucket 4096 下约 104MB/15 块、164MB/24 块；计算值，待 Profiler 复核）
 - ❌ 移动端性能未测
 
 ## 2. 交付物
@@ -288,9 +288,10 @@ BRG 单 batch 的 raw buffer 上限 16MB（`EntitiesGraphicsSystem.cs:1156`）�
 | 项 | 全量（旧） | 流式（现，按 15 块驻留估算） |
 |---|---|---|
 | CPU 实例数据（托管） | 133 MiB + 逐 chunk/排序副本 → 峰值 400MB+ | **0（不进托管堆）** |
-| CPU 位置（native，12B/实例） | 50 MiB | ≈ 44 MiB（chunk 各一份 + 剔除用全局一份） |
-| GPU 实例 buffer | 133 MiB | ≈ 58 MiB |
-| **合计** | **≈ 316 MiB（常驻）** | **≈ 100 MiB（随 SECTR 加载范围浮动）** |
+| CPU 位置（native，12B/实例） | 50 MiB | ≈ 40 MiB（chunk 各一份 + 剔除用全局一份） |
+| GPU 实例 buffer（bucket 4096） | 133 MiB | ≈ 59 MiB（原 65536 桶为 ≈200 MiB） |
+| 块表（48B/块） | — | ≈ 0.9 MiB |
+| **合计** | **≈ 316 MiB（常驻）** | **≈ 100 MiB（15 块）/ ≈ 156 MiB（24 块）；复用池另计 ≤32 MiB** |
 
 流式路径：`GrassChunkFile.Read`（`NativeArray` + 64KB 复用中转，无托管 byte[]）、
 `SortIntoBlocks`（原生计数排序）、上传后只保留 positions。buffer 走 32MB 上限的复用池，

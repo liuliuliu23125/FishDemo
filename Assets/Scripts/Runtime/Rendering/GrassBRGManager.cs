@@ -147,8 +147,27 @@ namespace FishDemo.Rendering
 
         public int StreamingChunkCount => _streamChunks.Count;
 
+        public long StreamingBufferBytes
+        {
+            get
+            {
+                long bytes = 0;
+                for (int i = 0; i < _streamChunks.Count; i++)
+                {
+                    var slices = _streamChunks[i].Slices;
+                    if (slices == null) continue;
+                    for (int j = 0; j < slices.Length; j++)
+                    {
+                        var buffer = slices[j].Buffer;
+                        if (buffer != null) bytes += (long)buffer.count * 4;
+                    }
+                }
+                return bytes + s_pooledBufferBytes;
+            }
+        }
+
         private const int kSyntheticMaxInstances = 10000;
-        private const int kPoolBucketInstances = 65536;
+        private const int kPoolBucketInstances = 4096;
         private const long kMaxPooledBufferBytes = 32L * 1024 * 1024;
         private static readonly Dictionary<int, Stack<GraphicsBuffer>> s_bufferPool =
             new Dictionary<int, Stack<GraphicsBuffer>>();
@@ -1081,9 +1100,9 @@ namespace FishDemo.Rendering
         {
             if (!_ready)
                 return;
-            GUI.Label(new Rect(12, 12, 480, 22),
+            GUI.Label(new Rect(12, 12, 760, 22),
                 _streaming
-                    ? $"GrassBRG 流式 | chunk {_streamChunks.Count} | 驻留实例 {_instanceCount:N0} | 可见 {_lastVisibleCount}"
+                    ? $"GrassBRG 流式 | chunk {_streamChunks.Count} | 驻留实例 {_instanceCount:N0} | GPU {StreamingBufferBytes / 1048576f:F1}MB | 可见 {_lastVisibleCount}"
                     : $"GrassBRG M2 | 实例 {_instanceCount:N0} | 可见 {_lastVisibleCount}");
         }
 

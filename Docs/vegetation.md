@@ -153,7 +153,7 @@ depth and keep early-z.
 | LOD | 3 级，阈值 100/25/8 px，三层均采 albedo 图集精灵格 | `GrassBRGManager.cs` |
 | 剔除 | 32m 空间分块 + 块级距离剔除；21.9ms 是 1265 万实例旧测，当前未重测 | `Logs/Grass/perf-probe.txt` |
 | Terrain detail | **已关**（`DetailObjectDistance=0`） | 36 个 chunk 场景 |
-| 内存 | 流式：≈100 MB（15 块驻留，CPU 位置 ~44 + GPU ~58）；全量工具路径仍约 320 MB | 估算，未重测 |
+| 内存 | 流式：≈100 MB（15 块，CPU 位置 ~42 + GPU ~62 + 块表 ~1）；24 块 ≈164 MB；全量工具路径仍约 320 MB | bucket 4096 计算值，待 Profiler 复核 |
 
 **尚未做**：真机验证、阴影/透光。**SECTR 流式已完成**（`SectrGrassStreamer`，2026-11-17）。
 
