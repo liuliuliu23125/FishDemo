@@ -47,8 +47,8 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | **地表合批** | **SRP Batcher 已生效**；静态合批已关；纹理数组 ASTC_8x8 | 维持 | [gts_srp_batcher](Docs/gts_srp_batcher.md) |
 | 大世界流式 | **SECTR**（承担全部 chunk 加载） | SECTR 降为区域级，chunk 走 YooAsset | 同上 |
 | **水体** | **Crest 5.10.0 已落地**：中心人工湖（湖心 `(192,96)` / 半径 190m / 水位 264m / 深 30m），Crest 包在 `Packages/com.waveharmonic.crest`；靠 Surface Clipping 裁出湖盆；旧 Gaia Water 已禁用保留；**当前渲染模式 = SimpleTransparency + Quad**（URP pass 4→1，水面 draw call 49→1）；`LodLevels=5` / 分辨率 128（Gerstner 96）/ Depth SDF 关闭；Depth 只烘湖区 Terrain；环湖轨道相机 + C/F 键切换 | 真机验反射/水下开关 | [water](Docs/water.md) §11–§14 |
-| 昼夜/天气/大气雾 | **无**（仅一盏平行光） | Enviro 3 | [atmosphere](Docs/atmosphere.md) |
-| 体积雾/光 | 未接入 | Fog Mist 2 / Light Beam 2 / Lights 2 | 同上 |
+| **昼夜/天气/大气雾** | **Enviro 3.3.2b 已落地**：Time/Lighting/Sky（日/月/星空/环境光）+ Weather（9 预设）+ Fog（volumetrics Low / 1/4 res / steps 32）；体积云关、flat clouds 开；旧 `Directional Light` 已禁用 | 真机验性能 / 水下 | [atmosphere](Docs/atmosphere.md) §0 |
+| **体积雾/光** | **Enviro 体积雾/光已落地**：雾 shader 采样主光阴影（树影光柱）；雨雪粒子；草风由 `AtmosphereController` 桥接到 BRG 材质 | 局部雾体积（VFM2）/ 灯柱（VLB2）按需 | 同上 |
 | 后处理 | URP 内置（主场景无 Volume） | 同 | [postprocess](Docs/postprocess.md) |
 | **草** | **BRG 已落地**：36 chunk 烘焙 **435 万实例 / 133MB**；Terrain detail 已关（`DetailObjectDistance=0`）；单 shader `FishDemo/Grass/BRGMinimal`，**三层 LOD 全部采 albedo 图集精灵格**（花在中远距也有色） | 阴影/透光、SECTR 流式、真机 | [grass_brg_progress](Docs/grass_brg_progress.md) |
 | **树** | **Terrain 渲染 + Impostor**：实际用 **7 原型**（4 个云杉占 99.99%）；实例已降 **1/10 → 4.6 万**；每 prefab **2 级 LOD**（LOD0 原 mesh / LOD1 = Amplify Impostor 8v6t）；`TreeDistance=450`、`maxFullLOD=16`；材质 keyword 组合 **2 种**（树干 `WIND` / 针叶 `ALPHATEST+SSS+WIND+WORLDMAP`） | 阴影/透光、BRG 化、真机 | [vegetation](Docs/vegetation.md) §6 |
@@ -152,6 +152,17 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
   大洋模式不裁则保留全部；`CrestRenderProbe` 实测 15→6）。Foam 频率保持 30：
   `PersistentLod` 在 substeps==0 时仍 dispatch 一次，
   降频不减少 dispatch 次数。详细清单与吞吐估算见 water.md §14.5。
+
+**大气系统（2026-11-15 落地，改之前必读 [atmosphere](Docs/atmosphere.md) §0）**：
+- **`ENVIRO_URP` 必须手动加**：Enviro 自带的 `EnviroDefineSymbol` 只加 `ENVIRO_3`。没有 `ENVIRO_URP` 时 `EnviroURPRenderFeature` 整个类型被 `#if` 掉，天空/雾/云**静默失效**。工具：`AtmosphereSetup.EnsureDefines`（Standalone + Android）。
+- **保存场景前必须 `EnviroManager.LoadConfiguration()`**：Enviro 的模块（Time/Fog/Weather/...）不是预制体对象，而是编辑期从 configuration 资产赋值的引用。`AtmosphereSetup.Apply` 若实例化后立刻保存，Play Mode 下模块全 null，`StartModules()` 直接跳过（实测全 False）。
+- **雾 pass 被改到透明之后**：原 `BeforeRenderingTransparents-1` 下 Crest 水面完全不受雾（雾天一条饱和绿带）。补丁在 `EnviroURPRenderPass.cs` 构造函数，标了 `[FishDemo]`。升级 Enviro 时补丁会丢，必须重打。
+- **`m_RequireDepthTexture=1`** 是体积雾/云的硬依赖（会多一次 depth prepass）；`m_RequireOpaqueTexture` 仍为 0。
+- **切相机必须同步 Enviro**：RenderFeature 只对 `EnviroManager.Camera` / `Cameras` 生效。`LakeCameraRig.Apply()` 已调用 `ChangeCamera`；新增跟相机走的状态也要加进去。
+- **质量档唯一来源**：`Assets/Settings/Enviro Mobile Quality.asset`（体积云关 / flat clouds 开 / 雾 volumetrics Low 1/4 res steps 32 / 全局反射关 / 环境探针 0.5s / 粒子 0.5）。不要在场景里手改模块质量字段，`QualityModule` 每帧会用这个资产覆盖。
+- **草风桥接**：`AtmosphereController` 每 0.25s 调 `GrassBRGManager.SetWeatherWind`（改 7 个类型材质的 `_WindSpeed/_WindStrength`）。树的风仍由 PW shader 自己管，未接天气。
+- **昼夜操作**：`AtmosphereController.OnGUI` 左上角 HUD 显示时刻/天气/流速；`T` 暂停时间、`[` `]` ±1h、`\` 切流速（20/5/2/1 分钟一天）、`1-5` 天气。验收：`AtmosphereTimeVerify.Run`。注意太阳落山后 Enviro 用**月亮**做主光，18:00 与 00:00 光向接近属正常。
+- **Enviro 与 Crest 的边界**：Enviro 没有水下检测，体积雾在水下仍会应用；水面雾按背后不透明深度近似。改水/改雾时两者一起看。
 
 **渲染分层**：Gameplay 层不得直接操作 `CommandBuffer` 或 `Graphics.*`。
 

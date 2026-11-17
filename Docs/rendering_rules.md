@@ -56,6 +56,9 @@ Gameplay → World Streaming（chunk + 流式）
 ## 3. 光照约束
 
 - 主光：单一 directional，按时间曲线驱动角度/颜色/强度。
+  **当前由 Enviro 的 Sun/Moon Directional Light 驱动**；场景里的旧 `Directional Light`
+  组件已禁用（保留对象供回滚）。不要再加第二盏方向光——URP 会把另一盏当 additional light，
+  阴影/颜色都会错。
 - 夜晚 additional lights ≤ 6，其余靠 **emissive + Bloom**。
 - 2022.3 无 Forward+，per-object light limit 为 **4**（`UniversalRP.asset: m_AdditionalLightsPerObjectLimit`）。
 

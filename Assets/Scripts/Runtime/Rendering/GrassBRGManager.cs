@@ -326,6 +326,8 @@ namespace FishDemo.Rendering
         /// 索引 = 类型；null = 该类型无图（draw command 回落 _materialID）。
         /// </summary>
         private readonly Material[] _typeMaterials = new Material[kDetailTypeCount];
+        private float _windSpeedBase = 1.2f;
+        private float _windStrengthBase = 0.08f;
 
         /// <summary>CPU 侧实例位置，剔除 Job 用（GPU buffer 里只有矩阵）。</summary>
         private NativeArray<float3> _positions;
@@ -373,6 +375,11 @@ namespace FishDemo.Rendering
                 Debug.LogError("[GrassBRG] 找不到材质/Shader，BRG 未启动。", this);
                 return;
             }
+
+            // 天气风的基准值：从共享材质读一次，之后按 Enviro 的 windSpeed 缩放。
+            // 只改 7 个类型材质的常量，不改 per-instance 数据（GPU buffer 仍 32B/实例）。
+            _windSpeedBase = mat.HasProperty("_WindSpeed") ? mat.GetFloat("_WindSpeed") : 1.2f;
+            _windStrengthBase = mat.HasProperty("_WindStrength") ? mat.GetFloat("_WindStrength") : 0.08f;
 
             BuildLodMeshes();
 
@@ -495,6 +502,33 @@ namespace FishDemo.Rendering
             _brg.SetGlobalBounds(ComputeWorldBounds());
 
             _ready = true;
+        }
+
+        /// <summary>
+        /// 把天气系统（Enviro）的风映射到草材质。低频调用（约 0.25s 一次），
+        /// 不要每帧调用：每次 SetFloat 都会让 7 个材质重新上传 CBUFFER。
+        ///
+        /// 为什么改材质而不是加全局 shader uniform：
+        /// 草 shader 的 _WindSpeed/_WindStrength 在 UnityPerMaterial CBUFFER 里，
+        /// per-instance 数据已固定 32B；每类型一个材质是最小改动，
+        /// 也不会像 MaterialPropertyBlock 那样拆 SRP Batcher 批次。
+        /// 代价：风的方向仍由 shader 的相位项近似，不随 Enviro 风向旋转。
+        /// </summary>
+        public void SetWeatherWind(float windSpeed, float turbulence)
+        {
+            // Enviro 的 windSpeed 典型范围 0.1~0.8（Storm 0.796），这里映射到
+            // 0.75~2.25 的速度倍率；turbulence 只略微增加摆幅。
+            float speedMul = 0.6f + Mathf.Clamp01(windSpeed) * 2.0f;
+            float strengthMul = 0.5f + Mathf.Clamp01(windSpeed) * 2.0f +
+                                Mathf.Clamp01(turbulence) * 0.5f;
+
+            for (int t = 0; t < kDetailTypeCount; t++)
+            {
+                var m = _typeMaterials[t];
+                if (m == null) continue;
+                m.SetFloat("_WindSpeed", _windSpeedBase * speedMul);
+                m.SetFloat("_WindStrength", _windStrengthBase * strengthMul);
+            }
         }
 
         /// <summary>

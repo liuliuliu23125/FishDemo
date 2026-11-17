@@ -292,7 +292,7 @@ Crest 自带 Gaia 集成（`Editor/Scripts/Integrations/Gaia/GRC_Crest.cs`）。
 | Depth Terrain | **仅与湖区 AABB 相交的 Terrain** | `EverythingClipped` 下湖外水面不存在，湖外 Terrain 不会被采样 |
 | WaterBody | `Include`，AABB 半边长 280m，`Affects=Volume+Physics` | 只管水下体积与物理限域，**不负责裁水面** |
 | 水色 | absorption `(0.62,0.86,0.92,0.016)` / scattering `(0.012,0.026,0.036)` | 见 §12.1：30m 深湖盆需要更低的 extinction |
-| URP | `m_RequireDepthTexture=0`、`m_RequireOpaqueTexture=0`（SimpleTransparency）；非 SimpleTransparency 才需要 1 | 当前水面不请求 opaque/depth，开着只是白付 CopyColor/CopyDepth |
+| URP | `m_RequireDepthTexture=1`（Enviro 体积雾/云，2026-11-15）；`m_RequireOpaqueTexture=0`（Crest SimpleTransparency 不需要） | Crest 水面本身仍不请求这两张图；depth 是大气系统的硬依赖，不是水的 |
 
 **为什么必须用 Surface Clipping，而不是只靠 WaterBody**：
 Crest 的水面是以**视点**为中心的 clipmap（`LateUpdatePosition` 把 `Position` 设为
@@ -463,7 +463,7 @@ Volume 型 WaterBody（`Lake Body` 节点，`Exclusion=Include`）内、且相�
 
 | 文件 | 职责 |
 |---|---|
-| `Assets/Scripts/Runtime/Gameplay/LakeOrbitCamera.cs` | 轨道运动：半径 300m、水位+26m、120s/圈、俯仰 12°±3° 摆动；`Paused` 让出 transform；支持注入时间源（验收用） |
+| `Assets/Scripts/Runtime/Gameplay/LakeOrbitCamera.cs` | 轨道运动：半径 300m、**高度跟随地形**（地表+18m 且不低于水位+26m，指数平滑）、120s/圈、俯仰 12°±3° 摆动；`Paused` 让出 transform；支持注入时间源（验收用） |
 | `Assets/Scripts/Runtime/Gameplay/LakeCameraRig.cs` | **C** 切相机 + **F** 自由飞行：Camera/AudioListener/loader 三件套开关 + Viewer/tag 跟随；挂在 `Crest Lake` 上 |
 | `Assets/Editor/LakeCameraSetup.cs` | 幂等写入 World.unity；`Apply`/`Remove`/`Report` |
 
@@ -486,8 +486,8 @@ Volume 型 WaterBody（`Lake Body` 节点，`Exclusion=Include`）内、且相�
 
 | 脚本 | 判什么 | 命令 |
 |---|---|---|
-| `LakeWaterVerify.Run` | 水面透明（浅水见底）、水下吸收色调、水下有内容、开关对照、水上不误开 | 需真实图形设备 |
-| `LakeOrbitVerify.Run` | 轨道几何（半径/高度恒定、扫过角度、朝湖心）+ 三项系统跟随 + 切换 | 可 `-nographics` |
+| `LakeWaterVerify.Run` | 水面透明（浅水见底）、水下吸收色调、水下有内容、开关对照、水上不误开。**2026-11-15 起测试会临时禁用 Enviro 并恢复旧主光**，隔离 Crest 水下效果；大气组合不在此测试 | 需真实图形设备 |
+| `LakeOrbitVerify.Run` | 轨道几何（半径恒定 / **地形跟随不穿模** / 扫过角度 / 朝湖心）+ 三项系统跟随 + 切换。2026-11-17 起高度跟随地形，120 帧固定步长 1s 跑完整圈，逐点断言离地 ≥10m、离水 ≥20m | 可 `-nographics` |
 | `LakeCrestSetup.Retune` | 只重写水色，打印 1/e 深度等光学参数 | 快速调参入口 |
 
 2026-11-13 最终结果：`lake-water.txt` 6/6 PASS，`lake-orbit.txt` 9/9 PASS
@@ -690,6 +690,10 @@ Quad 就不够了 —— 那时应保留 Chunks 但把 `LodLevels` 压到 2~3。
 
 ### 14.3 为什么必须同时关 URP 资产的 Depth/Opaque 纹理
 
+> **2026-11-15 更新**：`m_RequireDepthTexture` 已因 Enviro 体积雾/云重新改为 **1**；
+> `m_RequireOpaqueTexture` 仍为 **0**。本节保留，作为“Crest 自身不需要 depth/opaque”的依据；
+> 现在的 depth prepass 成本是大气系统付的，不是水面。
+
 只改宏只让 **Crest 自己**不再请求。但 `Assets/Settings/UniversalRP.asset` 上
 `m_RequireDepthTexture: 1` / `m_RequireOpaqueTexture: 1` 会让 **URP 对所有相机**
 无条件 copy（`UniversalRenderPipeline.cs:1243-1244`）。
@@ -699,6 +703,7 @@ Quad 就不够了 —— 那时应保留 Chunks 但把 `LodLevels` 压到 2~3。
 不采样这两张图）、URP 资产自身。GTS 地表与树材质是 ShaderGraph 产物，
 在 SRP Batcher 下正常不采样。Gaia/GeNa 的 VFX shader 有依赖但**未接入**
 （AGENTS.md §2），接入时必须重新打开这两项。
+（2026-11-15：Enviro 已接入，depth 必须保持 1；opaque 仍可保持 0。）
 
 ### 14.4 SimpleTransparency 下必须调 `_Crest_TransparencyMinimumAlpha`
 

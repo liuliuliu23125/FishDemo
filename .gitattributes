@@ -2108,3 +2108,15 @@ Assets/PW_Tree_*_Impostor_*.exr filter=lfs diff=lfs merge=lfs -text
 /Tools/lake-backup/Terrain_1_1-20261109[[:space:]]-[[:space:]]162007[[:space:]]0-1-0.bytes filter=lfs diff=lfs merge=lfs -text
 /Tools/lake-backup/Terrain_1_1-20261109[[:space:]]-[[:space:]]162007[[:space:]]1-0-0.bytes filter=lfs diff=lfs merge=lfs -text
 /Tools/lake-backup/Terrain_1_1-20261109[[:space:]]-[[:space:]]162007[[:space:]]1-1-0.bytes filter=lfs diff=lfs merge=lfs -text
+# Enviro 3（2026-11-15 接入）。目录限定 + 精确扩展名，和现有规则一致；
+# 只覆盖大二进制（贴图/音频/纹理资产），YAML 型 .asset 留在 git 里保留 diff。
+/Assets/Enviro[[:space:]]3[[:space:]]-[[:space:]]Sky[[:space:]]and[[:space:]]Weather/Textures/*.png filter=lfs diff=lfs merge=lfs -text
+/Assets/Enviro[[:space:]]3[[:space:]]-[[:space:]]Sky[[:space:]]and[[:space:]]Weather/Textures/*.exr filter=lfs diff=lfs merge=lfs -text
+/Assets/Enviro[[:space:]]3[[:space:]]-[[:space:]]Sky[[:space:]]and[[:space:]]Weather/Textures/*.tga filter=lfs diff=lfs merge=lfs -text
+/Assets/Enviro[[:space:]]3[[:space:]]-[[:space:]]Sky[[:space:]]and[[:space:]]Weather/Textures/*.asset filter=lfs diff=lfs merge=lfs -text
+/Assets/Enviro[[:space:]]3[[:space:]]-[[:space:]]Sky[[:space:]]and[[:space:]]Weather/SFX/*/*.wav filter=lfs diff=lfs merge=lfs -text
+/Assets/Enviro[[:space:]]3[[:space:]]-[[:space:]]Sky[[:space:]]and[[:space:]]Weather/SFX/*/*.ogg filter=lfs diff=lfs merge=lfs -text
+/Assets/Enviro[[:space:]]3[[:space:]]-[[:space:]]Sky[[:space:]]and[[:space:]]Weather/Sample/Terrains/*.asset filter=lfs diff=lfs merge=lfs -text
+/Assets/Enviro[[:space:]]3[[:space:]]-[[:space:]]Sky[[:space:]]and[[:space:]]Weather/Sample/Textures/*.png filter=lfs diff=lfs merge=lfs -text
+/Assets/Enviro[[:space:]]3[[:space:]]-[[:space:]]Sky[[:space:]]and[[:space:]]Weather/Sample/Textures/*.tga filter=lfs diff=lfs merge=lfs -text
+/Assets/Enviro[[:space:]]3[[:space:]]-[[:space:]]Sky[[:space:]]and[[:space:]]Weather/Documentation.pdf filter=lfs diff=lfs merge=lfs -text

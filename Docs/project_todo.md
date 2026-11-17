@@ -18,9 +18,10 @@
 - Android 图形 API 已仅 Vulkan（`m_APIs=15000000`, `m_Automatic=0`）；
 - 2D feature 包不在 manifest；
 - **静态合批已关闭**：`BatchingSetup.FixAll` 写入 Android/Standalone 0/0，`GtsApplyMeshToChunks` 不再给 subTile 标 static；
-- **深度/不透明图当前按设计为 0**（Crest SimpleTransparency）。这不是缺口；接入任何依赖
-  `_CameraDepthTexture`/`_CameraOpaqueTexture` 的 shader（Enviro/Fog、Gaia/GeNa VFX）前，必须把
-  `m_RequireDepthTexture`/`m_RequireOpaqueTexture` 改回 1。
+- **深度图已改为 1（2026-11-15，Enviro 体积雾/云的硬依赖）**；不透明图仍为 0。
+  这不再只是“接入前要改”的提醒，而是当前配置。若将来移除大气系统，可改回 0 省一次 depth prepass。
+- **大气系统已落地**：Enviro 3.3.2b（昼夜 / 天气 / 体积雾 / 体积光），见
+  [atmosphere](atmosphere.md) §0。VFM2 / VLB2 / VL2 未安装，等有局部雾或灯对象再接。
 
 **已完成**：YooAsset 3.0.7 嵌入式接入（编译通过，`"source": "embedded"`）。
 

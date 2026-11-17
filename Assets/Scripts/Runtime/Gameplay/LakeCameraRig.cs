@@ -1,6 +1,7 @@
 using Pegasus;
 using UnityEngine;
 using WaveHarmonic.Crest;
+using Enviro;
 
 namespace FishDemo.Gameplay
 {
@@ -313,6 +314,14 @@ namespace FishDemo.Gameplay
             if (_water != null)
             {
                 _water.Viewer = orbitActive ? _orbitCamera : _tourCamera;
+            }
+
+            // Enviro 的 RenderFeature 只对 EnviroManager.Camera（以及 Cameras 列表）生效。
+            // 不同步的话，切过去的那台相机没有天空/体积雾 pass，画面只剩纯色背景。
+            var enviro = EnviroManager.instance;
+            if (enviro != null)
+            {
+                enviro.ChangeCamera(orbitActive ? _orbitCamera : _tourCamera);
             }
 
             // 把 MainCamera tag 搬到当前相机（见类注释 §3）。

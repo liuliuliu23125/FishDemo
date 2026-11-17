@@ -673,24 +673,24 @@ PlayerSettings:
   webGLMemoryGeometricGrowthCap: 96
   webGLPowerPreference: 2
   scriptingDefineSymbols:
-    Android: UPPipeline;GENA_PRO;GeNa_URP;SECTR_STREAM_PRESENT;SECTR_CORE_PRESENT;SECTR_AUDIO_PRESENT;DOTWEEN;GAIA_2023;GAIA_2023_PRO;GAIA_MESH_PRESENT;GTS_PRESENT;PEGASUS_PRESENT;AMPLIFY_IMPOSTORS;d_Crest_SimpleTransparency
-    EmbeddedLinux: DOTWEEN
+    Android: UPPipeline;GENA_PRO;GeNa_URP;SECTR_STREAM_PRESENT;SECTR_CORE_PRESENT;SECTR_AUDIO_PRESENT;DOTWEEN;GAIA_2023;GAIA_2023_PRO;GAIA_MESH_PRESENT;GTS_PRESENT;PEGASUS_PRESENT;AMPLIFY_IMPOSTORS;ENVIRO_3;ENVIRO_URP;d_Crest_SimpleTransparency
+    EmbeddedLinux: DOTWEEN;ENVIRO_3
     GameCoreScarlett: DOTWEEN
-    GameCoreXboxOne: DOTWEEN
+    GameCoreXboxOne: DOTWEEN;ENVIRO_3
     LinuxHeadlessSimulation: DOTWEEN
-    Nintendo Switch: DOTWEEN
-    PS4: DOTWEEN
-    PS5: DOTWEEN
-    QNX: DOTWEEN
+    Nintendo Switch: DOTWEEN;ENVIRO_3
+    PS4: DOTWEEN;ENVIRO_3
+    PS5: DOTWEEN;ENVIRO_3
+    QNX: DOTWEEN;ENVIRO_3
     Server: d_Crest_SimpleTransparency
-    Stadia: DOTWEEN
-    Standalone: DOTWEEN;d_Crest_SimpleTransparency
-    VisionOS: DOTWEEN;d_Crest_SimpleTransparency
-    WebGL: DOTWEEN
+    Stadia: DOTWEEN;ENVIRO_3
+    Standalone: DOTWEEN;ENVIRO_3;ENVIRO_URP;d_Crest_SimpleTransparency
+    VisionOS: DOTWEEN;ENVIRO_3;d_Crest_SimpleTransparency
+    WebGL: DOTWEEN;ENVIRO_3
     Windows Store Apps: DOTWEEN
-    XboxOne: DOTWEEN
+    XboxOne: DOTWEEN;ENVIRO_3
     iPhone: DOTWEEN;d_Crest_SimpleTransparency
-    tvOS: DOTWEEN;d_Crest_SimpleTransparency
+    tvOS: DOTWEEN;ENVIRO_3;d_Crest_SimpleTransparency
   additionalCompilerArguments: {}
   platformArchitecture: {}
   scriptingBackend:

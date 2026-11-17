@@ -25,6 +25,7 @@ Assets/Scenes/World/GrassData/*.bytes        36 份 BRG 草烘焙数据（387MB�
 | BRG 草接入 | `GrassBaker.RunAll` → `GrassSceneSetupM2` → `DetailBrgSetup` | 场景里没有 `GrassBRG (M1)` 或 LOD0 退回兜底 mesh |
 | Pegasus 巡游 | 菜单 `FishDemo/World/② 布置 Pegasus 环绕巡游` | 没有巡游路线 / POI 悬空 |
 | **中心湖** | `LakeCarve.Apply` → `LakeVegetationClear.Apply` → 重转 GTS（受影响 2 chunk） → `LakeCrestSetup.Apply` | 湖没水 / 水边长树 / 地形没凹陷 |
+| **大气** | `AtmosphereSetup.Apply`（首次/干净导入先 `EnsureDefines`） | 没有天空/雾/天气；旧 `Directional Light` 与 Enviro 的光形成双主光 |
 
 生成链路与参数见 [world_implementation](../../Docs/world_implementation.md)。
 
@@ -55,6 +56,9 @@ World_SECTR Terrain_0_0-20261109 - 162007 0-1-0 Sector.unity
 | `Alpine Meadow-*` ×10 | 撒点器，挂着空转的 Gaia `TerrainLoader` |
 | **`GrassBRG (M1)`** | 挂 `GrassBRGManager`（`FishDemo.Rendering`）。锚点 `(0, 329.6, -1151.8)`，`_grassDataDir=Assets/Scenes/World/GrassData`，`_instanceCount=12652005` |
 | **`Pegasus Tour`** | 挂 `PegasusManager`（16 个 POI 是它的子对象，不入根列表）+ `PegasusTourController` |
+| **`Enviro 3`** | Enviro 3.3.2b 运行时根：`EnviroManager` + Sun/Moon 方向光 + Effects/Audio/粒子层级。**预制体实例化后由 Enviro 在编辑器 OnEnable 里自行 Unpack**，场景里是普通层级，不要再按 prefab override 处理 |
+| **`Atmosphere`** | 挂 `AtmosphereController`（`FishDemo.Gameplay`）：质量档、时间流速、天气轮换、草风桥接 |
+| ~~`Directional Light`~~ | **Light 组件 `m_Enabled=0`**（2026-11-15）：Enviro 自带 Sun/Moon 方向光。保留对象便于 `AtmosphereSetup.Remove` 回滚；不要再启用 |
 
 **`GrassBRG (M1)` 名字里的 M1 是历史遗留**，它现在跑的是 M2.2 的全量烘焙数据
 （36 chunk / 1265 万实例），不是 M1 的 1000 个方阵实例。改名要连同

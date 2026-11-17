@@ -18,6 +18,11 @@
 
 > 水面当前配置：SimpleTransparency + Quad，平面反射关闭、CopyColor/CopyDepth=0；
 > Crest 的 compute 清单见 [water](water.md) §14.5。5ms 预算包含反射，当前反射关闭后余量更大。
+>
+> 大气当前配置（2026-11-15）：Enviro 3.3.2b；`m_RequireDepthTexture=1`（多一次 depth prepass）；
+> 体积雾 Low（1/4 res raymarch + 双边模糊上采样，steps 32，maxRange 600m）；体积云关闭、flat clouds 开启；
+> 全局反射探针关闭；环境探针 0.5s。天空/大气 1.5ms 与体积雾+光 3ms 现在有实际内容，但数值仍是估值，
+> 需 iQOO 16 实机 Profile 后回写。
 
 ## 2. 规模上限
 

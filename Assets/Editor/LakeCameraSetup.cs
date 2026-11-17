@@ -111,7 +111,7 @@ public static class LakeCameraSetup
             orbitCam.enabled = false;           // 运行时由 rig 打开
 
             var orbit = orbitGo.AddComponent<LakeOrbitCamera>();
-            W($"已建 {OrbitNodeName}（半径 300m / 高度 水位+26m / 120s 一圈）");
+            W($"已建 {OrbitNodeName}（半径 300m / 高度跟随地形（地表+18m，不低于水位+26m）/ 120s 一圈）");
 
             // ── 2. 轨道相机自己的 AudioListener ──
             // 两台相机各带一个，由 rig 精确开关，避免出现「没有监听器」告警。

@@ -16,7 +16,9 @@ using WaveHarmonic.Crest;
 /// 2. **真在绕圈**：采样 N 帧的相机位置，拟合到湖心。
 ///    - 每个采样点到湖心的**水平距离**必须恒等于设定半径（±2m）；
 ///    - 累积扫过的**圆心角**必须明显大于 0（证明在动，而不是停着）；
-///    - 相机高度恒定（水位 + 高度）。
+///    - **高度不穿模**：每个采样点必须高于该点地表（`Terrain.SampleHeight`）至少
+///      `MinGroundClearance`，且不低于水位 + 最低水上高度。
+///      2026-11-17 起高度是地形跟随的，不再恒定——旧的「高度跨度 < 0.01」判据会误报。
 /// 3. **始终朝湖心**：每帧 `forward` 与「相机指向湖心」的水平方向夹角 < 15°。
 /// 4. **Crest Viewer 跟随 + Viewpoint 固定**：`water.Viewer == 轨道相机`，且 `Viewpoint != null`。
 /// 5. **SECTR loader 唯一**：同一时刻只有 1 个 `SECTR_RegionLoader.enabled == true`，
@@ -52,6 +54,20 @@ public static class LakeOrbitVerify
 
         Directory.CreateDirectory(OutDir);
         EditorSceneManager.OpenScene(WorldScenePath, OpenSceneMode.Single);
+
+        // 高度跟随地形后，"不穿模"判据依赖 Terrain.SampleHeight。
+        // 必须先把湖区 chunk 预加载进来，否则 Play Mode 时 Terrain.activeTerrains
+        // 可能还是空的，离地净空会"空过"（minClearance 恒为 float.MaxValue）。
+        ChunkLoadScope.LoadRelevant(ChunkLoadScope.Area.FromLake(), W);
+        EditorSceneManager.SetActiveScene(EditorSceneManager.GetSceneByPath(WorldScenePath));
+
+        // 草 BRG 的 429 万实例构建会在进 Play Mode 时拖慢首帧；验收不需要草。
+        // 必须在进 Play Mode 之前禁用（之后禁用已经晚了）。
+        foreach (var g in UnityEngine.Object.FindObjectsOfType<FishDemo.Rendering.GrassBRGManager>())
+        {
+            g.gameObject.SetActive(false);
+            W($"进入 Play Mode 前禁用草 BRG：{g.name}");
+        }
 
         var rig = UnityEngine.Object.FindObjectOfType<FishDemo.Gameplay.LakeCameraRig>();
         var orbit = UnityEngine.Object.FindObjectOfType<FishDemo.Gameplay.LakeOrbitCamera>();
@@ -91,6 +107,10 @@ public static class LakeOrbitVerify
 
         // 采样
         private const int SampleCount = 120;     // 采 120 帧
+        /// <summary>不穿模判据：相机离地表的最小净空（米）。与 LakeOrbitCamera 的 18m 留出余量。</summary>
+        private const float MinGroundClearance = 10f;
+        /// <summary>相机离水面的最小高度（米）。</summary>
+        private const float MinAboveWater = 20f;
         private Vector3[] _positions;
         private Vector3[] _forwards;
         private int _sampled;
@@ -101,7 +121,7 @@ public static class LakeOrbitVerify
         private Vector3 _flyProbePos;
 
         // 各判据结果提到字段：Analyze 与 CheckOrbitResumed 分两帧执行，局部变量传不过去。
-        private bool _ok, _c1, _c2, _c3, _c4, _c5, _c6, _c7;
+        private bool _ok, _c1, _c1b, _c2, _c3, _c4, _c5, _c6, _c7;
         // 跨方法使用的中间量（打印报告时要用）
         private float _totalAngle, _maxAngleErr;
         private bool _held, _exited;
@@ -122,11 +142,12 @@ public static class LakeOrbitVerify
             _forwards = new Vector3[SampleCount];
 
             // batchmode `-nographics` 下 Time.deltaTime 不推进（实测 120 帧只走 0.6°），
-            // 用固定步长替换时间源，让轨道在 120 帧内扫过足够大的圆心角。
-            // 这是验收专用注入，正式逻辑仍走 Time.deltaTime。
-            const float FixedStep = 0.05f;   // 20fps 等效
+            // 用固定步长替换时间源。步长取 1.0s：120 帧 × 1s = 120s = **整整一圈**，
+            // 这样采样覆盖 0°~360° 全周，能验到西北侧 270°~315° 的高地形（312~320m）。
+            // 早先取 0.05s 只扫过 18°，那一段地形低，穿模 bug 会被漏掉。
+            const float FixedStep = 1.0f;
             _orbit.OverrideDeltaTime(() => FixedStep);
-            _sb.AppendLine($"时间源 = 固定步长 {FixedStep}s（batchmode 下 Time.deltaTime 不推进）");
+            _sb.AppendLine($"时间源 = 固定步长 {FixedStep}s（120 帧 = 一整圈 360°）");
 
             _sb.AppendLine($"启动状态：rig.IsOrbitActive={_rig.IsOrbitActive}, " +
                            $"轨道相机 enabled={_orbitCam.enabled}, 原相机 enabled={_tourCam?.enabled}");
@@ -163,21 +184,46 @@ public static class LakeOrbitVerify
             _sb.AppendLine("");
             _sb.AppendLine("=== 轨道几何 ===");
 
-            // ── 半径恒定 ──
+            // ── 半径恒定 + 高度不穿模 ──
+            // 高度自 2026-11-17 起跟随地形（固定 290m 会在西北侧 312~320m 的地形里穿模），
+            // 所以不再断言高度恒定，改为断言「每帧都高于地表」。
             float minR = float.MaxValue, maxR = float.MinValue;
             float minY = float.MaxValue, maxY = float.MinValue;
+            float minClearance = float.MaxValue;       // 相对地表的净空
+            float minAboveWater = float.MaxValue;      // 相对水位的净空
+            int groundMisses = 0;
             foreach (var p in _positions)
             {
                 float r = new Vector2(p.x - lakeCenter.x, p.z - lakeCenter.z).magnitude;
                 minR = Mathf.Min(minR, r); maxR = Mathf.Max(maxR, r);
                 minY = Mathf.Min(minY, p.y); maxY = Mathf.Max(maxY, p.y);
+
+                float ground = SampleGroundHeight(p.x, p.z);
+                if (float.IsNaN(ground))
+                {
+                    groundMisses++;
+                }
+                else
+                {
+                    minClearance = Mathf.Min(minClearance, p.y - ground);
+                }
+                minAboveWater = Mathf.Min(minAboveWater, p.y - lakeCenter.y);
             }
+
             float rSpread = maxR - minR;
-            float ySpread = maxY - minY;
-            _c1 = rSpread < 2f && ySpread < 0.01f;
+            _c1 = rSpread < 2f;
             _sb.AppendLine($"半径: {minR:F2} ~ {maxR:F2} m（跨度 {rSpread:F3} < 2）");
-            _sb.AppendLine($"高度: {minY:F2} ~ {maxY:F2} m（跨度 {ySpread:F3} < 0.01，期望 {LakeCarve.WaterLevel + 26f}）");
+            _sb.AppendLine($"高度: {minY:F2} ~ {maxY:F2} m（跨度 {maxY - minY:F3}，地形跟随，不再要求恒定）");
             if (!_c1) _ok = false;
+
+            // 不穿模：采样到的每个点都要高于地表。grid 采不到的点（chunk 未加载）单独计数。
+            bool noClipping = minClearance >= MinGroundClearance - 0.5f;
+            bool aboveWater = minAboveWater >= MinAboveWater - 0.5f;
+            _sb.AppendLine($"离地净空: 最小 {minClearance:F2} m（要求 ≥ {MinGroundClearance}，" +
+                           $"采不到地形的采样点 {groundMisses}/{_sampled}）");
+            _sb.AppendLine($"离水净空: 最小 {minAboveWater:F2} m（要求 ≥ {MinAboveWater}）");
+            _c1b = noClipping && aboveWater;
+            if (!_c1b) _ok = false;
 
             // ── 累积扫过的圆心角 ──
             _totalAngle = 0f;
@@ -268,6 +314,24 @@ public static class LakeOrbitVerify
             _flyProbeStage = 1;   // 转到 Update 里继续
         }
 
+        /// <summary>
+        /// 世界 XZ 处的地表高度；采不到（chunk 未加载）返回 NaN。
+        /// 与 LakeOrbitCamera.SampleGroundHeight 同一换算：
+        /// `Terrain.SampleHeight(worldXZ)` 返回的是相对地形本地原点的高度，必须加 `position.y`。
+        /// </summary>
+        private static float SampleGroundHeight(float x, float z)
+        {
+            foreach (var t in Terrain.activeTerrains)
+            {
+                if (t == null || t.terrainData == null) continue;
+                var p = t.transform.position;
+                var s = t.terrainData.size;
+                if (x < p.x || x > p.x + s.x || z < p.z || z > p.z + s.z) continue;
+                return p.y + t.SampleHeight(new Vector3(x, 0f, z));
+            }
+            return float.NaN;
+        }
+
         /// <summary>自由飞行的位移保持探测：等若干帧后核对相机是否还在被推到的位置。</summary>
         private void CheckFlyProbe()
         {
@@ -308,7 +372,8 @@ public static class LakeOrbitVerify
 
             _sb.AppendLine("");
             _sb.AppendLine("===== 环湖轨道相机验收 =====");
-            _sb.AppendLine($"[1] 半径与高度恒定   : {(_c1 ? "PASS" : "FAIL")}");
+            _sb.AppendLine($"[1] 半径恒定         : {(_c1 ? "PASS" : "FAIL")}");
+            _sb.AppendLine($"[1b] 不穿模（离地/离水净空）: {(_c1b ? "PASS" : "FAIL")}");
             _sb.AppendLine($"[2] 确实在运动       : {(_c2 ? "PASS" : "FAIL")} ({_totalAngle:F1}°)");
             _sb.AppendLine($"[3] 始终朝湖心       : {(_c3 ? "PASS" : "FAIL")} (最大偏差 {_maxAngleErr:F1}°)");
             _sb.AppendLine($"[4] Viewer+固定Viewpoint: {(_c4 ? "PASS" : "FAIL")}");

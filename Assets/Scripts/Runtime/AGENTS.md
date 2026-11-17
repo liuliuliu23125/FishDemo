@@ -10,7 +10,7 @@
 |---|---|---|---|
 | `Resources/` | `FishDemo.Resources` | `FishDemo.AssetManagement` | YooAsset 初始化 + 句柄封装 |
 | `Rendering/` | `FishDemo.Rendering` | `FishDemo.Rendering` | 草 BRG 运行时，`allowUnsafeCode=true` |
-| `Gameplay/` | **无** → `Assembly-CSharp` | `FishDemo.Gameplay` | Pegasus 巡游 + 环湖轨道相机与切换 rig |
+| `Gameplay/` | **无** → `Assembly-CSharp` | `FishDemo.Gameplay` | Pegasus 巡游 + 环湖轨道相机与切换 rig + 大气控制器 |
 
 **`Gameplay/` 不能加 asmdef**：`PegasusTourController.cs` 直接 `using Pegasus`，
 `LakeCameraRig.cs` 同时 `using Pegasus` 与 `using WaveHarmonic.Crest`，同理；
@@ -43,12 +43,14 @@ Pegasus 没有 asmdef、编在 `Assembly-CSharp`。asmdef 程序集引用不到�
 | 文件 | 职责 |
 |---|---|
 | `Gameplay/PegasusTourController.cs` | 原 F 键巡游/手动飞行切换。**已被 `LakeCameraRig` 接管 F 键后禁用**（保留不删，可随时改回） |
-| `Gameplay/LakeOrbitCamera.cs` | 环湖轨道运动：半径 300m / 水位+26m / 120s 一圈 / 俯仰 12°±3°；`Paused` 让出 transform |
-| `Gameplay/LakeCameraRig.cs` | **C** 切相机（巡游 ⇄ 轨道）+ **F** 自由飞行；同步 Crest `Viewer`、SECTR loader、MainCamera tag |
+| `Gameplay/LakeOrbitCamera.cs` | 环湖轨道运动：半径 300m / **高度跟随地形**（地表+18m，且不低于水位+26m，指数平滑）/ 120s 一圈 / 俯仰 12°±3°；`Paused` 让出 transform |
+| `Gameplay/LakeCameraRig.cs` | **C** 切相机（巡游 ⇄ 轨道）+ **F** 自由飞行；同步 Crest `Viewer`、SECTR loader、MainCamera tag、**Enviro `ChangeCamera`** |
+| `Gameplay/AtmosphereController.cs` | 大气运行时配置：质量档、时间流速、天气轮换、草风桥接、水下雾开关；**左上角 HUD 显示时刻/天气/流速**；热键 `1-5` 天气 / `T` 暂停时间 / `[` `]` ±1 小时 / `\` 切流速 |
 
 三条容易踩的：
-1. **切相机必须同步三样东西**：`WaterRenderer.Viewer`（水面 clipmap 以它为中心）、
-   当前相机的 `SECTR_RegionLoader`（按自身 transform 加载 chunk）、`Camera.main` tag。
+1. **切相机必须同步四样东西**：`WaterRenderer.Viewer`（水面 clipmap 以它为中心）、
+   当前相机的 `SECTR_RegionLoader`（按自身 transform 加载 chunk）、`Camera.main` tag、
+   以及 `EnviroManager.Camera`（Enviro 的 RenderFeature 只对 manager.Camera/Cameras 生效）。
    新增"跟着相机走的状态"必须加进 `LakeCameraRig.Apply()`。
 2. **F 键飞行前必须暂停轨道脚本**（`LakeOrbitCamera.Paused`）：它在 `LateUpdate` 写 transform，
    比飞行的 `Update` 更晚，不暂停会把飞行位移整帧覆盖。

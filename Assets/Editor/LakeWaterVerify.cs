@@ -149,6 +149,35 @@ public static class LakeWaterVerify
                 _sb.AppendLine($"禁用草 BRG：{g.name}");
             }
 
+            // ── 隔离大气系统（2026-11-15）──
+            // Enviro 会改主光/环境光；在 9:00 暖色光下，Crest 水下吸收的绝对色比
+            // 从 1.10 掉到 0.86（[2] 的阈值 1.05 是旧光照下标定的）。本测试只验
+            // Crest 的水下效果，先把 Enviro 关掉、恢复旧主光与默认天空盒，
+            // 保持判据稳定。大气 + 水下的组合观感由 AtmosphereVerify 与真机复核覆盖
+            // （见 Docs/atmosphere.md §0.6）。
+            int enviroOff = 0;
+            foreach (var em in UnityEngine.Object.FindObjectsOfType<Enviro.EnviroManager>())
+            {
+                em.gameObject.SetActive(false);
+                enviroOff++;
+            }
+            foreach (var atmo in UnityEngine.Object.FindObjectsOfType<FishDemo.Gameplay.AtmosphereController>())
+                atmo.enabled = false;
+            var legacyLightGo = GameObject.Find("Directional Light");
+            if (legacyLightGo != null)
+            {
+                var legacyLight = legacyLightGo.GetComponent<Light>();
+                if (legacyLight != null)
+                {
+                    legacyLight.enabled = true;
+                    legacyLight.color = Color.white;
+                    legacyLight.intensity = 1.2f;
+                }
+            }
+            var defaultSky = AssetDatabase.GetBuiltinExtraResource<Material>("Default-Skybox.mat");
+            if (defaultSky != null) RenderSettings.skybox = defaultSky;
+            _sb.AppendLine($"已禁用 Enviro {enviroOff} 个，恢复旧主光/默认天空盒（隔离 Crest 水下测试）");
+
             RenderSettings.ambientMode = AmbientMode.Flat;
             RenderSettings.ambientLight = new Color(0.42f, 0.47f, 0.55f);
             RenderSettings.ambientIntensity = 1f;

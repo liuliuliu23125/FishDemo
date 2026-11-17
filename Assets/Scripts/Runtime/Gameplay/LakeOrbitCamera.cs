@@ -21,9 +21,13 @@ namespace FishDemo.Gameplay
     /// LOD 中心固定在湖心，水面数据始终覆盖整个湖盆；半径 300m 时相机在岸外 20m，
     /// 俯角 12° 能把 380m 直径的湖完整收进 60° FOV。
     ///
-    /// ── 高度为什么不用固定值 ──
-    /// 碗沿地形在 266m 左右（`LakeCarve.WaterLevel` 264 + 岸线），固定 290m 在部分
-    /// 方位会贴地。这里用「水位 + 26m」，并用 `LakeCarveWaterLevel` 保持与湖一致。
+    /// ── 高度为什么不能是固定值（2026-11-17 修正）──
+    /// 旧实现用「水位 + 26m」= 290m 的固定高度。但 R=300m 一圈的真实地形高度是
+    /// **269m ~ 323.5m**（`Logs/Lake/height-grid.csv` 实测）：北偏西 270°~315° 一带地形到
+    /// 312~320m，相机固定 290m 会**埋进地里**，出现穿模/看不见湖。
+    /// 现在改为**跟随地形**：每帧取相机 XZ 处的地表高度，抬高 `_groundClearance`，
+    /// 并与「水位 + `_minHeightAboveWater`」取较大值（保证低洼处不贴水面）。
+    /// 高度做指数平滑，避免按 32m 网格采样的地形高度让镜头一顿一顿。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class LakeOrbitCamera : MonoBehaviour
@@ -31,8 +35,14 @@ namespace FishDemo.Gameplay
         [Tooltip("轨道半径（米）。应大于湖盆半径 190m，才能在岸外看全湖面。")]
         [SerializeField] private float _radius = 300f;
 
-        [Tooltip("相对水面的高度（米）。")]
-        [SerializeField] private float _heightAboveWater = 26f;
+        [Tooltip("离地高度（米）。相机高度 = max(地表高度 + 该值, 水位 + 最低水上高度)。")]
+        [SerializeField] private float _groundClearance = 18f;
+
+        [Tooltip("相对水面的最低高度（米）。防止相机在低洼处贴到水面。")]
+        [SerializeField] private float _minHeightAboveWater = 26f;
+
+        [Tooltip("高度平滑系数（1/秒）。越大跟随地形越快，越小越平稳。")]
+        [SerializeField] private float _heightSmoothing = 2.5f;
 
         [Tooltip("绕一圈的秒数。120s ≈ 3.9m/s 的线速度，慢到能看清水面而不晕。")]
         [SerializeField] private float _secondsPerRevolution = 120f;
@@ -57,6 +67,9 @@ namespace FishDemo.Gameplay
 
         /// <summary>累计时间（秒），用于俯仰摆动。与 <see cref="_angle"/> 同步推进。</summary>
         private float _elapsed;
+
+        /// <summary>平滑后的相机高度。第一帧直接取目标值，不做平滑，避免从 0 升上来。</summary>
+        private float _smoothedY = float.NaN;
 
         /// <summary>
         /// 时间源。默认走 `Time.deltaTime`；自动化验收会替换成固定步长，
@@ -91,6 +104,8 @@ namespace FishDemo.Gameplay
         {
             _angle = _startAngle * Mathf.Deg2Rad;
             _elapsed = 0f;
+            // 重置高度平滑：切回轨道时直接落到目标高度，而不是从上一次的位置慢慢飘过去。
+            _smoothedY = float.NaN;
             ApplyPose(_elapsed);
         }
 
@@ -144,10 +159,12 @@ namespace FishDemo.Gameplay
             float cos = Mathf.Cos(_angle);
             float sin = Mathf.Sin(_angle);
 
-            var pos = new Vector3(
-                _lakeCenter.x + _radius * sin,
-                _lakeCenter.y + _heightAboveWater,
-                _lakeCenter.z + _radius * cos);
+            float x = _lakeCenter.x + _radius * sin;
+            float z = _lakeCenter.z + _radius * cos;
+
+            float y = ResolveHeight(x, z);
+
+            var pos = new Vector3(x, y, z);
             transform.position = pos;
 
             // 俯仰随时间缓慢摆动，避免全程固定角度显得呆板。
@@ -162,6 +179,79 @@ namespace FishDemo.Gameplay
             var look = Quaternion.LookRotation(toCenter.normalized, Vector3.up)
                        * Quaternion.Euler(pitch, 0f, 0f);
             transform.rotation = look;
+        }
+
+        /// <summary>
+        /// 取该 XZ 处的相机目标高度：地表高度 + 离地间隙，且不低于水位 + 最低水上高度。
+        ///
+        /// ── 为什么用 Terrain.SampleHeight ──
+        /// 地形虽然已被 GTS 转成 mesh 渲染，但 `Terrain` 组件与 `TerrainData` 仍然保留
+        /// （见 [world_implementation] §4.1），`SampleHeight` 给的是权威高度，
+        /// 与 `LakeCarve` / `PegasusTourSetup` 用的是同一套换算
+        /// （`terrain.SampleHeight(worldXZ) + terrain.transform.position.y`）。
+        /// 不用 Physics.Raycast：水面/草/树都有碰撞体，会打到非地形物体上。
+        ///
+        /// ── 为什么要平滑 ──
+        /// chunk 场景是流式加载的，刚起步时目标点可能还没有 Terrain；
+        /// 且高度场本身在草坡上起伏。指数平滑让高度缓变，避免镜头踏步。
+        /// </summary>
+        private float ResolveHeight(float x, float z)
+        {
+            float waterFloor = _lakeCenter.y + _minHeightAboveWater;
+            float target = waterFloor;
+
+            float ground = SampleGroundHeight(x, z);
+            if (!float.IsNaN(ground))
+            {
+                target = Mathf.Max(waterFloor, ground + _groundClearance);
+            }
+            else if (!float.IsNaN(_smoothedY))
+            {
+                // 目标点的 chunk 还没被 SECTR 加载（流式延迟）。
+                // 这时不要回落到水位高度：地形可能比水位高得多，回落会瞬间穿模。
+                // 保持当前高度，等 Terrain 到位再按真实地表调整。
+                target = Mathf.Max(waterFloor, _smoothedY);
+            }
+
+            if (float.IsNaN(_smoothedY))
+            {
+                _smoothedY = target;   // 首次直接到位
+            }
+            else
+            {
+                // 用真实帧时间做平滑：固定步长注入（验收）时也保持一致手感。
+                float dt = _deltaTimeProvider();
+                float k = _heightSmoothing > 0.01f
+                    ? 1f - Mathf.Exp(-_heightSmoothing * dt)
+                    : 1f;
+                _smoothedY = Mathf.Lerp(_smoothedY, target, k);
+            }
+
+            return _smoothedY;
+        }
+
+        /// <summary>
+        /// 世界 XZ 处的地表高度。找不到覆盖该点的 Terrain 时返回 NaN（调用方保留原高度）。
+        ///
+        /// 注意 `Terrain.SampleHeight` 的语义：它接收**世界 XZ**，但返回的是
+        /// **相对该地形 transform.position.y 的高度**，所以必须加上 `position.y`。
+        /// 这是本工程多处踩过的点（`PegasusTourSetup.cs:288` 有相同注释）。
+        /// </summary>
+        private static float SampleGroundHeight(float x, float z)
+        {
+            var terrains = Terrain.activeTerrains;
+            for (int i = 0; i < terrains.Length; i++)
+            {
+                var t = terrains[i];
+                if (t == null || t.terrainData == null) continue;
+
+                var p = t.transform.position;
+                var s = t.terrainData.size;
+                if (x < p.x || x > p.x + s.x || z < p.z || z > p.z + s.z) continue;
+
+                return p.y + t.SampleHeight(new Vector3(x, 0f, z));
+            }
+            return float.NaN;
         }
 
 #if UNITY_EDITOR
@@ -186,16 +276,27 @@ namespace FishDemo.Gameplay
             for (int i = 0; i <= Segments; i++)
             {
                 float a = i * Mathf.PI * 2f / Segments;
-                var p = new Vector3(
-                    _lakeCenter.x + _radius * Mathf.Sin(a),
-                    _lakeCenter.y + _heightAboveWater,
-                    _lakeCenter.z + _radius * Mathf.Cos(a));
+                float x = _lakeCenter.x + _radius * Mathf.Sin(a);
+                float z = _lakeCenter.z + _radius * Mathf.Cos(a);
+                // 画真实高度（含地形跟随），而不是一条固定高度的圆——
+                // 固定高度的圆正是旧版穿模的原因，画出来会误导。
+                var p = new Vector3(x, ResolveHeightForGizmo(x, z), z);
                 if (i > 0) Gizmos.DrawLine(prev, p);
                 prev = p;
             }
 
             Gizmos.color = new Color(1f, 0.85f, 0.2f, 1f);
             Gizmos.DrawLine(transform.position, _lakeCenter);
+        }
+
+        /// <summary>Gizmo 用：不写 _smoothedY，避免在 Scene 视图里污染运行期状态。</summary>
+        private float ResolveHeightForGizmo(float x, float z)
+        {
+            float target = _lakeCenter.y + _minHeightAboveWater;
+            float ground = SampleGroundHeight(x, z);
+            if (!float.IsNaN(ground))
+                target = Mathf.Max(target, ground + _groundClearance);
+            return target;
         }
 #endif
     }

@@ -48,10 +48,13 @@ SECTR 与 GTS 都没有自己的 asmdef，其编辑器 API（`SECTR_TerrainWindo
 | `LakeRenderVerify.cs` | **需真实图形设备**：玩家视角截图 + 像素判定，证明湖里有水 | `-executeMethod LakeRenderVerify.Run` |
 | `LakeCameraSetup.cs` | 环湖轨道相机 + 切换 rig 写进主场景（幂等）；`Remove` 撤并复原原相机 | `Apply` / `Remove` / `Report` |
 | `LakeWaterVerify.cs` | **需真实图形设备**：水面透明 / 水下效果开·关对照 / 水上不误开，6 项像素判定 | `-executeMethod LakeWaterVerify.Run` |
-| `LakeOrbitVerify.cs` | 轨道几何 + Crest 视点 / SECTR loader / tag 跟随 + 切换（可 `-nographics`） | `-executeMethod LakeOrbitVerify.Run` |
+| `LakeOrbitVerify.cs` | 轨道几何（半径 / **地形跟随不穿模** / 朝向 / 切换） + Crest 视点 / SECTR loader / tag 跟随（可 `-nographics`） | `-executeMethod LakeOrbitVerify.Run` |
 | `CrestRenderProbe.cs` | **只读**：反射读 URP pass 队列，统计 CopyColor/CopyDepth 次数、水面 chunk 数与 MeshType | `-executeMethod CrestRenderProbe.Run` |
 | `ChunkLoadScope.cs` | 验证脚本共用：按区域筛选 chunk（36→8），避免全量加载 | 由验证脚本调用 |
 | `CrestPerformanceMode.cs` | 切水面性能模式（SimpleTransparency / Quad），三项联动可逆 | `ApplySimpleTransparency` / `ApplyQuad` / `ApplyBoth` / `Restore` / `Report` |
+| `AtmosphereSetup.cs` | 把 Enviro 3 接进 World/URP：宏、模块、质量档、RendererFeature、depth；幂等可撤 | `EnsureDefines` / `Apply` / `Remove` / `Report` |
+| `AtmosphereVerify.cs` | **需真实图形设备**：Play Mode 验昼夜/天气/体积雾/光，8 张截图 + 状态断言 | `-executeMethod AtmosphereVerify.Run` |
+| `AtmosphereTimeVerify.cs` | **可 `-nographics`**：验昼夜控制接口（设时刻 / 平移 / 暂停 / 流速 / 主光响应） | `-executeMethod AtmosphereTimeVerify.Run` |
 
 ## 3. 铁律
 
@@ -134,6 +137,23 @@ LakeCarve.Apply                 （挖碗形湖盆，改 2 个 chunk 的高度�
 `LakeCarve` 的溢出判据按**矩形 AABB** 而非圆形：水面由 Crest WaterBody 的矩形范围决定，
 AABB 外的地形再低也不会露出水面。详见 [water](../../Docs/water.md) §11.4。
 
+### 3.5.3 大气（Enviro）接入也会被重跑覆盖
+
+重跑 `WorldPipeline` / `SectrPipeline` 后，`Enviro 3` 与 `Atmosphere` 根节点会消失，
+旧 `Directional Light` 的 `m_Enabled=0` 也会被重置。按顺序重做：
+
+```
+AtmosphereSetup.EnsureDefines   （干净导入/换机时一次；加 ENVIRO_URP 后需重新编译）
+  → AtmosphereSetup.Apply       （实例化 Enviro、LoadConfiguration、质量档、RendererFeature、depth=1）
+  → AtmosphereSetup.Report      （确认只有 1 盏方向光、旧主光禁用、feature 已挂）
+  → AtmosphereVerify.Run        （需真实图形设备）
+```
+
+三个必须记住的坑（详见 [atmosphere](../../Docs/atmosphere.md) §0.4）：
+1. `ENVIRO_URP` 宏不是自动加的，缺了天空/雾静默失效；
+2. `Apply` 保存场景前必须 `EnviroManager.LoadConfiguration()`，否则 Play Mode 下模块全 null；
+3. Enviro 雾 pass 的 `renderPassEvent` 被改到 `AfterRenderingTransparents`（Crest 水面），升级 Enviro 会丢。
+
 ### 3.5.1 关草用 `DisableDetail`，不要动 `drawTreesAndFoliage`
 
 草已迁到 BRG，Terrain 自带的 detail 渲染现在是**重复绘制**（同一块地表画两遍草，
@@ -199,6 +219,8 @@ ForceDomainReload)`，实测 **20s 资产重导入 + 10s 备份场景落盘**。
 **8 帧足够**（`WarmupFrames` 常量）。若关掉 SimpleTransparency 要调回 40。
 
 提速后实测：`LakeWaterVerify` 62s、`CrestRenderProbe` 62s、`LakeOrbitVerify` 38s。
+**2026-11-17 起 `LakeOrbitVerify` 会预加载湖区 9 个 chunk 并跑完整圈（120 帧固定步长 1s）**，
+用于验证地形跟随不穿模，耗时约 60~70s；不再扫 18° 就算通过。
 其中脚本内实际只有 ~17s（打开 World 7s + 加载 chunk 9.5s + 4 张截图 1.9s），
 其余是 Unity 启动与脚本编译 —— 属环境固有开销，改脚本无收益。
 
