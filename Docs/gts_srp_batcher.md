@@ -158,7 +158,7 @@ tiling = worldSize / layer.tileSize
 
 | 脚本 | 用途 |
 |---|---|
-| `Assets/Editor/GtsFixMeshRendering.cs` | 批量给 36 chunk 的 144 个 subTile 挂 GTSMesh + 写 worldSize |
+| `Assets/Editor/Gts/GtsFixMeshRendering.cs` | 批量给 36 chunk 的 144 个 subTile 挂 GTSMesh + 写 worldSize |
 | `Assets/GTSRuntime/GtsRuntimeDataBootstrap.cs` | 运行时注入全局数组 |
 | `Assets/Procedural Worlds/Packages - Install/GTS/Scripts/Core/MonoBehaviours/GTSMesh.cs` | 已改 `worldSize` 实现（第三方源码，重装会覆盖） |
 
@@ -194,7 +194,7 @@ GTS_Functions.hlsl:592  float4 splatHeight = float4(masks[0..3]) * splatControl.
 | RGBA32（原） | 341 MB | 682 MB |
 | **ASTC_8x8（采用）** | **21.3 MB** | **42.6 MB** |
 
-**工具**：`Assets/Editor/GtsAstcCompress.cs`（`-executeMethod GtsAstcCompress.Run`）。
+**工具**：`Assets/Editor/Gts/GtsAstcCompress.cs`（`-executeMethod GtsAstcCompress.Run`）。
 它先打开一个 chunk 场景填充 `gtsLayers`，再改设置并重建数组。
 数组 GUID 不变（`CreateOrReplaceAsset` 复用原资产），材质绑定自动保持。
 
@@ -207,7 +207,7 @@ GTS_Functions.hlsl:592  float4 splatHeight = float4(masks[0..3]) * splatControl.
 地形 subTile 原先标了 `isStatic`，会触发构建期静态合批。
 它把多个 mesh 合并成大 VBO，**破坏 SRP Batcher 的按材质归并粒度**，二者互相干扰。
 
-已由 `Assets/Editor/BatchingSetup.cs` 的 `FixAll` 通过 PlayerSettings 的 internal
+已由 `Assets/Editor/World/BatchingSetup.cs` 的 `FixAll` 通过 PlayerSettings 的 internal
 `SetBatchingForPlatform` 写入平台覆写：
 
 ```

@@ -334,7 +334,7 @@ Unity 的 Terrain 树没有运行时密度参数（草有 `detailObjectDensity`�
 | 密度 | 469 棵/公顷 | 47 棵/公顷 |
 | 450m 内可见 | 31,100 | **3,082** |
 
-实现要点（`Assets/Editor/TreeDensityReduce.cs`）：
+实现要点（`Assets/Editor/Vegetation/TreeDensityReduce.cs`）：
 - 按地形名做**稳定种子**（`string.GetHashCode` 跨进程不一致，不能直接用）的
   均匀抽样——取"前 N 个"会留下半边空缺的森林；
 - 原始实例逐字段备份到 `Tools/tree-instance-backup/`，`RestoreAll` 可还原；

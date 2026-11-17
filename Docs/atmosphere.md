@@ -20,9 +20,9 @@
 | 文件/资产 | 职责 |
 |---|---|
 | `Assets/Enviro 3 - Sky and Weather/` | Enviro 3.3.2b 源码 |
-| `Assets/Editor/AtmosphereSetup.cs` | 幂等工具：`EnsureDefines` / `Apply` / `Remove` / `Report` |
+| `Assets/Editor/Atmosphere/AtmosphereSetup.cs` | 幂等工具：`EnsureDefines` / `Apply` / `Remove` / `Report` |
 | `Assets/Scripts/Runtime/Gameplay/AtmosphereController.cs` | 质量档、时间流速、天气轮换、草风桥接、HUD |
-| `Assets/Editor/AtmosphereVerify.cs` | Play Mode 验收：8 张截图 + 状态断言 |
+| `Assets/Editor/Atmosphere/AtmosphereVerify.cs` | Play Mode 验收：8 张截图 + 状态断言 |
 | `Assets/Settings/Enviro Mobile Quality.asset` | 移动端质量档（**唯一来源**） |
 | `Assets/Settings/UniversalRenderer.asset` | 子资产 `Enviro Render Feature` |
 | `World.unity` 根节点 `Enviro 3` / `Atmosphere` | EnviroManager + Sun/Moon + Effects/Audio；`AtmosphereController` |

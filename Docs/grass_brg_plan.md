@@ -51,7 +51,7 @@ BRG 的收益：**剔除在 GPU/Job 侧完成，draw call 与实例总量脱钩*
 | `m_Automatic` | 1（允许自动回落 GLES3） | **0**（锁定） |
 
 依据：`ProjectSettings.asset` 的 `m_BuildTargetGraphicsAPIs`（AndroidPlayer 条目）。
-工具：`Assets/Editor/GraphicsApiSetup.cs`（`-executeMethod GraphicsApiSetup.SetAndroidVulkanOnly`，
+工具：`Assets/Editor/World/GraphicsApiSetup.cs`（`-executeMethod GraphicsApiSetup.SetAndroidVulkanOnly`，
 另有 `Report` 只读检查）。用的是官方 `PlayerSettings.SetGraphicsAPIs` + `SetUseDefaultGraphicsAPIs`，
 不手改 YAML。
 

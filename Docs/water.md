@@ -2,6 +2,7 @@
 
 > Crest 5.10.0（`Packages/com.waveharmonic.crest`），Unity 2022.3.62f2 + URP 14。
 > 本文只记录当前配置、施工链路、踩坑与验收；历史逐包选型分析已删除。
+> 包内机制与补丁清单见 [crest_internals](crest_internals.md) 与 [Crest 包规约](../Packages/com.waveharmonic.crest/AGENTS.md)。
 > 选型结论：Crest 原生支持 2022.3；因**没有反射视锥剔除**，湖的平面反射保持关闭。
 
 ## 1. 当前配置
@@ -15,10 +16,8 @@
 | 模块 ON | AnimatedWaves / Foam / Depth / Level / Clip |
 | 模块 OFF | DynamicWaves / Flow / Shadow / Albedo / Absorption / Scattering |
 | 平面反射 | **OFF**（最贵且无视锥剔除） |
-| Depth Terrain | 仅与湖区 AABB 相交的 Terrain（补丁过滤，实测 15→6 dispatch） |
-| URP | `m_RequireDepthTexture=1`（Enviro 体积雾/云）、`m_RequireOpaqueTexture=0` |
-| 管线 CopyDepth | **1 次，属于 Enviro**，不是 Crest；见 [rendering_rules](rendering_rules.md) §1.2 |
-| Enviro 雾 blit | 每帧 1 次全屏 color copy + 1 次合成（见 [atmosphere](atmosphere.md) §0.7） |
+| Depth Terrain | 仅与湖区 AABB 相交的 Terrain（补丁；细节见 [Data §5](../Packages/com.waveharmonic.crest/Runtime/Scripts/Data/AGENTS.md)） |
+| 管线 depth/opaque | depth=1（Enviro）、opaque=0；消费者见 [rendering_rules](rendering_rules.md) §1.2 |
 
 > `LodLevels=5` 的原因：固定视点 26m 时 4 级最外层半边长只有 256m，离 R=190m 的岸线仅 66m，边界像方框；5 级为 512m。
 
@@ -50,7 +49,7 @@ LakeCarve.Apply → LakeVegetationClear.Apply
 
 ## 3. 为什么必须用 Clip
 
-Crest 的水面是以**视点**为中心的 clipmap：`LateUpdatePosition` 把位置设为 `(视点.x, 水面y, 视点.z)`，各 chunk 按 LOD 翻倍铺开，最外圈能到 ±数十公里。`WaterRenderer` 的 transform XZ 对水面没有意义。
+Crest 水面是以视点为中心的 clipmap，最外圈可到数十公里，`WaterRenderer` 的 transform XZ 对水面没有意义；机制见 [crest_internals](crest_internals.md) §2。
 
 - `WaterBody` 的 AABB 剔除是**整 chunk 粒度**，挡不住巨型外圈 chunk（Chunks 模式实测 49 个 chunk 只有 8 个被剔除）。
 - Quad 模式虽然只有 1 次 DrawMesh，但那张 10000×10000 的四边形同样需要 Clip 才能只留在湖盆。
@@ -62,12 +61,7 @@ Crest 的水面是以**视点**为中心的 clipmap：`LateUpdatePosition` 把�
 
 ## 4. 透明与水下
 
-**SimpleTransparency=1（当前）**：`Fragment.hlsl:825-828` 用
-`max(length(volumeOpacity), _Crest_TransparencyMinimumAlpha, foam, albedo.a)` 写 `o_Alpha`，水面走 alpha 混合。
-调透明度要同时看 `_Crest_TransparencyMinimumAlpha`（当前 **0.12**）和 DepthLod 的 volumeOpacity，不是只调 Absorption/Scattering。
-
-**非 SimpleTransparency（切回时）**：`o_Alpha` 恒为 1，透明来自折射合成 + 体积消光
-（`Fragment.hlsl:625-670`、`VolumeLighting.hlsl:22-25`）；此时才只动 `_Crest_Absorption` / `_Crest_Scattering`。
+SimpleTransparency 的 `o_Alpha` 公式与非 Simple 模式的行为见 [Shaders §3](../Packages/com.waveharmonic.crest/Runtime/Shaders/AGENTS.md)。本工程 `_Crest_TransparencyMinimumAlpha=0.12`，volumeOpacity 由 DepthLod 提供；调透明度要同时看两者，不是只调 Absorption/Scattering。
 
 材质上的 absorption/scattering 系数两种模式都保留；当前湖用它们做恒定水色，不跑仿真。
 
@@ -78,10 +72,7 @@ Crest 的水面是以**视点**为中心的 clipmap：`LateUpdatePosition` 把�
 | `_Crest_Scattering` | `(0.012, 0.026, 0.036)` /m | R 必须压低，否则雾发白 |
 | extinction 合计 | `(0.061, 0.041, 0.045)` /m | 1/e 深度 16/24/22m |
 
-**水下开关是引擎自带的**（`UnderwaterRenderer.cs:299-307`）：相机离水面 >2m 自动关；2m 内且 XZ 在 Volume 型 WaterBody（`Lake Body`，`Exclusion=Include`）内、cullingMask 含 Water 层时开启。不要自己写进水检测。
-
-**`_Crest_AmbientTerm` / `_Crest_DirectTerm` 必须写在 Water.mat（水面材质）上**：
-`UnderwaterRenderer.Effect.cs:247` 每帧把水面材质属性覆盖到 Volume 材质，只写后者会被覆盖回默认 1.0（静默失效）。当前取 0.35/0.40。
+水下开关判定与材质覆盖规则见 [Volume §1–§2](../Packages/com.waveharmonic.crest/Runtime/Scripts/Volume/AGENTS.md)。本工程由 `Lake Body`（Volume|Physics、Include）触发，`_Crest_AmbientTerm` / `_Crest_DirectTerm` 取 **0.35 / 0.40**（写 `Water.mat`）。
 
 ## 5. 相机 rig
 
@@ -96,7 +87,7 @@ Crest 的水面是以**视点**为中心的 clipmap：`LateUpdatePosition` 把�
 |---|---|
 | `Gameplay/LakeOrbitCamera.cs` | 半径 300m；高度 = 地表+18m 且不低于水位+26m（指数平滑）；120s/圈；俯仰 12°±3°；`Paused` 让出 transform |
 | `Gameplay/LakeCameraRig.cs` | **C** 切相机 + **F** 自由飞行；同步 Camera/AudioListener/loader/Viewer/tag/Enviro |
-| `Assets/Editor/LakeCameraSetup.cs` | 幂等写入场景；`Apply`/`Remove`/`Report` |
+| `Assets/Editor/Water/LakeCameraSetup.cs` | 幂等写入场景；`Apply`/`Remove`/`Report` |
 
 - **组件级开关，不要 `SetActive(false)`**：每台相机自带 AudioListener，禁 GameObject 会报 "no audio listeners"。
 - **F 键飞行前必须 `LakeOrbitCamera.Paused`**：它在 `LateUpdate` 写 transform，比飞行的 `Update` 晚，不暂停会把位移整帧覆盖（“按 F 没反应”）。
@@ -122,20 +113,20 @@ Crest 的水面是以**视点**为中心的 clipmap：`LateUpdatePosition` 把�
 2. scripting define `d_Crest_SimpleTransparency`（影响 C# 的 `#if`，如 `SurfaceRenderer.Universal.cs:61` 的 `ConfigureInput`）。
 3. 重新生成 `Runtime/Shaders/Library/Settings/Settings.Crest.*.hlsl`（`CREST_SIMPLE_TRANSPARENCY (1)`）。
 
-坑：不能只改 hlsl 文本；`AssetDatabase` 读不到 `ProjectSettings/` 资产；`ScriptableSingleton.Save()` 不落盘。**正确做法是直接改文本 → 重载单例 → `UpdateSymbols()` → 直接反射调 `ShaderGeneratorUtility.GenerateAll()`**（batchmode 不触发域重载）。工具：`CrestPerformanceMode`。
+实现细节（为何不能只改 hlsl、batchmode 怎么做）见 [Crest Editor/Scripts §3](../Packages/com.waveharmonic.crest/Editor/Scripts/AGENTS.md)；工具：`CrestPerformanceMode`。
 
-**切 SimpleTransparency 必须同时把 `_Crest_TransparencyMinimumAlpha` 从 0.95 调到 0.12**，否则水面几乎不透明。
+**切 SimpleTransparency 必须同时调低 `_Crest_TransparencyMinimumAlpha`（当前值见 §4）**，否则水面几乎不透明。
 
 ### 6.2 当前还剩的 compute
 
-- **DepthLod**：每个与湖区 AABB 相交的 active Terrain 一次 `DepthTexture.compute`（16²×5）。补丁过滤后 15→6 dispatch。
+- **DepthLod**：每个与湖区 AABB 相交的 active Terrain 一次 `DepthTexture.compute`（16²×5）。补丁过滤后只对相交 Terrain dispatch。
 - **AnimatedWaves**：Gerstner 96²、ShapeWavesTransfer 96²×5、5 次 ShapeCombine 128²、PackLevel 128²×5。Quad 下只喂法线，不能直接关。
 - **Foam**：每帧至少 1 次 dispatch；降 `SimulationFrequency` 只减少完整仿真步，不减少 dispatch。
 - **Clip**：1 次（16²×5）+ 2 次很小的 `ClearBorder`。
 - **Underwater**：入水才有 pass（>2m 自动关），非入水零成本。
 - **Queries**：没有 gameplay 注册时 0 dispatch。
 
-**Crest 源码补丁**：`DepthLod.TerrainDepthInput` 加了 Include WaterBody AABB 过滤；升级 Crest 必须重打，否则每个 active Terrain 每帧 dispatch。
+**Crest 源码补丁**：本湖依赖 `DepthLod` 的 Include AABB 过滤；升级必须重打，细节见 [Data §5](../Packages/com.waveharmonic.crest/Runtime/Scripts/Data/AGENTS.md)。
 
 **`CrestPerformanceMode.Restore`** 会回退 Chunks + 非 SimpleTransparency + URP Depth/Opaque 开启 + minAlpha 0.95。**接了大气候不要直接跑**：Enviro 仍需要 depth=1，还原后重跑 `AtmosphereSetup.Apply`，确认 depth=1、opaque=0。
 
@@ -158,7 +149,7 @@ Crest 的水面是以**视点**为中心的 clipmap：`LateUpdatePosition` 把�
 ## 8. 踩坑速查
 
 1. **unitypackage 必须连 `.meta` 一起解**，否则 GUID 全断（20+ 编译错误）。
-2. **重转已挂 mesh 的 chunk 前先删 `GTS_Mesh` 节点**，否则 GTS 对已有 `GTSMesh` 取 `GetComponent<Terrain>()` 崩；转换必须一进程一块（见 [Assets/Editor/AGENTS.md](../Assets/Editor/AGENTS.md) §3.0）。
+2. **重转已挂 mesh 的 chunk 前先删 `GTS_Mesh` 节点**，否则 GTS 对已有 `GTSMesh` 取 `GetComponent<Terrain>()` 崩；转换必须一进程一块（见 [Assets/Editor/Gts/AGENTS.md](../Assets/Editor/Gts/AGENTS.md) §2.1）。
 3. **植被清除只用半径判据**，不要加 `h < 水位`：世界边缘大片低于水位，会误删 1km 外的草。
 4. **`WaterRenderer.SeaLevel` 编辑期恒为 0**（读 internal `Position`）；校验水位看 `transform.position.y`。
 5. **`Lod.Enabled` 编辑期必为 false**（getter 是 `_Enabled && _Valid`，`_Valid` 要运行时 GPU 初始化）；不能当校验判据，用 `DefaultClippingState` 等持久字段。
@@ -172,5 +163,5 @@ Crest 的水面是以**视点**为中心的 clipmap：`LateUpdatePosition` 把�
 - [ ] iQOO 16 实测帧率；Reflections / Underwater 取舍在真机定。
 - [ ] 钓鱼玩法需要 CPU 波高查询时，开 `com.waveharmonic.crest.cpu-queries`。
 - [ ] Crest shader 变体未审计（Shader Control 待接入）。
-- [ ] 水下体积光权重 0.35/0.40 是 batchmode 定参，真机 HDR/色调映射下复核。
+- [ ] 水下体积光权重（见 §4）是 batchmode 定参，真机 HDR/色调映射下复核。
 - [ ] 后处理接入时两台相机要同步 Volume。

@@ -294,7 +294,7 @@ entityManager.SetComponentData(entity, new GpuEcsAnimatorControlComponent
 
 ### 7.3 已实现的自动验证
 
-`Assets/Editor/LakesideCrowdVerify.cs`（`LakesideCrowdVerify.Run`）已覆盖 200 人：
+`Assets/Editor/Crowd/LakesideCrowdVerify.cs`（`LakesideCrowdVerify.Run`）已覆盖 200 人：
 
 - 预加载湖区 9 个 chunk，进入 Play Mode；
 - 从 spawner 读取期望人数，断言实体数 = 200（不含 prefab）；
@@ -333,7 +333,7 @@ entityManager.SetComponentData(entity, new GpuEcsAnimatorControlComponent
 
 ### 9.2 站在哪里
 
-湖参数唯一来源是 `Assets/Editor/LakeCarve.cs`：`Center=(192,96)`、`Radius=190`、`WaterLevel=264`、`Depth=30`、`Blend=90`。
+湖参数唯一来源是 `Assets/Editor/Water/LakeCarve.cs`：`Center=(192,96)`、`Radius=190`、`WaterLevel=264`、`Depth=30`、`Blend=90`。
 
 - **实测地形形状（`LakesideShoreProbe`）**：`LakeCarve.TargetHeight` 在 `r > Radius` 直接返回原始地形，没有过渡；
   r=190 处是水位 264m，r=191 处南岸 283.79m、北岸 185–190° 约 267–269m。

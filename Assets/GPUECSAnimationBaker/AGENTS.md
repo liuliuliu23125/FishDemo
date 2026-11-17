@@ -56,8 +56,8 @@
 | `Samples/SampleScenes/Festival/CrowdSpawnerSystem/` | 官方多人同屏样例（网格人群 + 随机动画） |
 | `Samples/Characters/*/BakedAssets_*/` | 12 个已烘焙 prefab（角色 + 附件） |
 | `Assets/Scripts/Runtime/Gameplay/LakesideCrowdBehaviour.cs` | 自研湖边人群 Baker + Spawn 系统（200 人、4 种 prefab、4× 缩放） |
-| `Assets/Editor/LakesideCrowdSetup.cs` | 岸线采样 + authoring scene + World SubScene（菜单 ③） |
-| `Assets/Editor/LakesideCrowdVerify.cs` | Play Mode 验证：实体数 / 岸线高度 / 动画帧 / RT 截图 |
+| `Assets/Editor/Crowd/LakesideCrowdSetup.cs` | 岸线采样 + authoring scene + World SubScene（菜单 ③） |
+| `Assets/Editor/Crowd/LakesideCrowdVerify.cs` | Play Mode 验证：实体数 / 岸线高度 / 动画帧 / RT 截图 |
 
 ## 4. 烘焙与使用
 
@@ -74,4 +74,5 @@
 | [Docs/gpu_ecs_animation_baker.md](../../Docs/gpu_ecs_animation_baker.md) | 接 NPC / 人群、改材质或 shader、查性能与验证前 |
 | [Docs/character_animation.md](../../Docs/character_animation.md) | 确认 Animancer 与 GPU Baker 的分工 |
 | `GPU ECS Animation Baker Manual.pdf` | 官方手册：Requirements / Limitations / GPU Instancing / Bake Services |
-| [根 AGENTS.md](../../AGENTS.md) | 项目级硬约束与模块状态 |
+| [根 AGENTS.md](../../AGENTS.md) | 项目级硬约束与目录入口 |
+| [Docs/AGENTS.md](../../Docs/AGENTS.md) | 项目级模块现状与文档索引 |

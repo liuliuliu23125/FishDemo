@@ -121,7 +121,7 @@ Animancer Pro、Shader Control、Fog Mist 2、Light Beam 2、Lights 2、Beautify
 | **草在编辑器可见、打包后消失** | Android 回落 GLES，或 `GrassData` 走 `File.ReadAllBytes` 打包后不存在；见 [grass_brg_progress](../../Docs/grass_brg_progress.md) §5 |
 | 材质是粉的 | `m_currentRenderer` 不是 Universal；跑 `GaiaSetupTools.UpgradeMaterialsToURP` |
 | chunk 加载不出来 | `SECTR_Sector.TotalBounds` 为零 → `RegionLoader` 求交永远不命中，且不报错 |
-| 加载主场景就爆内存 | 原始地形残留没删；见 [../Editor/AGENTS.md](../Editor/AGENTS.md) §3.3 |
+| 加载主场景就爆内存 | 原始地形残留没删；见 [../Editor/World/AGENTS.md](../Editor/World/AGENTS.md) §2.3 |
 | **GTS 转换时 MissingReferenceException** | 一进程跑了多块；必须一进程一块，见 [gts_srp_batcher §8](../../Docs/gts_srp_batcher.md) |
 | **mesh 地形贴图/分层错乱** | 缺 `GTSMesh` 组件或 `worldSize` 用了默认 1024；见 [gts_srp_batcher](../../Docs/gts_srp_batcher.md) §8 |
 | **真机上地形材质全黑/错乱** | `GtsRuntimeDataBootstrap` 没挂或缺 `Refresh()`；同上 |

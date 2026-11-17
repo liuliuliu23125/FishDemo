@@ -85,7 +85,7 @@
 - **副作用**：修改直接落在 `Alpine Meadow/Alpine Meadow-Trees.asset` 上，是持久化的第三方资产改动。已核实该文件当前 `m_heightMaskType: 0`、`m_absoluteHeightMin: 62`、`Max: 665`（产物事实）。换预设或重装 Gaia 会丢，需重跑。
 - 只改 TerrainTree（树/灌木/蕨），草（TerrainDetail）与石头（GameObject）不动。
 
-### 2.4 ④ 切块与导出（`Assets/Editor/SectrPipeline.cs`）
+### 2.4 ④ 切块与导出（`Assets/Editor/World/SectrPipeline.cs`）
 
 - 遍历 `FindObjectsOfType<Terrain>()`，**不要按 transform.root 去重**：Gaia 把 9 块地形挂在同一 `Gaia Terrains` 根下，按 root 去重只会得到 1 个不含 Terrain 的根，导致一块都没切。
 - 每块调 `SECTR_TerrainWindow.SectorizeTerrain(terrain, 2, 2, 1, splitTerrain:true, createPortalGeo:false, includeStatic:true, includeDynamic:false, sortGaiaObjects:true)`（方法定义在 `SECTR_TerrainWindow.cs:106`）。
@@ -97,7 +97,7 @@
 **工序顺序不可颠倒**（`WorldPipeline.cs`）：地形 → 植被 → 水 → 切块 → 导出。
 因为 `SectorizeTerrain` 会把原 TerrainData 的高度/Alpha/Detail/Tree 按块复制，并在结尾把原地形 `SetActive(false)`；切块后再撒点会撒到失活地形上。
 
-### 2.5 ⑤ 收尾（`Assets/Editor/WorldFinalize.cs`）
+### 2.5 ⑤ 收尾（`Assets/Editor/World/WorldFinalize.cs`）
 
 两件事：
 
@@ -297,7 +297,7 @@ Terrain 仍保留的关键参数（草/树/碰撞仍由它负责）：
 > 2026-11-09 的中间值（70 / 0.35 / 600 / 60 / 32）已被后续 BRG 与树 1/10 降密覆盖，
 > 以本表为准。当前 active chunk 的取值见 `World_SECTR ... 162007 *.unity:621-634`。
 
-**工具**：`Assets/Editor/TerrainChunkTuning.cs`，三个入口 `Report` / `ApplyMobile` / `RestoreDesktop`，双向可逆（`RestoreDesktop` 恢复的是 Gaia 原始值常量，不是猜测值）。
+**工具**：`Assets/Editor/World/TerrainChunkTuning.cs`，三个入口 `Report` / `ApplyMobile` / `RestoreDesktop`，双向可逆（`RestoreDesktop` 恢复的是 Gaia 原始值常量，不是猜测值）。
 
 **实测提交量变化**（`Logs/Gaia/chunk-render-stats*.txt`，静态统计，非 GPU 耗时）：
 
@@ -387,7 +387,7 @@ Build Settings 重建为 37 个场景（含主场景），缺失 0
 
 ## 8. 与规划方案的差距
 
-| 规划（AGENTS.md §2） | 当前实现 | 差距 |
+| 规划（[Docs/AGENTS.md](AGENTS.md) §1） | 当前实现 | 差距 |
 |---|---|---|
 | GTS Terrain→Mesh 分块 | **已落地**：144 个 subTile mesh，`saveResolution=Half` | ✅ 完成；LOD 链未生成（`lodCount=1`） |
 | 地形走 SRP Batcher | **已落地**：改 GTS shader 加 `UnityPerMaterial` CBUFFER | ✅ 完成，见 [gts_srp_batcher](gts_srp_batcher.md) |

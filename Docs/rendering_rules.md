@@ -92,7 +92,7 @@ SRP Batcher 三条实战结论：合批单位是 CBUFFER 布局而不是材质�
 - ❌ 假设 RenderGraph / 内置水体 / 内置体积雾存在。Forward+ 在 URP 14.0.12 已有，但工程未启用；不要在未回归前依赖它。
 - ❌ 加第二个天空盒；无消费者时打开 `m_RequireOpaqueTexture` / `m_RequireDepthTexture`；新增全屏 Blit 链或 ping-pong。
 - ❌ 每帧无条件开水面反射相机；叠第二套后处理。
-- ❌ 用 Terrain detail 做大规模草；用 `drawTreesAndFoliage=false` 关草（会连树一起关，当前 46,472 棵）。
+- ❌ 用 Terrain detail 做大规模草；用 `drawTreesAndFoliage=false` 关草（原因与替代见 [Grass/AGENTS.md](../Assets/Editor/Grass/AGENTS.md) §2）。
 - ❌ 在 `Update` 里逐对象设材质属性；用 MPB 传 per-object 数据；Gameplay 层直接写 `CommandBuffer`；用 `Resources.Load` 做流式加载。
 
 ## 6. 注释要求

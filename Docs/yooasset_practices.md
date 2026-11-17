@@ -66,7 +66,7 @@
 
 ## 3. 引用计数机制
 
-每次 `LoadAssetAsync` 都会 `CreateHandle` 并 `RefCount++`（`ProviderBase.cs:288-291`）。
+每次 `LoadAssetAsync` 都会 `CreateHandle` 并 `RefCount++`（`ProviderBase.CreateHandle`）。
 
 ```
 LoadAssetAsync → Provider.CreateHandle → RefCount++ → 返回新句柄
@@ -75,7 +75,7 @@ handle.Release() → Provider.ReleaseHandle → RefCount-- → 从 _handles 移�
 
 **为什么不能复用句柄**：多个调用方共享一个句柄时，任一方 `Release` 都会让 RefCount 归零，其他持有者拿到的资源已销毁。
 
-**为什么不能重复 Release**：`ProviderBase.cs:302` 会 `throw YooInternalException("Attempting to release handle when RefCount is already zero")`。
+**二次 Release 的实际行为（3.0.7）**：同一 handle 第二次 `Release()` **不抛**——`HandleBase.Release` 发现 `Provider == null`，打 warning 后返回。会抛的是直接调 `Provider.ReleaseHandle`（`_handles.Remove` 失败），以及 `ReleaseAllHandles` / `UnloadAllAssets(shouldReleaseHandles:true)` 与业务 `Release` 竞争（`RefCount <= 0`）。真正的规则是**不要多处持有并释放同一个 handle**。
 
 **因此 `AssetLoader` 返回 `AssetLease<T>`**（资源 + 句柄），调用方必须持有句柄才能释放。
 

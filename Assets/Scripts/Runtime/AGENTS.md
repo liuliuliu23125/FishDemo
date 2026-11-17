@@ -112,9 +112,7 @@ UV 重写到该类型的精灵格、并把顶点缩放到原型尺寸（材质�
   只传 2 段）。要逐实例染色才需升级为第三段。
 - `shader_feature` 的开关是 **keyword**：`new Material` 后必须 `EnableKeyword("_USE_ALBEDO_TEX")`，
   只 `SetFloat` 不会切换变体（表现为花仍是绿的、无 alpha 裁剪，静默失效）。
-- 竖直面片**不能用地表法线做 Lambert**（实例法线朝上，低太阳角下会全黑），
-  要朝相机混合 + 包裹光照，见 `GrassBRG.shader` 的 Frag。
-- 不要开 `AlphaToMask`：工程 MSAA=1，alpha-to-coverage 会退化并把草切成碎屑。
+- 竖直面片的光照与 `AlphaToMask` 规则见 [Grasses §2](../../Grasses/AGENTS.md)。
 
 **数据加载是临时通路**：`TryAutoLoadChunkData()` 用 `System.IO.File.ReadAllBytes` 直读
 `Assets/Scenes/World/GrassData/*.bytes`（编辑器/开发期）。打包后 `Assets/` 不存在：
@@ -132,7 +130,7 @@ UV 重写到该类型的精灵格、并把顶点缩放到原型尺寸（材质�
 详细依据见 [YooAsset 模块规约](../../../Packages/com.tuyoogame.yooasset/AGENTS.md)，这里只列最容易犯的：
 
 - **禁止 `Resources.Load`**，也禁止业务层直接调 `Package.LoadAssetAsync`，必须经 `AssetLoader`。
-- **句柄成对释放**：`AssetLoader.LoadAsync` 返回 `AssetLease<T>`，用完 `Release(location, handle)`。禁止复用同一句柄、禁止重复 `Release`。
+- **句柄成对释放**：`AssetLoader.LoadAsync` 返回 `AssetLease<T>`，用完 `Release(location, handle)`。禁止跨调用方复用同一句柄，也不要多处持有并释放它。
 - **清单必须先取版本号**：`RequestPackageVersionAsync()` 之后才能 `LoadPackageManifestAsync`，离线也一样。
 - **`Shutdown()` 前必须 `ReleaseAll()`**：`Destroy()` 走 `AssetBundle.Unload(true)`，不检查引用计数。
 
