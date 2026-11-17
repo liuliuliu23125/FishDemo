@@ -546,10 +546,11 @@ LOD 收益：近 44.9% / 中 61.7% / 远 83.3% 三角形节省。
 >   2026-11-12 密度减半后为 **435 万 / 133MiB**。
 > - 关 Terrain detail **已完成**（36 chunk `DetailObjectDistance=0`）。
 > - shader 主光 + 环境光 + 风摆**已完成**；阴影/透光/贴图仍未做。
-> - **SECTR 流式、真机验证仍未做**——这两项是 M3 剩余的主体。
+> - **SECTR 流式已完成（2026-11-17）**：草数据改原生内存 + 逐 chunk 加载。
+>   真机验证仍未做——这是 M3 剩余的主体。
 
 - ~~36 chunk 全量烘焙~~ ✅ 已完成（当前 435 万实例 / 133MiB）
-- 接 SECTR 流式 ⬜
+- 接 SECTR 流式 ✅（2026-11-17，`SectrGrassStreamer`）
 - ~~shader 加光照~~ ✅ 部分完成（主光 / 环境光 / 风摆；阴影 / 透光 / 贴图 ⬜）
 - ~~关掉 Terrain detail~~ ✅ 已完成（用 `detailObjectDistance = 0`，保留树）
 - 真机验证 ⬜
@@ -629,7 +630,7 @@ LOD 收益：近 44.9% / 中 61.7% / 远 83.3% 三角形节省。
 
 **遗留（M3）**：
 - 分块排序在运行时做，加载耗时约 1~2 秒（1265 万实例旧测）。SECTR 流式后按需加载可摊薄。
-- 内存（1265 万旧测）：CPU 386MB + 位置 145MB + GPU 386MB ≈ 917MB。
-  **当前 435 万约 320MB**（见 [grass_brg_progress](grass_brg_progress.md) §4.5），
-  移动端仍必须靠 SECTR 只加载视野附近 chunk。
-- `_positions` 与 `_instances` 重复存位置（当前约 50MB），M3 可合并。
+- 内存：全量路径仍是 435 万约 320MB；**Play Mode 已改为逐 chunk 流式**，
+  15 块驻留约 100MB，硬上限 24 块。见 [grass_brg_progress](grass_brg_progress.md) §4.5。
+- `_positions` 与 `_instances` 重复存位置：流式路径已只保留 positions；
+  编辑器全量工具路径仍保留旧结构。

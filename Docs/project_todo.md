@@ -7,7 +7,7 @@
 | # | 问题 | 出处 | 处理 |
 |---|---|---|---|
 | 1 | Android 最低 SDK 22 | `AndroidMinSdkVersion: 22` | 建议 26+ |
-| 2 | 增量 GC 关闭 | `gcIncremental: 0` | 开启，降低卡顿 |
+| 2 | ~~增量 GC 关闭~~ | **已开启（2026-11-17）**：`gcIncremental: 1` | 保留为兜底；**不接管 GCMode**。大块数据（草实例/GPU buffer）已移出托管堆并跟随 chunk 流式，见 [terrain_streaming](terrain_streaming.md) §12.5 |
 | 3 | Android 默认画质 Medium | `m_PerPlatformDefaultQuality.Android: 2` | 改 High/Ultra |
 | 4 | 无 Input System / Cinemachine | `manifest.json` | 钓鱼玩法需要 |
 | 5 | GPU Baker 未 vendor | 包已下架 | 立即 vendor 进仓库 |
@@ -31,11 +31,11 @@
 |---|---|
 | Crest 反射可见性跳过 | Crest 只有基于相机高度的 `SkipAbove`/`SkipBelow`（`WaterReflections.cs:240`），**没有视锥判断**。需自研补 `GeometryUtility.TestPlanesAABB`。**当前湖的平面反射是关闭的**（`Reflections.Enabled = false`），所以这条不阻塞 demo |
 | Crest 源码补丁 | `DepthLod.TerrainDepthInput` 已加“只烘湖区 Include WaterBody AABB 内 Terrain”的过滤。升级 Crest 时必须重打，否则每个 active Terrain 都会每帧 dispatch 一次 |
+| SECTR 流式补丁 | `SECTR_Chunk.cs` / `SECTR_RegionLoader.cs` 已改（激活节流、加载/卸载限流、缓存接管）。升级/重装 SECTR 会覆盖，原始副本在 `Tools/sectr-patches/`；见 [terrain_streaming](terrain_streaming.md) §12 |
 | YooAsset 启动入口 | `YooAssetInitializer.InitializeAsync()` 目前**无任何调用方**，资源层尚未接线 |
 | 模拟构建产物 | 菜单 `YooAsset/FishDemo/执行模拟构建并注入路径` 未实际执行过 |
 | 后处理未接入 | 主场景无 Volume，ACES / Color Grading / LUT / Bloom 均未配置；接入规则见 [postprocess](postprocess.md) §0 |
 | Enviro 雾的固有全屏 pass | 每帧 1 次全屏 color copy + 1 次合成；体积云开启后还会加全分辨率 temp。要优化必须改 Enviro 并打 `[FishDemo]` 标记，见 [atmosphere](atmosphere.md) §0.7 |
-| 草 BRG 未接 SECTR 流式 | 435 万实例全量常驻 ≈320MB；M3 待办，见 [grass_brg_progress](grass_brg_progress.md) §1 |
 
 ## 3. 待决策
 

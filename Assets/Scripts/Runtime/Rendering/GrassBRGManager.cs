@@ -153,6 +153,91 @@ namespace FishDemo.Rendering
         /// </summary>
         private List<int> _batchType;
 
+        /// <summary>非流式路径的 batch 分段表（类型段 × 16MB），重建块表时复用。</summary>
+        private List<(int type, int start, int count)> _slices;
+
+        // ───────────────────────── 流式加载（M3） ─────────────────────────
+
+        /// <summary>
+        /// Gameplay 层在 <c>BeforeSceneLoad</c> 里置位，告诉本组件：
+        /// 草数据按 SECTR chunk 增量加载，不要在 OnEnable 里一次性读盘。
+        /// 用静态标志而不是场景引用，是因为 Gameplay（Assembly-CSharp）不能反向被
+        /// FishDemo.Rendering 引用；而 RuntimeInitializeOnLoadMethod 早于场景加载，
+        /// 能保证本组件的 OnEnable 看到的是最终值。
+        /// </summary>
+        private static bool s_streamingRequested;
+        private static bool s_streamingSuppressed;
+
+        /// <summary>请求流式模式。Play Mode 前调用一次即可。</summary>
+        public static void RequestStreaming()
+        {
+            if (!s_streamingSuppressed)
+                s_streamingRequested = true;
+        }
+
+        /// <summary>
+        /// 验收脚本用：本次 Play Mode 强制全量加载（旧行为）。
+        /// 用于需要「全世界草都在」的像素验收，避免再依赖 SECTR 加载时序。
+        /// 只在本次会话生效，<see cref="ResetStreamingSuppression"/> 在场景加载后清掉。
+        /// </summary>
+        public static void RequestFullLoad()
+        {
+            s_streamingSuppressed = true;
+            s_streamingRequested = false;
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void ResetStreamingSuppression()
+        {
+            s_streamingSuppressed = false;
+        }
+
+        /// <summary>当前是否处于流式模式（仅 Play Mode 且被请求时）。</summary>
+        public bool IsStreaming => _streaming;
+
+        private bool _streaming;
+
+        /// <summary>
+        /// 一个已驻留 chunk 的原生数据。
+        ///
+        /// 只保留 positions（12B/实例）而不是完整 GrassInstance（32B）：
+        /// 上传 GPU 后实例数据不再需要，剔除只读位置。
+        /// 每 chunk 约 12 万实例 → 驻留成本 1.4MB CPU + 3.9MB GPU，
+        /// 由 SECTR 的加载范围天然封顶。
+        /// </summary>
+        private sealed class StreamChunk
+        {
+            public string Name;
+            public NativeArray<float3> Positions;
+            public NativeArray<GrassBlock> LocalBlocks;
+            public StreamSlice[] Slices;
+            public Bounds Bounds;
+            public int PosOffset;
+            public int GlobalBatchBase;
+        }
+
+        private struct StreamSlice
+        {
+            public int Type;
+            public int Start;
+            public int Count;
+            public GraphicsBuffer Buffer;
+            public BatchID BatchID;
+        }
+
+        private readonly List<StreamChunk> _streamChunks = new List<StreamChunk>();
+
+        /// <summary>流式驻留的实例总数（诊断/HUD 用）。</summary>
+        public int StreamingChunkCount => _streamChunks.Count;
+
+        // GraphicsBuffer 复用池：chunk 进出时避免反复分配/释放显存。
+        // 键 = 容量（实例数），按 64k 实例（2MB）向上取整，同尺寸 chunk 直接命中。
+        private const int kPoolBucketInstances = 65536;
+        private const long kMaxPooledBufferBytes = 32L * 1024 * 1024;
+        private static readonly Dictionary<int, Stack<GraphicsBuffer>> s_bufferPool =
+            new Dictionary<int, Stack<GraphicsBuffer>>();
+        private static long s_pooledBufferBytes;
+
         /// <summary>LOD 层数。0=近（原型网格）、1=中（共享低模）、2=远（十字面片）。</summary>
         private const int kLodCount = 3;
 
@@ -429,6 +514,22 @@ namespace FishDemo.Rendering
                 _typeMaterialIDs[t] = _brg.RegisterMaterial(m);
             }
 
+            // ── 流式模式：不读盘、不建 batch，等 SECTR chunk 逐个进来 ──
+            //
+            // 必须在 BuildInstances 之前返回：那条路径会把 36 个 chunk 全量读进托管数组，
+            // 正是本次要消除的 260MB+ 常驻。空态下 _positions/_blocksNative 都是 default，
+            // OnPerformCulling 会走「0 批」分支直接输出空命令。
+            // 目录不存在时（打包后 Assets/ 不存在）退回旧的合成方阵/全量路径，
+            // 至少不会整片草消失；正式版接 YooAsset 后这里自然可用。
+            if (Application.isPlaying && s_streamingRequested &&
+                !string.IsNullOrEmpty(_grassDataDir) && System.IO.Directory.Exists(_grassDataDir) &&
+                _chunkData == null && _chunkDataList == null)
+            {
+                InitStreamingEmpty();
+                _ready = true;
+                return;
+            }
+
             BuildInstances();
 
             // ── 按 (类型段 × 16MB 容量) 切分 batch ──
@@ -496,12 +597,37 @@ namespace FishDemo.Rendering
             Debug.Log($"[GrassBRG] {_instanceCount:N0} 实例切分为 {slices.Count} 个 batch " +
                       $"（{kDetailTypeCount} 类型分段 × 上限 {maxPerBatch:N0}/批）");
 
-            BuildBatchLookup(slices);
+            _slices = slices;
+            // 块表必须在 batch 划分之后生成：块的 BatchIndex/BatchStart 由此确定。
+            AssignBlockBatches();
+            BuildBlockArray();
 
             // 引擎会用它做粗剔除；不设的话整个 BRG 可能被直接跳过。
             _brg.SetGlobalBounds(ComputeWorldBounds());
 
             _ready = true;
+        }
+
+        /// <summary>
+        /// 流式模式的空初始态：BRG 已就绪、材质已注册，但没有任何实例/batch。
+        /// 后续由 <see cref="AddGrassChunk"/> 增量填充。
+        /// </summary>
+        private void InitStreamingEmpty()
+        {
+            _streaming = true;
+            // 烘焙数据的坐标已含地表高度，流式路径不需要 TryReground；
+            // 不置 true 的话 Update 每 0.5s 会去跑一次合成布点（_instances 为 null）。
+            GroundResolved = true;
+            _instanceCount = 0;
+            _positions = default;
+            _blocksNative = default;
+            _blocks = null;
+            _batches = new List<BatchSlice>();
+            _batchType = new List<int>();
+            _visibleCount = new NativeArray<int>(1, Allocator.Persistent, NativeArrayOptions.ClearMemory);
+            _lodCounts = new NativeArray<int>(kLodCount, Allocator.Persistent, NativeArrayOptions.ClearMemory);
+            _brg.SetGlobalBounds(new Bounds(transform.position, Vector3.one));
+            Debug.Log($"[GrassBRG] 流式模式：等待 SECTR chunk（数据目录 {_grassDataDir}）");
         }
 
         /// <summary>
@@ -532,61 +658,70 @@ namespace FishDemo.Rendering
         }
 
         /// <summary>
-        /// 生成「实例号 → batch 号」与「batch 起点」两张表。
+        /// 给每个块标注「所属 batch + batch 内起点」。
         ///
-        /// 为什么必须要表：batch 现在按「类型段 × 16MB」切分，
-        /// 各类型段起点不同、段内还可能再切，不存在一条除法公式
-        /// （旧代码 i / BatchMaxInstances 只对均匀切分成立）。
-        /// 剔除 Job 的内层循环是每帧对几十万实例跑两遍，必须 O(1) 且无分支，
-        /// 所以提前把映射摊平成数组（1265 万条 int ≈ 50MB，一次性开销）。
+        /// 旧版用一张 int[N] 的「实例号 → batch」查找表（435 万条 ≈ 17MB），
+        /// 现在把这两个 int 直接放进块结构：剔除内层循环从「查表」变成「读块字段」，
+        /// 内存从 O(实例数) 降到 O(块数)，且流式加载时不必重建整张表。
         ///
-        /// 用 MemCpy：逐元素赋值在 1265 万规模下会多花几十毫秒，
-        /// 且 BatchSlice 已按实例顺序连续排列，直接整段填充即可。
+        /// 排序保证块的 Start 单调递增，所以单指针推进即可；若某个块跨越
+        /// 16MB batch 边界（极端情况下同类型 > 52 万实例），就地拆成两段。
         /// </summary>
-        private void BuildBatchLookup(List<(int type, int start, int count)> slices)
+        private void AssignBlockBatches()
         {
-            if (_batchOfInstance.IsCreated) _batchOfInstance.Dispose();
-            if (_batchStartNative.IsCreated) _batchStartNative.Dispose();
+            if (_blocks == null || _blocks.Count == 0 || _slices == null || _slices.Count == 0)
+                return;
 
-            int n = _instanceCount;
-
-            // 用 ClearMemory 而不是 UninitializedMemory：
-            // 若 slices 覆盖的总数少于 n（类型统计与实际数组不一致时会发生），
-            // 未填充的表项会是随机值，Job 里 counts[batch*3+lod] 会写到堆外，
-            // 破坏内存且不报错——表现为整片草消失。清零后至少越界是 0 号 batch。
-            _batchOfInstance = new NativeArray<int>(Mathf.Max(1, n), Allocator.Persistent,
-                NativeArrayOptions.ClearMemory);
-            _batchStartNative = new NativeArray<int>(Mathf.Max(1, slices.Count), Allocator.Persistent);
-
-            for (int b = 0; b < slices.Count; b++)
-            {
-                var (_, start, count) = slices[b];
-                _batchStartNative[b] = start;
-
-                // 整段填充：这一段实例全属 batch b。
-                var seg = _batchOfInstance.GetSubArray(start, count);
-                for (int k = 0; k < seg.Length; k++)
-                    seg[k] = b;
-            }
-
-            // 覆盖性校验：slices 必须恰好覆盖 [0, n)。
-            // 不满足时说明类型统计与实际实例数组不一致（排序键算错/类型越界），
-            // 后果是部分实例的 batch 号是垃圾值 → 剔除时写坏内存 → 整片草消失。
+            // 覆盖性校验：slices 必须恰好覆盖 [0, _instanceCount)。
             long covered = 0;
             int expectedNext = 0;
             bool contiguous = true;
-            foreach (var (_, start, count) in slices)
+            foreach (var (_, start, count) in _slices)
             {
                 if (start != expectedNext) contiguous = false;
                 expectedNext = start + count;
                 covered += count;
             }
-            if (!contiguous || covered != n)
+            if (!contiguous || covered != _instanceCount)
             {
                 Debug.LogError($"[GrassBRG] batch 分段未覆盖全部实例：" +
-                               $"covered={covered} n={n} contiguous={contiguous} " +
+                               $"covered={covered} n={_instanceCount} contiguous={contiguous} " +
                                $"（草可能整体消失，检查 SortInstancesIntoBlocks 的类型排序键）");
             }
+
+            var result = new List<GrassBlock>(_blocks.Count);
+            int si = 0;
+            for (int bi = 0; bi < _blocks.Count; bi++)
+            {
+                GrassBlock block = _blocks[bi];
+                int s = block.Start;
+                int end = s + block.Count;
+
+                while (si < _slices.Count - 1 &&
+                       _slices[si].start + _slices[si].count <= s)
+                    si++;
+
+                int j = si;
+                while (s < end && j < _slices.Count)
+                {
+                    int sliceEnd = _slices[j].start + _slices[j].count;
+                    int take = Mathf.Min(end, sliceEnd) - s;
+                    if (take <= 0) { j++; continue; }
+
+                    var nb = block;
+                    nb.Start = s;
+                    nb.Count = take;
+                    nb.BatchIndex = j;
+                    nb.BatchStart = _slices[j].start;
+                    nb.ChunkBase = 0;
+                    result.Add(nb);
+
+                    s += take;
+                    j++;
+                }
+            }
+
+            _blocks = result;
         }
 
         /// <summary>释放 BRG 与所有 GPU/原生资源。幂等。</summary>
@@ -606,12 +741,16 @@ namespace FishDemo.Rendering
                 _brg = null;
             }
 
-            if (_batches != null)
+            // 流式模式下 buffer 的所有权在 StreamChunk；这里统一释放，避免 Release 两次。
+            ClearStreamChunks(returnBuffers: true);
+
+            if (!_streaming && _batches != null)
             {
                 foreach (var b in _batches)
                     b.Buffer.Release();
-                _batches = null;
             }
+            _batches = null;
+            _streaming = false;
 
             // 只销毁自己创建的程序化 mesh（草簇/面片）。
             // LOD0 是各类型从资产加载的原型 mesh 引用，不能 Destroy——
@@ -631,9 +770,8 @@ namespace FishDemo.Rendering
             foreach (var m in ownedMeshes)
                 DestroyRuntimeObject(m);
 
-            if (_batchOfInstance.IsCreated) _batchOfInstance.Dispose();
-            if (_batchStartNative.IsCreated) _batchStartNative.Dispose();
             _batchType?.Clear();
+            _slices = null;
 
             if (_runtimeMaterial != null)
             {
@@ -677,6 +815,391 @@ namespace FishDemo.Rendering
                 Destroy(obj);
             else
                 DestroyImmediate(obj);
+        }
+
+        // ───────────────────────── 流式 chunk 管理 ─────────────────────────
+
+        /// <summary>
+        /// 把一个 SECTR chunk 的草数据读进 BRG。文件名 = chunk 场景名 + ".bytes"。
+        ///
+        /// 主线程成本：读盘 + 原生排序 + GPU 上传，单 chunk 约 12 万实例。
+        /// 由 <c>SectrGrassStreamer</c> 限流（一次只加一个），避免与场景加载叠在同一帧。
+        /// </summary>
+        public bool AddGrassChunk(string sceneName)
+        {
+            if (!_streaming || string.IsNullOrEmpty(sceneName))
+                return false;
+            if (FindStreamChunk(sceneName) >= 0)
+                return false;
+
+            string path = System.IO.Path.Combine(_grassDataDir, sceneName + ".bytes");
+            if (!System.IO.File.Exists(path))
+            {
+                Debug.LogWarning($"[GrassBRG] 草数据缺失，跳过 chunk: {path}");
+                return false;
+            }
+
+            NativeArray<GrassInstance> instances = default;
+            NativeArray<GrassBlock> localBlocks = default;
+            StreamChunk chunk = null;
+            try
+            {
+                GrassChunkFile.Read(path, out instances, out Bounds bounds);
+
+                localBlocks = GrassChunkFile.SortIntoBlocks(
+                    instances, kBlockSize, _cullRadius, EffectiveNominalHeight * _scaleMultiplier);
+
+                var slices = BuildStreamSlices(instances, sceneName);
+
+                // 上传后实例数据不再需要，只保留位置（12B/实例）供剔除。
+                var positions = new NativeArray<float3>(instances.Length, Allocator.Persistent,
+                    NativeArrayOptions.UninitializedMemory);
+                for (int i = 0; i < instances.Length; i++)
+                    positions[i] = instances[i].Position;
+
+                chunk = new StreamChunk
+                {
+                    Name = sceneName,
+                    Positions = positions,
+                    LocalBlocks = localBlocks,
+                    Slices = slices,
+                    Bounds = bounds,
+                };
+                localBlocks = default;   // 所有权已转给 chunk
+                _streamChunks.Add(chunk);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[GrassBRG] 加载 chunk 失败 {sceneName}: {e.Message}");
+                if (chunk != null)
+                    ReleaseStreamChunk(chunk, removeBatches: true);
+                else if (localBlocks.IsCreated)
+                    localBlocks.Dispose();
+                return false;
+            }
+            finally
+            {
+                if (instances.IsCreated) instances.Dispose();
+            }
+
+            RebuildStreamingLayout();
+            return true;
+        }
+
+        /// <summary>移除一个 chunk 的草（释放 batch 与 buffer，buffer 进池复用）。</summary>
+        public bool RemoveGrassChunk(string sceneName)
+        {
+            if (!_streaming)
+                return false;
+            int idx = FindStreamChunk(sceneName);
+            if (idx < 0)
+                return false;
+
+            // 先等在飞的剔除 Job 结束，再动 BRG 与它引用的 buffer/内存。
+            _lastCullHandle.Complete();
+            StreamChunk chunk = _streamChunks[idx];
+            _streamChunks.RemoveAt(idx);
+            ReleaseStreamChunk(chunk, removeBatches: true);
+            RebuildStreamingLayout();
+            return true;
+        }
+
+        /// <summary>是否已驻留该 chunk 的草数据。</summary>
+        public bool HasGrassChunk(string sceneName) => FindStreamChunk(sceneName) >= 0;
+
+        /// <summary>
+        /// 一次性清空所有草 chunk（低内存应急）。
+        /// 只重建一次剔除表，不逐块 Remove——后者在 24 块时会把 24 次复制叠在一起。
+        /// </summary>
+        public void ClearGrassChunks()
+        {
+            if (!_streaming || _streamChunks.Count == 0)
+                return;
+
+            _lastCullHandle.Complete();
+            for (int i = 0; i < _streamChunks.Count; i++)
+                ReleaseStreamChunk(_streamChunks[i], removeBatches: true);
+            _streamChunks.Clear();
+            RebuildStreamingLayout();
+        }
+
+        private int FindStreamChunk(string sceneName)
+        {
+            for (int i = 0; i < _streamChunks.Count; i++)
+                if (string.Equals(_streamChunks[i].Name, sceneName, StringComparison.Ordinal))
+                    return i;
+            return -1;
+        }
+
+        /// <summary>按类型切 batch（16MB 上限），每段独立 buffer + AddBatch。</summary>
+        private StreamSlice[] BuildStreamSlices(NativeArray<GrassInstance> instances, string sceneName)
+        {
+            int maxPerBatch = kMaxBatchBytes / kBytesPerInstance;
+            var list = new List<StreamSlice>();
+            try
+            {
+                int n = instances.Length;
+                int i = 0;
+                while (i < n)
+                {
+                    int t = Mathf.Clamp(instances[i].Type, 0, kDetailTypeCount - 1);
+                    int j = i + 1;
+                    while (j < n && Mathf.Clamp(instances[j].Type, 0, kDetailTypeCount - 1) == t)
+                        j++;
+
+                    for (int off = i; off < j; off += maxPerBatch)
+                    {
+                        int cnt = Mathf.Min(maxPerBatch, j - off);
+                        var buffer = RentGrassBuffer(cnt,
+                            $"GrassBRG_{sceneName}_T{t}[{list.Count}]");
+                        UploadInstanceData(buffer, instances, off, cnt);
+                        var batchID = RegisterBatch(buffer, cnt);
+                        list.Add(new StreamSlice
+                        {
+                            Type = t,
+                            Start = off,
+                            Count = cnt,
+                            Buffer = buffer,
+                            BatchID = batchID,
+                        });
+                    }
+                    i = j;
+                }
+            }
+            catch
+            {
+                // 中途失败时把已建的 batch/buffer 收回去，避免加载失败后显存泄漏。
+                foreach (var s in list)
+                {
+                    if (_brg != null) _brg.RemoveBatch(s.BatchID);
+                    ReturnGrassBuffer(s.Buffer);
+                }
+                throw;
+            }
+            return list.ToArray();
+        }
+
+        private BatchID RegisterBatch(GraphicsBuffer buffer, int count)
+        {
+            var metadata = new NativeArray<MetadataValue>(2, Allocator.Temp);
+            metadata[0] = new MetadataValue
+            {
+                NameID = Shader.PropertyToID("_GrassPos"),
+                Value = 0x80000000u,
+            };
+            metadata[1] = new MetadataValue
+            {
+                NameID = Shader.PropertyToID("_GrassNormalScale"),
+                Value = 0x80000000u | (uint)(count * 16),
+            };
+            var id = _brg.AddBatch(metadata, buffer.bufferHandle);
+            metadata.Dispose();
+            return id;
+        }
+
+        private void ReleaseStreamChunk(StreamChunk chunk, bool removeBatches)
+        {
+            if (chunk.Slices != null)
+            {
+                foreach (var s in chunk.Slices)
+                {
+                    if (removeBatches && _brg != null)
+                        _brg.RemoveBatch(s.BatchID);
+                    ReturnGrassBuffer(s.Buffer);
+                }
+            }
+            if (chunk.Positions.IsCreated) chunk.Positions.Dispose();
+            if (chunk.LocalBlocks.IsCreated) chunk.LocalBlocks.Dispose();
+        }
+
+        private void ClearStreamChunks(bool returnBuffers)
+        {
+            for (int i = 0; i < _streamChunks.Count; i++)
+                ReleaseStreamChunk(_streamChunks[i], removeBatches: false);
+            _streamChunks.Clear();
+        }
+
+        /// <summary>
+        /// 把驻留 chunk 拼成剔除用的全局视图。
+        ///
+        /// 只在 chunk 进出时调用（频率 ~1/100ms），不每帧跑：
+        /// 复制 positions 约 1.4MB/chunk，块表只有几千项，代价是一次性的几毫秒。
+        /// 换来的是剔除 Job 永远只看到一份连续内存，不需要在 Job 里做多数组间接寻址。
+        /// </summary>
+        private void RebuildStreamingLayout()
+        {
+            _lastCullHandle.Complete();
+
+            int total = 0;
+            int batchCount = 0;
+            for (int i = 0; i < _streamChunks.Count; i++)
+            {
+                total += _streamChunks[i].Positions.Length;
+                batchCount += _streamChunks[i].Slices.Length;
+            }
+
+            if (_positions.IsCreated) _positions.Dispose();
+            _positions = total > 0
+                ? new NativeArray<float3>(total, Allocator.Persistent, NativeArrayOptions.UninitializedMemory)
+                : default;
+
+            _batches = new List<BatchSlice>(batchCount);
+            _batchType = new List<int>(batchCount);
+
+            int posOffset = 0;
+            int batchBase = 0;
+            int stride = UnsafeUtility.SizeOf<float3>();
+            for (int ci = 0; ci < _streamChunks.Count; ci++)
+            {
+                var c = _streamChunks[ci];
+                c.PosOffset = posOffset;
+                c.GlobalBatchBase = batchBase;
+
+                if (c.Positions.Length > 0)
+                {
+                    unsafe
+                    {
+                        UnsafeUtility.MemCpy(
+                            (byte*)_positions.GetUnsafePtr() + (long)posOffset * stride,
+                            c.Positions.GetUnsafePtr(),
+                            (long)c.Positions.Length * stride);
+                    }
+                }
+                posOffset += c.Positions.Length;
+
+                for (int si = 0; si < c.Slices.Length; si++)
+                {
+                    var s = c.Slices[si];
+                    _batches.Add(new BatchSlice
+                    {
+                        Buffer = s.Buffer,
+                        BatchID = s.BatchID,
+                        Start = s.Start,
+                        Count = s.Count,
+                    });
+                    _batchType.Add(s.Type);
+                }
+                batchBase += c.Slices.Length;
+            }
+
+            // ── 块表：chunk 局部块 → 全局位置索引 + 全局 batch 下标 ──
+            var blocks = new List<GrassBlock>(batchCount * 8);
+            for (int ci = 0; ci < _streamChunks.Count; ci++)
+            {
+                var c = _streamChunks[ci];
+                for (int bi = 0; bi < c.LocalBlocks.Length; bi++)
+                {
+                    var lb = c.LocalBlocks[bi];
+                    for (int si = 0; si < c.Slices.Length; si++)
+                    {
+                        var s = c.Slices[si];
+                        if (s.Type != lb.TypeIndex)
+                            continue;
+                        int ovStart = Mathf.Max(lb.Start, s.Start);
+                        int ovEnd = Mathf.Min(lb.Start + lb.Count, s.Start + s.Count);
+                        if (ovEnd <= ovStart)
+                            continue;
+
+                        var gb = lb;
+                        gb.Start = c.PosOffset + ovStart;
+                        gb.Count = ovEnd - ovStart;
+                        gb.BatchIndex = c.GlobalBatchBase + si;
+                        gb.BatchStart = s.Start;
+                        gb.ChunkBase = c.PosOffset;
+                        blocks.Add(gb);
+                    }
+                }
+            }
+
+            if (_blocksNative.IsCreated) _blocksNative.Dispose();
+            _blocksNative = blocks.Count > 0
+                ? new NativeArray<GrassBlock>(blocks.Count, Allocator.Persistent, NativeArrayOptions.UninitializedMemory)
+                : default;
+            for (int i = 0; i < blocks.Count; i++)
+                _blocksNative[i] = blocks[i];
+
+            _instanceCount = total;
+
+            Bounds bounds;
+            if (_streamChunks.Count > 0)
+            {
+                bounds = _streamChunks[0].Bounds;
+                for (int i = 1; i < _streamChunks.Count; i++)
+                    bounds.Encapsulate(_streamChunks[i].Bounds);
+                bounds.min = new Vector3(bounds.min.x, bounds.min.y - _cullRadius, bounds.min.z);
+                bounds.max = new Vector3(bounds.max.x, bounds.max.y + _cullRadius + 1f, bounds.max.z);
+            }
+            else
+            {
+                bounds = new Bounds(transform.position, Vector3.one);
+            }
+            _brg.SetGlobalBounds(bounds);
+        }
+
+        // ── GraphicsBuffer 复用池 ──
+        // chunk 进出时 buffer 尺寸高度重复（同类型、同采样率），复用可避免
+        // 反复 new/Release 造成的显存分配与碎片。池本身有 32MB 上限。
+
+        private static int RoundedBucket(int instances)
+        {
+            int b = Mathf.CeilToInt(instances / (float)kPoolBucketInstances) * kPoolBucketInstances;
+            return Mathf.Max(kPoolBucketInstances, b);
+        }
+
+        private static GraphicsBuffer RentGrassBuffer(int instances, string name)
+        {
+            int bucket = RoundedBucket(instances);
+            if (s_bufferPool.TryGetValue(bucket, out var stack) && stack.Count > 0)
+            {
+                var reused = stack.Pop();
+                s_pooledBufferBytes -= (long)bucket * kBytesPerInstance;
+                reused.name = name;
+                return reused;
+            }
+            return new GraphicsBuffer(GraphicsBuffer.Target.Raw,
+                bucket * (kBytesPerInstance / 4), 4) { name = name };
+        }
+
+        private static void ReturnGrassBuffer(GraphicsBuffer buffer)
+        {
+            if (buffer == null)
+                return;
+
+            int bucket = buffer.count / (kBytesPerInstance / 4);   // 元素数 → 实例容量
+            long bytes = (long)bucket * kBytesPerInstance;
+            if (bytes > kMaxPooledBufferBytes || s_pooledBufferBytes + bytes > kMaxPooledBufferBytes)
+            {
+                buffer.Release();
+                return;
+            }
+
+            if (!s_bufferPool.TryGetValue(bucket, out var stack))
+            {
+                stack = new Stack<GraphicsBuffer>();
+                s_bufferPool[bucket] = stack;
+            }
+            stack.Push(buffer);
+            s_pooledBufferBytes += bytes;
+        }
+
+        /// <summary>释放所有池化 buffer（退出播放时调用；域重载后静态表自然清空）。</summary>
+        public static void ReleaseBufferPool()
+        {
+            foreach (var stack in s_bufferPool.Values)
+            {
+                while (stack.Count > 0)
+                {
+                    var b = stack.Pop();
+                    if (b != null) b.Release();
+                }
+            }
+            s_bufferPool.Clear();
+            s_pooledBufferBytes = 0;
+        }
+
+        private void OnApplicationQuit()
+        {
+            ReleaseBufferPool();
         }
 
         /// <summary>编辑器验证用：把材质直接注入，绕开 Shader.Find 在批处理下的不确定性。</summary>
@@ -801,14 +1324,24 @@ namespace FishDemo.Rendering
             Initialize();
         }
 
-        /// <summary>验证用：取第 i 个实例的世界位置，用于确认数据源正确。</summary>
-        public Vector3 GetInstancePosition(int i) =>
-            _instances != null && i >= 0 && i < _instances.Length
+        /// <summary>验证用：取第 i 个实例的世界位置，用于确认数据源正确。
+        /// 流式模式下 i 是「驻留实例」的全局下标（按 chunk 加入顺序拼接）。</summary>
+        public Vector3 GetInstancePosition(int i)
+        {
+            if (_streaming)
+            {
+                if (!_positions.IsCreated || i < 0 || i >= _positions.Length)
+                    return Vector3.zero;
+                var p = _positions[i];
+                return new Vector3(p.x, p.y, p.z);
+            }
+            return _instances != null && i >= 0 && i < _instances.Length
                 ? new Vector3(_instances[i].Position.x, _instances[i].Position.y, _instances[i].Position.z)
                 : Vector3.zero;
+        }
 
-        /// <summary>验证用：实例总数（来自数据源，不是序列化字段）。</summary>
-        public int InstanceCount => _instances?.Length ?? 0;
+        /// <summary>实例总数：非流式 = 数据源全长；流式 = 当前驻留 chunk 的实例和。</summary>
+        public int InstanceCount => _streaming ? _instanceCount : (_instances?.Length ?? 0);
 
         /// <summary>诊断用：让 CullJob 打印前 N 次执行的内部状态。排查完应置 0。</summary>
         public void SetDebugCullShots(int count) => _debugCullShots = count;
@@ -931,6 +1464,9 @@ namespace FishDemo.Rendering
 
             // 重新贴地后：实例数据变了，必须重传所有 batch 的 buffer 并刷新包围盒。
             BuildInstances();
+            // 高度变化会改变空间分块，块→batch 的映射必须重算（batch 划分本身不变）。
+            AssignBlockBatches();
+            BuildBlockArray();
             foreach (var b in _batches)
                 UploadInstanceData(b.Buffer, b.Start, b.Count);
 
@@ -949,8 +1485,10 @@ namespace FishDemo.Rendering
         {
             if (!_ready)
                 return;
-            GUI.Label(new Rect(12, 12, 420, 22),
-                $"GrassBRG M1 | 实例 {_instanceCount} | 可见 {_lastVisibleCount}");
+            GUI.Label(new Rect(12, 12, 480, 22),
+                _streaming
+                    ? $"GrassBRG 流式 | chunk {_streamChunks.Count} | 驻留实例 {_instanceCount:N0} | 可见 {_lastVisibleCount}"
+                    : $"GrassBRG M2 | 实例 {_instanceCount:N0} | 可见 {_lastVisibleCount}");
         }
 
         // ───────────────────────── 数据准备 ─────────────────────────
@@ -1107,40 +1645,16 @@ namespace FishDemo.Rendering
                       $"（{kBlockSize}m 网格，{gridW}x{gridH}）；{typeStat}");
         }
 
-        /// <summary>一个空间块：实例区间 + 剔除用 AABB。</summary>
-        private struct GrassBlock
-        {
-            public int Start;
-            public int Count;
-            public float3 Center;
-            /// <summary>AABB 半尺寸（xyz）。用于精确的平面-盒支持函数。</summary>
-            public float3 HalfExtent;
-            /// <summary>
-            /// 本块实例的 detail 原型类型（0..6）。
-            /// 分块键含类型，所以同一块内类型必然一致——
-            /// 这是「一个 draw command 只能用一个 mesh」的硬约束决定的。
-            /// </summary>
-            public int TypeIndex;
-        }
-
         /// <summary>空间分块边长（米）。32m 在「块数量」与「块内实例数」间取平衡。</summary>
         private const float kBlockSize = 32f;
 
-        /// <summary>块表（非空块）。剔除时只遍历它。</summary>
+        /// <summary>块表（非空块，非流式路径）。剔除时只遍历它。</summary>
         private List<GrassBlock> _blocks;
 
         /// <summary>
-        /// 全局实例号 → batch 索引（1265 万条 int，约 50MB）。
-        /// 只在 batch 划分确定后生成一次；batch 按类型段切分，无法用公式推导。
-        /// </summary>
-        private NativeArray<int> _batchOfInstance;
-
-        /// <summary>各 batch 的起始全局实例号。</summary>
-        private NativeArray<int> _batchStartNative;
-
-        /// <summary>
         /// 块表的 NativeArray 形式（供 Burst Job 使用）。
-        /// 在 BuildInstances 时一次性生成，避免每帧从 List 转换产生托管分配。
+        /// 块结构自带 batch 索引，不再需要「实例号 → batch」的全局查找表
+        /// （旧表 435 万条 int ≈ 17MB，且随实例数线性增长）。
         /// </summary>
         private NativeArray<GrassBlock> _blocksNative;
 
@@ -1266,7 +1780,8 @@ namespace FishDemo.Rendering
             for (int i = 0; i < _instanceCount; i++)
                 _positions[i] = _instances[i].Position;
 
-            BuildBlockArray();
+            // 块表的 batch 字段要等 batch 划分完成才能填，所以 BuildBlockArray
+            // 由 Initialize / TryReground 在 AssignBlockBatches 之后调用。
 
             _visibleCount = new NativeArray<int>(1, Allocator.Persistent);
             _lodCounts = new NativeArray<int>(kLodCount, Allocator.Persistent);
@@ -1437,6 +1952,36 @@ namespace FishDemo.Rendering
                 packed[o + 3] = math.asuint(inst.Scale * _scaleMultiplier);
             }
 
+            buffer.SetData(packed);
+            packed.Dispose();
+        }
+
+        /// <summary>
+        /// 流式路径的上传：数据源是原生数组，不经过托管 GrassInstance[]。
+        /// 打包缓冲用 Allocator.Temp（原生内存，不产生托管垃圾）。
+        /// </summary>
+        private void UploadInstanceData(GraphicsBuffer buffer, NativeArray<GrassInstance> src, int start, int count)
+        {
+            var packed = new NativeArray<uint>(count * 8, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+            for (int i = 0; i < count; i++)
+            {
+                var inst = src[start + i];
+                int o = i * 4;
+                packed[o + 0] = math.asuint(inst.Position.x);
+                packed[o + 1] = math.asuint(inst.Position.y);
+                packed[o + 2] = math.asuint(inst.Position.z);
+                packed[o + 3] = math.asuint(inst.YawRadians / (2f * math.PI));
+            }
+            int baseOffset = count * 4;
+            for (int i = 0; i < count; i++)
+            {
+                var inst = src[start + i];
+                int o = baseOffset + i * 4;
+                packed[o + 0] = math.asuint(inst.Normal.x);
+                packed[o + 1] = math.asuint(inst.Normal.y);
+                packed[o + 2] = math.asuint(inst.Normal.z);
+                packed[o + 3] = math.asuint(inst.Scale * _scaleMultiplier);
+            }
             buffer.SetData(packed);
             packed.Dispose();
         }
@@ -1757,14 +2302,24 @@ namespace FishDemo.Rendering
                 return default;
             }
 
-            // 关键一致性检查：查找表长度必须覆盖全部实例，否则 Job 会读到越界/垃圾
-            // （表现为整片草消失且无报错）。初始化时序出问题时这里会暴露。
-            if (!_batchOfInstance.IsCreated || _batchOfInstance.Length < _positions.Length
-                || !_batchStartNative.IsCreated || _batches == null || _batches.Count == 0)
+            // 空态（流式模式刚启动，或所有 chunk 都已卸载）不是错误：直接输出空命令。
+            if (_batches == null || _batches.Count == 0 || !_positions.IsCreated || _positions.Length == 0)
             {
-                Debug.LogError($"[GrassBRG] 剔除表未就绪：batchOfInstance={(_batchOfInstance.IsCreated ? _batchOfInstance.Length : -1)}" +
-                               $" positions={_positions.Length} batchStart={(_batchStartNative.IsCreated ? _batchStartNative.Length : -1)}" +
-                               $" batches={_batches?.Count ?? -1}");
+                output->visibleInstanceCount = 0;
+                output->visibleInstances = null;
+                output->drawCommandCount = 0;
+                output->drawCommands = null;
+                output->drawRangeCount = 0;
+                output->drawRanges = null;
+                return default;
+            }
+
+            // 非空态下的结构性校验：块表必须存在，否则 Job 读到空表 = 整片草消失。
+            if (!_blocksNative.IsCreated || _blocksNative.Length == 0)
+            {
+                Debug.LogError($"[GrassBRG] 剔除块表未就绪：positions={_positions.Length}" +
+                               $" blocks={(_blocksNative.IsCreated ? _blocksNative.Length : -1)}" +
+                               $" batches={_batches.Count}");
                 output->visibleInstanceCount = 0;
                 output->visibleInstances = null;
                 output->drawCommandCount = 0;
@@ -1894,8 +2449,6 @@ namespace FishDemo.Rendering
                 CullPixelHeight = _enableLod ? _cullPixelHeight : 0f,
                 DebugShot = Mathf.Max(0, _debugCullShots),
                 Blocks = _blocksNative,
-                BatchOfInstance = _batchOfInstance,
-                BatchStart = _batchStartNative,
                 BatchCount = batchCount,
                 // 块级距离剔除上限：与逐实例的像素阈值同一套换算。
                 // 关 LOD 时不做距离剔除（0 = 不限），保持「画全部」的语义。
@@ -1976,23 +2529,6 @@ namespace FishDemo.Rendering
             /// </summary>
             [ReadOnly] public NativeArray<GrassBlock> Blocks;
 
-            /// <summary>
-            /// 实例号 → batch 索引。
-            ///
-            /// 为什么用表而不是公式：batch 现在按「类型段 × 16MB」切分，
-            /// 每个类型的段起点不同、段内还可能再切，无法用一条除法公式覆盖
-            /// （旧代码 i / BatchMaxInstances 只对均匀切分成立）。
-            /// 表在 BuildInstances 时一次性生成（int[N]，1265 万条约 50MB），
-            /// 换取剔除内层循环 O(1) 且无分支。
-            /// </summary>
-            [ReadOnly] public NativeArray<int> BatchOfInstance;
-
-            /// <summary>
-            /// 每个 batch 的起始全局实例号（索引 = batch 号）。
-            /// 用于把全局实例号换算成 batch 内相对索引。
-            /// </summary>
-            [ReadOnly] public NativeArray<int> BatchStart;
-
             public void Execute()
             {
                 bool lodEnabled = Lod0PixelHeight > 0f && LodPixelScale > 0f;
@@ -2034,9 +2570,9 @@ namespace FishDemo.Rendering
                         if (lod < 0)
                             continue;
 
-                        // batch 由查找表给出：batch 按「类型段 × 16MB」切分，
-                        // 实例号与 batch 号不再是简单的除法关系。
-                        int batch = BatchOfInstance[i];
+                        // batch 由块直接给出（块在创建时就绑定了 batch），
+                        // 不需要「实例号 → batch」的全局查找表。
+                        int batch = block.BatchIndex;
                         counts[batch * 3 + lod]++;
                     }
                 }
@@ -2071,17 +2607,16 @@ namespace FishDemo.Rendering
                         if (lod < 0)
                             continue;
 
-                        // batch 由查找表给出（类型段 × 16MB 切分，不能用除法）。
-                        int batch = BatchOfInstance[i];
+                        int batch = block.BatchIndex;
                         int slot = batch * 3 + lod;
 
                         // 写「batch 内相对索引」而不是全局号：
                         // shader 用 SV_InstanceID 作为 buffer 内的相对偏移，
                         // metadata 基址属于该 batch 自己的 buffer。
-                        // batch 起点要按它的实际起始实例号算，不能再用 batch*BatchMaxInstances
-                        // （那只有在均匀切分时才成立）。
-                        int batchStart = BatchStart[batch];
-                        VisibleInstances[writePtr[slot]++] = i - batchStart;
+                        // 流式模式下每个 chunk 有自己的数组，先减 ChunkBase 回到
+                        // chunk 局部下标，再减 batch 起点；非流式 ChunkBase=0。
+                        int local = i - block.ChunkBase;
+                        VisibleInstances[writePtr[slot]++] = local - block.BatchStart;
                     }
                 }
 

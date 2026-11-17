@@ -35,6 +35,9 @@ SECTR 与 GTS 都没有自己的 asmdef，其编辑器 API（`SECTR_TerrainWindo
 | `DetailUvProbe.cs` | 打印 7 个原型的 UV 范围 / subMesh 数 / 图集尺寸（排查贴图采样错位） | `-executeMethod DetailUvProbe.Run` |
 | `TreeRenderProbe.cs` | 诊断树的批次构成：原型 / LOD / 材质 / shader keyword | `-executeMethod TreeRenderProbe.Run` |
 | `GrassCloseupVerify.cs` | **需真实图形设备**：贴地视角验证草可见 + LOD 分层 + 落截图 | `-executeMethod GrassCloseupVerify.Run` |
+| `GrassNativeDataVerify.cs` | **可 `-nographics`**：验原生读盘/排序与托管读取逐实例一致、块表覆盖与类型连续 | `-executeMethod GrassNativeDataVerify.Run` |
+| `GrassStreamingVerify.cs` | 空场景验流式增删/重加/渲染/低内存清空（渲染需真实图形设备） | `-executeMethod GrassStreamingVerify.Run` |
+| `GrassWorldStreamingVerify.cs` | World 集成：管理器是否流式、SECTR 是否驱动驻留、驻留是否远小于全量 | `-executeMethod GrassWorldStreamingVerify.Run` |
 | `PegasusTourSetup.cs` | 布置环绕巡游路线（半径 1100m / 16 POI / 高度烘焙进 POI） | 菜单 `FishDemo/World/② 布置 Pegasus 环绕巡游` |
 | `PegasusTourVerify.cs` | 巡游运行时验收：驱动相机 / 环形半径 / SECTR 加载 / 贴地高度 / F 键切换 | `-executeMethod PegasusTourVerify.Run` |
 | `GtsConvertOne.cs` | 单块 Terrain→GTS Mesh（**一进程一块**） | `-gtsChunk "<名>" -gtsFirst 0/1` |
@@ -55,6 +58,7 @@ SECTR 与 GTS 都没有自己的 asmdef，其编辑器 API（`SECTR_TerrainWindo
 | `AtmosphereSetup.cs` | 把 Enviro 3 接进 World/URP：宏、模块、质量档、RendererFeature、depth；幂等可撤 | `EnsureDefines` / `Apply` / `Remove` / `Report` |
 | `AtmosphereVerify.cs` | **需真实图形设备**：Play Mode 验昼夜/天气/体积雾/光，8 张截图 + 状态断言 | `-executeMethod AtmosphereVerify.Run` |
 | `AtmosphereTimeVerify.cs` | **可 `-nographics`**：验昼夜控制接口（设时刻 / 平移 / 暂停 / 流速 / 主光响应） | `-executeMethod AtmosphereTimeVerify.Run` |
+| `HudPixelVerify.cs` | **需真实图形设备、且不能加 `-batchmode`**（batchmode 下 `OnGUI` 不被调用）：切窄屏抓真图，数 HUD 区域像素，证明文字真的可见 | `-executeMethod HudPixelVerify.Run` |
 
 ## 3. 铁律
 

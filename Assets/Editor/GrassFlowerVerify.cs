@@ -58,6 +58,8 @@ public static class GrassFlowerVerify
 
         SessionState.SetString(PendingKey + ".Pre", sb.ToString());
         SessionState.SetBool(PendingKey, true);
+        // 花色验收需要全世界实例都在（统计各类型分布），强制本次走全量加载。
+        GrassBRGManager.RequestFullLoad();
         EditorApplication.isPlaying = true;
     }
 

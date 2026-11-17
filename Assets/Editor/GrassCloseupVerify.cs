@@ -55,6 +55,9 @@ public static class GrassCloseupVerify
 
         SessionState.SetString(PendingKey + ".Pre", sb.ToString());
         SessionState.SetBool(PendingKey, true);
+        // 本验收要拍「全世界都能看见草」，不能等 SECTR 逐块流式加载：
+        // 强制本次 Play Mode 走旧的全量读盘路径（只影响本会话）。
+        GrassBRGManager.RequestFullLoad();
         EditorApplication.isPlaying = true;
     }
 

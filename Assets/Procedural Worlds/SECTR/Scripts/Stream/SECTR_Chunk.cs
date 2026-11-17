@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using System.Collections.Generic;
 using System.Collections;
+using FishDemo.Gameplay;
 
 /// \ingroup Stream
 /// Chunk is the loadable/streamable version of a SECTR_Sector. The
@@ -38,6 +39,7 @@ public class SECTR_Chunk : MonoBehaviour
 	private static SECTR_Chunk chunkActivating = null;
 	private static LinkedList<SECTR_Chunk> activationQueue = new LinkedList<SECTR_Chunk>();
 	private static bool requestedDeferredUnload = false;
+
 	#endregion
 
 	#region Public Interface
@@ -187,12 +189,12 @@ public class SECTR_Chunk : MonoBehaviour
 			_TrySceneActivation();
 			if(asyncLoadOp == null || asyncLoadOp.isDone)
 			{
-				if(asyncLoadOp != null)
-				{
+				// [FishDemo] 用 Remove(this) 而不是 RemoveFirst()：加载完成顺序和入队顺序
+				// 可能不同，按对象移除更稳，避免误删队列里的其他 chunk。
+				if(chunkActivating == this)
 					chunkActivating = null;
-					activationQueue.RemoveFirst();
-					asyncLoadOp = null;
-				}
+				activationQueue.Remove(this);
+				asyncLoadOp = null;
 				loadState = LoadState.Loaded;
 				if(Changed != null)
 				{
@@ -282,7 +284,10 @@ public class SECTR_Chunk : MonoBehaviour
 			cachedSector.DisonnectTerrainNeighbors();
 		}
 
-		SceneManager.UnloadSceneAsync(ScenePath);
+		// [FishDemo] 跟踪异步卸载；卸载完成前不做 Resources.UnloadUnusedAssets。
+		AsyncOperation unloadOp = SceneManager.UnloadSceneAsync(ScenePath);
+		if(unloadOp != null)
+			SectrStreamingRuntime.TrackUnload(unloadOp);
 		chunkRoot = null;
 		chunkSector = null;
 		recenterChunk = false;
@@ -446,8 +451,11 @@ public class SECTR_Chunk : MonoBehaviour
 
 	private void _TrySceneActivation()
 	{
+		// [FishDemo] 保留原版逻辑。我们不再用 allowSceneActivation=false 做逐块激活：
+		// Unity 2022.3 在批量 additive 加载时会让某个 scene 停在 progress=0.90、isDone 永不为真，
+		// 反而堵死后续激活。改为在 RegionLoader 侧按 wall-clock 间隔发起 LoadSceneAsync。
 		if(chunkActivating == null &&
-			asyncLoadOp != null && !asyncLoadOp.allowSceneActivation && asyncLoadOp.progress >= 0.9f && 
+			asyncLoadOp != null && !asyncLoadOp.allowSceneActivation && asyncLoadOp.progress >= 0.9f &&
 		    activationQueue.Count > 0 && activationQueue.First.Value == this)
 		{
 			chunkActivating = this;
@@ -457,8 +465,11 @@ public class SECTR_Chunk : MonoBehaviour
 
 	private void _UnloadResources()
 	{
-		Resources.UnloadUnusedAssets();
+		// [FishDemo] 原版在这里同步调用 Resources.UnloadUnusedAssets()，
+		// 是 editor 下 chunk 卸载卡顿的主因（全量扫描 + AssetDatabase）。
+		// 交给运行时宿主：等 UnloadSceneAsync 完成、按冷却、用异步版本清理。
 		requestedDeferredUnload = false;
+		SectrStreamingRuntime.RequestAssetScan();
 	}
 
 	private IEnumerator _DeferredUnload()

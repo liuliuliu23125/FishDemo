@@ -263,3 +263,108 @@ chunk 内其余 GameObject 几何约 267 个 `MeshRenderer`（Gaia 撒的树桩/
 | 地形 draw（每 chunk） | 1 个 GTS mesh（8 层 splat 单 pass） |
 
 → 瓶颈排序（mesh 化后）：**草 > 树 > 地形 mesh**。草是下一步重点。
+
+## 12. SECTR 流式补丁与缓存（2026-11-17）
+
+### 12.1 改前的问题
+
+| 问题 | 代码事实 | 后果 |
+|---|---|---|
+| 激活队列是死代码 | `SECTR_Chunk` 从未把 `allowSceneActivation` 设为 false；Unity 默认 true | 9 个 chunk 同时激活，editor 一帧大卡 |
+| 加载/卸载无预算 | `RegionLoader.Update` 一帧对全部新 sector `AddReference`，对全部离开 sector `RemoveReference` | 切换时一次发起 9 个 `LoadSceneAsync` / `UnloadSceneAsync` |
+| 同步资产扫描 | `_UnloadResources` 调同步 `Resources.UnloadUnusedAssets()` | editor 下全量扫描 + AssetDatabase，卸载尖峰 |
+| 无缓存 | 引用归零立即卸载 | 切相机/边界回走反复加载，碎片累积 |
+| 卸载未等待 | `UnloadSceneAsync` 返回值被忽略，状态立即置 Unloaded | 快速回头可能和卸载竞态 |
+
+实测驻留 **12 个 chunk**、峰值 **15 个**（`Logs/pegasus-tour-verify.txt:7,13,17`：
+"当前驻留 12" / "已加载 chunk 数 [0, 15]"）。单块约 **12.4MB** 资产
+（GTS 用户数据 ~8.3MB + TerrainData 4.08MB，`Assets/GTS User Data/Scenes/`、
+`Assets/Scenes/World/TerrainSplits/` 实测），一次切换约 **150MB**。
+
+> 早先本文写的"4~9 个"来自 `LoadSize=768` 的理论推算，与实测不符：
+> 550m 边长 chunk 在 768m 立方 AABB 里最多可命中 9 块，但 loader 切换/回走时
+> 旧块尚未释放完，实际驻留会到 12~15。以日志为准。
+
+### 12.2 补丁内容
+
+| 文件 | 改动 |
+|---|---|
+| `SECTR_Chunk.cs` | 跟踪 `UnloadSceneAsync`；资产扫描交给运行时宿主；保留原版自动激活（**不用** `allowSceneActivation=false`，2022.3 批量 additive 下会卡在 progress=0.90） |
+| `SECTR_RegionLoader.cs` | 每帧最多 2 个加载引用 / 4 个释放引用；用 `SectrChunkCache` 接管释放的引用 |
+| `SectrChunkCache.cs`（新增） | TTL + LRU 保留；引用转移不额外 AddReference；淘汰时才真正卸载 |
+| `SectrStreamingRuntime.cs`（新增） | 每帧 Tick 缓存；等卸载完成、按冷却、异步 `UnloadUnusedAssets`；低内存清缓存 |
+| `ProjectSettings.asset` | `gcIncremental: 1`（兜底；**不接管 GCMode**） |
+
+> **不要试图用 `allowSceneActivation=false` 修原版的激活队列**：Unity 2022.3 在批量
+> additive 加载时会让某个 scene 停在 `progress=0.90`、`isDone` 永不为真，反而堵死后续激活
+> （2026-11-17 实测）。错峰靠 `SectrChunkCache.LoadInterval` 从加载源头分散，自动激活保持开启。
+
+**升级 SECTR 会覆盖前两个文件**；原始副本在 `Tools/sectr-patches/*.orig`。
+
+### 12.3 可调参数
+
+| 参数 | 默认（editor / 真机） | 说明 |
+|---|---|---|
+| `SectrChunkCache.LoadInterval` | 0.05s | 两次 `LoadSceneAsync` 的最小 wall-clock 间隔（激活自然错开） |
+| `SectrChunkCache.MaxLoadsPerFrame` | 2 | 每帧最多发起几个 `LoadSceneAsync` |
+| `SectrChunkCache.MaxReleasesPerFrame` | 4 | 每帧最多释放几个引用 |
+| `SectrChunkCache.MaxCachedChunks` | 6 / 4 | 缓存块数；约 75MB / 50MB |
+| `SectrChunkCache.TtlSeconds` | 15 / 10 | 缓存保留时间 |
+| `SectrChunkCache.EvictInterval` | 0.1s | 淘汰节流 |
+| `SectrChunkCache.AssetScanCooldown` | 30 / 10s | 资产扫描冷却 |
+| `SectrGrassStreamer.MaxResidentChunks` | 24 | 草驻留 chunk 硬上限（CPU positions + GPU buffer） |
+| `SectrGrassStreamer.PollInterval` | 0.1s | 对齐 `SECTR_Chunk.IsLoaded` 的间隔；每次最多加/卸一个 |
+
+### 12.4 验证与已知项
+
+- `LakeOrbitVerify.Run`：9/9 PASS（切相机、loader 唯一、Crest/SECTR/tag 跟随）。
+- `PegasusTourVerify.Run`：PASS，触达 **36/36**，驻留上限 **15** 块
+  （`Logs/pegasus-load-interval.log:1238`），证明限流后仍能覆盖全世界。
+  该测试已改为使用 `PegasusManager.m_target` 作为巡游相机，并在扫描阶段禁用 Manager，
+  避免 `LakeCameraRig` / Pegasus `LateUpdate` 抢相机。
+- **缓存命中率目前很低**：`Logs/pegasus-load-interval.log:1722` 是"缓存命中 2 次，
+  淘汰 28 次"。原因是该测试是单方向绕圈，走完 36 块不再回头——不是缓存失效。
+  切相机（两个 loader 位置重叠）才是命中场景，`LakeOrbitVerify` 里能观察到复用。
+  真机要按实际玩法路径再评估 `MaxCachedChunks` / `TtlSeconds`。
+- `GrassNativeDataVerify.Run`（`-nographics`）：原生读盘/排序与托管读取逐实例一致，PASS。
+- `GrassStreamingVerify.Run`：空态 → 加两块 → 卸一块 → 重加 → 渲染（`LastVisibleCount=109`）
+  → 低内存清空，全项 PASS（`Logs/Grass/streaming.txt`）。
+- `GrassWorldStreamingVerify.Run`：World 场景 Play Mode，确认管理器进入流式、
+  `SectrGrassStreamer` 能驱动驻留、且远小于全量 429 万，PASS（`Logs/Grass/world-streaming.txt`）。
+- 真机需 Profile：单 chunk 读盘+排序+上传的主线程耗时、驻留上限 24 的实际内存。
+
+### 12.5 内存归属：不接管 GC，把大块数据移出托管堆
+
+`gcIncremental: 1` 保留（非增量收集无法分帧），但**不再设置 `GCMode=Manual`**。
+原因：GC 成本由「存活堆大小 × 分配速率」决定，接管触发时机只是把同样贵的标记
+挪到别的帧。真正有效的是让大块数据**根本不进托管堆**。
+
+| 数据 | 旧做法 | 现做法 |
+|---|---|---|
+| 草实例（435 万 × 32B） | 逐 chunk `GrassInstance[]`（133MB）+ 合并数组（133MB）+ 排序副本（133MB） | `GrassChunkFile.Read/SortIntoBlocks`：`NativeArray` 读盘/排序，上传后只留 `float3` 位置（12B/实例） |
+| 草驻留范围 | 启动读全部 36 块，与相机无关 | `SectrGrassStreamer` 跟随 SECTR `IsLoaded`，卸载即释放；硬上限 24 块 |
+| 草 GPU buffer | 一把 133MB，永不释放 | 逐 chunk 分配，32MB 上限的复用池 |
+| 树 | `TerrainData.treeInstances`（native） | 不变。树不是 GameObject，**没有对象池可做**；chunk 场景缓存已经覆盖 |
+
+**编辑器的 `GrassChunkData` 仍用托管数组**：那是 `GrassBaker` / `GrassMultiChunkVerify`
+等一次性工具的通路，不进 Play Mode。改运行时数据时不要顺手把它接进来。
+
+**低内存应急**：`SectrStreamingRuntime.OnLowMemory` 会调 `SectrGrassStreamer.FlushAll()`，
+清空全部草驻留并 `ReleaseBufferPool()`——草用的是 `NativeArray` + `GraphicsBuffer`，
+`Resources.UnloadUnusedAssets` 回收不到它们，必须显式释放。
+
+#### 资源加载现状（2026-11-17 复核，**不是 YooAsset**）
+
+| 资源 | 当前链路 | YooAsset 调用方 |
+|---|---|---|
+| chunk 场景 | `SECTR_Chunk` → `SceneManager.LoadSceneAsync` | **无** |
+| 草数据 | `GrassChunkFile.Read` → `FileStream` 直读 `GrassData/*.bytes` | **无** |
+| 树木花草贴图/原型 | 随 chunk 场景 / 序列化引用加载 | **无** |
+| `YooAssetInitializer` / `AssetLoader` | 已实现，但 `InitializeAsync()` 全工程无调用 | — |
+
+结论：**YooAsset 目前只是"已实现的入口"，不是实际加载路径**。打包后 `Assets/` 不存在，
+草会回退到旧的全量/合成方阵路径；正式版必须先把上面三条接进 YooAsset。
+
+> 验收：`GrassNativeDataVerify.Run`（`-nographics`）验证原生读/排序与托管读取逐实例一致；
+> Play Mode 下看 `GrassBRGManager` HUD 的「chunk / 驻留实例」两项。
+> `ManagedHeapGovernor` 已删除；不要再引入 `GCMode=Manual`。

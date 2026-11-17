@@ -70,8 +70,10 @@ Enviro 运行时也会写 `RenderSettings.skybox`。**不要加第二个天空�
 
 **不要**往主场景加地形或静态大物件 —— 它们不会被 SECTR 分块，会常驻内存。可流式的内容应放进 chunk 或走资源层。
 
-**例外：BRG 草是全量常驻的**（≈320MB），不随 SECTR 流式。这是 M3 的待办，
-不是设计意图（[grass_brg_progress](../../Docs/grass_brg_progress.md) §6）。
+**草已改为随 SECTR 流式**（`Gameplay/SectrGrassStreamer`，2026-11-17）：
+chunk 加载才读对应 `.bytes`，卸载即释放，驻留上限 24 块。
+编辑器的 `GrassSceneSetupM2` 等工具仍会全量读盘（约 320MB），那是工具行为，不是运行时
+（[grass_brg_progress](../../Docs/grass_brg_progress.md) §4.5 / §6）。
 
 ## 4. Build Settings
 

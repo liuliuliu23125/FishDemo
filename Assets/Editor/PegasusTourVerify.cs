@@ -62,8 +62,7 @@ public static class PegasusTourVerify
         var scene = EditorSceneManager.OpenScene(WorldScenePath, OpenSceneMode.Single);
 
         var manager = Object.FindObjectOfType<Pegasus.PegasusManager>();
-        var camera = Object.FindObjectsOfType<Camera>()
-            .FirstOrDefault(c => c.CompareTag("MainCamera")) ?? Object.FindObjectOfType<Camera>();
+        var camera = FindTourCamera(manager);
 
         if (manager == null) { W("FAIL：场景里没有 PegasusManager"); Flush(sb); return; }
         if (camera == null) { W("FAIL：场景里没有相机"); Flush(sb); return; }
@@ -97,8 +96,7 @@ public static class PegasusTourVerify
 
         // 重新取引用：进 Play Mode 重载了场景，之前的对象引用已失效。
         var manager = Object.FindObjectOfType<Pegasus.PegasusManager>();
-        var camera = Object.FindObjectsOfType<Camera>()
-            .FirstOrDefault(c => c.CompareTag("MainCamera")) ?? Object.FindObjectOfType<Camera>();
+        var camera = FindTourCamera(manager);
 
         if (manager == null || camera == null)
         {
@@ -109,8 +107,65 @@ public static class PegasusTourVerify
             return;
         }
 
+        PrepareTourCamera(camera);
+
         var driver = new GameObject("~PegasusVerifyDriver").AddComponent<VerifyDriver>();
         driver.Begin(W, sb, camera, manager);
+    }
+
+    /// <summary>
+    /// 优先用 PegasusManager 的 target 作为巡游相机。
+    /// 当前场景的 LakeCameraRig 默认切到环湖轨道相机，并把 MainCamera tag 搬走；
+    /// 继续按 tag 找会拿到轨道相机，测到的就不是 Pegasus 巡游。
+    /// </summary>
+    private static Camera FindTourCamera(Pegasus.PegasusManager manager)
+    {
+        if (manager != null && manager.m_target != null)
+        {
+            var targetCamera = manager.m_target.GetComponent<Camera>();
+            if (targetCamera != null)
+                return targetCamera;
+        }
+
+        return Object.FindObjectsOfType<Camera>()
+            .FirstOrDefault(c => c.CompareTag("MainCamera")) ?? Object.FindObjectOfType<Camera>();
+    }
+
+    /// <summary>
+    /// 停掉 LakeCameraRig / 轨道相机，恢复巡游相机的 Camera 与 SECTR loader。
+    /// 否则 rig 会在 Start 里禁用巡游相机和它的 loader，导致整个测试 0 chunk。
+    /// </summary>
+    private static void PrepareTourCamera(Camera camera)
+    {
+        if (camera == null)
+            return;
+
+        var rig = Object.FindObjectOfType<FishDemo.Gameplay.LakeCameraRig>();
+        if (rig != null)
+            rig.enabled = false;
+
+        var orbit = Object.FindObjectOfType<FishDemo.Gameplay.LakeOrbitCamera>();
+        if (orbit != null)
+        {
+            orbit.enabled = false;
+            var orbitCamera = orbit.GetComponent<Camera>();
+            if (orbitCamera != null)
+            {
+                orbitCamera.enabled = false;
+                var orbitLoader = orbitCamera.GetComponent<SECTR_RegionLoader>();
+                if (orbitLoader != null)
+                    orbitLoader.enabled = false;
+            }
+        }
+
+        var tourController = camera.GetComponent<FishDemo.Gameplay.PegasusTourController>();
+        if (tourController != null)
+            tourController.enabled = false;
+
+        camera.enabled = true;
+        var loader = camera.GetComponent<SECTR_RegionLoader>();
+        if (loader != null)
+            loader.enabled = true;
     }
 
     /// <summary>
@@ -142,12 +197,14 @@ public static class PegasusTourVerify
         private const int SweepSteps = 96;
 
         /// <summary>
-        /// 扫描时每步停留的帧数。SECTR 异步加载单块约 130ms，
-        /// 60fps 下 12 帧 ≈ 200ms，留出余量让加载完成再记录。
+        /// 扫描时每步停留的**秒数**。不能用帧数：batchmode 帧率可达数百 fps，
+        /// 12 帧可能只有 30ms，而 SECTR 补丁后 9 个 chunk 的激活需要约 0.7s。
+        /// 0.8s 覆盖“加载 + 逐块激活”后仍留一点余量。
         /// </summary>
-        private const int SweepDwellFrames = 12;
+        private const float SweepDwellSeconds = 0.8f;
 
-        private int _sweepDwell;
+        private float _sweepDwellUntil;
+        private SECTR_Chunk[] _chunks;
 
         private bool _toggleTested;
         private bool _manualEntered;
@@ -158,6 +215,8 @@ public static class PegasusTourVerify
             Pegasus.PegasusManager manager)
         {
             _w = w; _sb = sb; _camera = camera; _manager = manager;
+            // chunk 组件都在主场景里，数量固定；缓存起来避免每帧 FindObjectsOfType。
+            _chunks = Object.FindObjectsOfType<SECTR_Chunk>();
             gameObject.hideFlags = HideFlags.DontSave;
         }
 
@@ -204,7 +263,9 @@ public static class PegasusTourVerify
                 TestManualToggle();
             }
 
-            if (elapsed >= ObserveSeconds)
+            // 阶段2 按 wall-clock 每步 0.8s，96 步约 77s；不能到 60s 就强行结束，
+            // 否则只扫到前 30 步，触达数会被误判成很低。
+            if (elapsed >= ObserveSeconds && (!_sweeping || _sweepDone))
             {
                 _finished = true;
                 Report();
@@ -221,6 +282,9 @@ public static class PegasusTourVerify
             {
                 _sweeping = true;
                 _manager.StopFlythrough();
+                // StopFlythrough 仍可能在 LateUpdate 把相机拉回最后目标；
+                // 全圈扫描要独占相机，直接禁用 Manager，避免每帧覆盖驱动器的位置。
+                _manager.enabled = false;
                 _w($"阶段2：已停用 Pegasus，开始全圈扫描（{SweepSteps} 步）");
             }
 
@@ -228,15 +292,13 @@ public static class PegasusTourVerify
             {
                 if (_sweepStep < SweepSteps)
                 {
-                    // 每步停若干帧再前进。
+                    // 每步停足 wall-clock 时间再前进。
                     //
-                    // 为什么必须停：SECTR 用 SceneManager.LoadSceneAsync 异步加载，
-                    // 一帧内不会完成（实测单块 Deserialize+Integration 约 130ms）。
-                    // 若每帧都跳到下一点，chunk 还没加载完就被跳走，
-                    // 记录到的触达数会明显偏低（实测 22/36，而几何上应覆盖 36）。
-                    if (++_sweepDwell < SweepDwellFrames)
+                    // 为什么不能按帧停：batchmode 帧率可达数百 fps，12 帧可能只有 30ms，
+                    // 而补丁后 9 个 chunk 要按 50ms 间隔发起加载，激活再错开（约 0.5s+）。
+                    // 按帧停会把“还没激活”误判成“没加载”。
+                    if (Time.unscaledTime < _sweepDwellUntil)
                         return;
-                    _sweepDwell = 0;
 
                     float pct = (float)_sweepStep / SweepSteps;
                     _manager.CalculateTargetAtDistance(
@@ -244,6 +306,7 @@ public static class PegasusTourVerify
                     _camera.transform.position = p;
                     _camera.transform.rotation = r;
                     _sweepStep++;
+                    _sweepDwellUntil = Time.unscaledTime + SweepDwellSeconds;
                 }
                 else if (!_sweepDone)
                 {
@@ -257,9 +320,12 @@ public static class PegasusTourVerify
         private int CountLoaded()
         {
             int loaded = 0;
-            foreach (var c in Object.FindObjectsOfType<SECTR_Chunk>())
+            if (_chunks == null)
+                return 0;
+
+            foreach (var c in _chunks)
             {
-                if (!c.IsLoaded())
+                if (c == null || !c.IsLoaded())
                     continue;
                 loaded++;
                 _loadedSeen.Add(c.ScenePath);
@@ -311,7 +377,8 @@ public static class PegasusTourVerify
             bool driven = _movedDistance > 100f;
             bool onRoute = _minRadius > 1000f && _maxRadius < 1200f;
             // 流式判定：整圈扫下来触达的 chunk 必须明显多于同时驻留数。
-            // 驻留上限由 RegionLoader.LoadSize=768 决定，理论 4 块；触达应接近 36。
+            // 驻留上限由 RegionLoader.LoadSize=768 决定；实测最多 9 块（512m chunk），
+            // 采样点位置只命中 4 块不代表运行时上限。
             bool streaming = _loadedSeen.Count > _maxLoadedChunks + 4;
             bool heightOk = _minY > 200f && _maxY < 500f;   // 贴地 3~8m：地面 280~350 + 8
             bool toggleOk = _manualEntered && _autoRestored;

@@ -153,9 +153,9 @@ depth and keep early-z.
 | LOD | 3 级，阈值 100/25/8 px，三层均采 albedo 图集精灵格 | `GrassBRGManager.cs` |
 | 剔除 | 32m 空间分块 + 块级距离剔除；21.9ms 是 1265 万实例旧测，当前未重测 | `Logs/Grass/perf-probe.txt` |
 | Terrain detail | **已关**（`DetailObjectDistance=0`） | 36 个 chunk 场景 |
-| 内存 | **≈320 MB**（CPU 133 + 位置 50 + GPU 133 MiB，全量常驻） | 估算，未重测 |
+| 内存 | 流式：≈100 MB（15 块驻留，CPU 位置 ~44 + GPU ~58）；全量工具路径仍约 320 MB | 估算，未重测 |
 
-**尚未做**：SECTR 流式、真机验证、阴影/透光。
+**尚未做**：真机验证、阴影/透光。**SECTR 流式已完成**（`SectrGrassStreamer`，2026-11-17）。
 
 详见 [grass_brg_progress](grass_brg_progress.md)。
 
@@ -163,6 +163,14 @@ depth and keep early-z.
 
 **树仍走 Terrain 自带渲染**（`drawTreesAndFoliage=1`），由 TerrainRenderer 提交。
 这与草不同，不要混谈。
+
+**树没有对象池可做**（2026-11-17 澄清）：树不是 GameObject，实例数据在
+`TerrainData.treeInstances`（native），chunk 场景只引用 TerrainData。chunk 卸载后
+引用归零，`Resources.UnloadUnusedAssets` 回收 native 数据；`SectrChunkCache` 的
+TTL/LRU 已经承担了「离开后保留一段时间」的缓存职责。**不要为树新建 GameObject 池**——
+那会引入 46,472 个 GameObject、Renderer 和 LODGroup，比 native 数据贵一到两个数量级。
+真正可能反复加载的是共享的 7 个树原型（mesh/material/impostor 贴图）；
+是否需要用常驻引用固定它们，应先看 Profiler 的资产卸载记录，不要凭猜测加。
 
 > ⚠️ **本节旧版有两处错误结论，已于 2026-11-12 用运行时实测推翻**，详见 §6.3。
 

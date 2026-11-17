@@ -40,14 +40,15 @@
 
 玩家离开 chunk 后**不立即释放**，等 N 秒或走出更大范围才释放。
 
-SECTR 的 `RegionLoader` 就是这个设计（`SECTR_RegionLoader.cs:21-22`）：
+SECTR 的 `RegionLoader` **原版只有卸载滞后，没有延迟卸载**（`SECTR_RegionLoader.cs:21-22`）：
 
 ```csharp
 public Vector3 LoadSize = new Vector3(20f, 10f, 20f);
 // 卸载距离 = LoadSize 的百分比，用于防抖
 ```
 
-有独立的卸载滞后阈值，避免玩家在边界反复横跳导致频繁加载卸载。
+引用归零后 `SECTR_Chunk` 会立即 `UnloadSceneAsync`。本工程在 2026-11-17 的补丁里
+用 `SectrChunkCache` 补上了「TTL + LRU 保留」，见 §7。
 
 **本项目参数建议**（初始，需实测校准）：
 
@@ -68,6 +69,10 @@ public Vector3 LoadSize = new Vector3(20f, 10f, 20f);
 
 **注意**：LRU 淘汰的是 **Asset 引用**（`AssetHandle.Release`），不是 GameObject。两者生命周期分开管理。
 
+**SECTR 现状（2026-11-17）**：`SectrChunkCache` 已实现 scene 粒度的 TTL + LRU，
+默认 editor 6 块 / 真机 4 块，TTL 15s / 10s。它接管 RegionLoader 的引用，
+不额外 AddReference；淘汰时才真正 `UnloadSceneAsync`。
+
 ### 3.3 预加载
 
 按移动方向预加载前方 chunk，消除"走到才加载"的卡顿。
@@ -81,7 +86,10 @@ if (velocity.magnitude > threshold)
 
 - 加载必须在预算内（≤ 3ms/帧，30fps 下可放宽到 5ms）。
 - 使用分帧 + 异步上传。
-- 每帧最多激活 N 个 chunk（参考 SECTR 的 `activationQueue` 节流思路）。
+- 每帧最多激活 N 个 chunk。SECTR 原版的 `activationQueue` **实际未生效**
+  （从未把 `allowSceneActivation` 设为 false）。2026-11-17 补丁改为按 **50ms wall-clock**
+  间隔发起 `LoadSceneAsync`，让激活自然错开；**没有**关闭自动激活——2022.3 批量 additive
+  下 `allowSceneActivation=false` 会让某个 scene 停在 0.90、isDone 永不为真。
 
 ## 4. GPU 资源层：Mesh / Buffer 池
 
@@ -106,8 +114,9 @@ mesh.SetVertices(...);          // 只更新数据，不重新分配
 
 ### 4.2 GraphicsBuffer（植被 BRG）
 
-- 按**最大容量**预分配，chunk 切换时只改内容和 count。
-- 不要为每个 chunk 新建 buffer。
+- 按 chunk 分配、用完归还到**容量的 64k 实例桶**（2MB 粒度），同尺寸直接复用。
+- 池上限 32MB；超限的 buffer 直接 `Release`，避免离屏 chunk 把显存占满。
+- 不要再改回「所有 chunk 共用一个 133MB buffer」：那样卸载 chunk 也释放不了显存。
 
 ## 5. GameObject 层
 
@@ -142,11 +151,24 @@ Chunk 的 Asset 加载           → YooAsset + LRU + 延迟卸载
 
 ## 7. 与 SECTR 的关系
 
-SECTR 已经实现了「区域判定 + 异步加载 + 激活队列节流 + 卸载滞后」。
+SECTR 原版只有「区域判定 + 异步加载 + 卸载滞后」，**没有生效的激活节流，也没有缓存**。
+本工程 2026-11-17 的补丁补齐了：
+
+- 按 50ms wall-clock 间隔发起 `LoadSceneAsync`（不关闭自动激活，规避 2022.3 的 0.90 卡死）；
+- RegionLoader 每帧最多 2 个加载引用 / 4 个释放引用；
+- `SectrChunkCache`：TTL + LRU 保留，切相机时复用重叠 chunk；
+- 卸载完成后才做异步 `UnloadUnusedAssets`，默认 10s（editor 30s）冷却。
+
+**托管 GC 不在这一层**，且**不要试图接管它**。正确做法是把大块反复使用的数据
+移出托管堆：草实例改走 `NativeArray` + `GrassChunkFile`（原生读盘/排序），
+驻留量再按 SECTR chunk 流式封顶。`gcIncremental: 1` 保留作为兜底，但不设
+`GCMode=Manual`、不写每帧收集预算。见 [terrain_streaming](terrain_streaming.md) §12.5。
 
 **建议**：
-- 如果地形 chunk 用 SECTR 管理，直接复用它的 `RegionLoader` 滞后逻辑。
-- 但 SECTR 是 **scene 粒度**，且跨 scene 不合批。**地形 mesh 分块建议自己做 YooAsset**，SECTR 只用于区域级内容切换。
+- 地形 chunk 继续用 SECTR 的 `RegionLoader`，但把补丁目录纳入升级检查清单（见
+  [Assets/Procedural Worlds/AGENTS.md](../Assets/Procedural%20Worlds/AGENTS.md) §3）。
+- SECTR 是 **scene 粒度**，且跨 scene 不合批。**地形 mesh 分块建议自己做 YooAsset**，
+  SECTR 只用于区域级内容切换。
 
 ## 8. YooAsset 接入（已实施）
 
@@ -263,7 +285,7 @@ handle.Release();
 | `FishDemo.Resources.dll` / `FishDemo.Editor.dll` 编译 | ✅ 0 error |
 | 嵌入包生效（`packages-lock.json`） | ✅ `"source": "embedded"` |
 | 菜单模拟构建产出 | ⏳ 未测（需在编辑器内手动触发） |
-| 运行时初始化 | ⏳ 未测（尚无 Bootstrap 入口调用 `InitializeAsync`） |
+| 运行时初始化 | ⏳ 未测（2026-11-17 复核：仍无调用方；SECTR / 草 / 树都还没接 YooAsset） |
 
 **已知的命名陷阱**：程序集名与命名空间不能同名。此前 `FishDemo.Resources` 既是 asmdef 名又是 namespace，导致 C# 把 `FishDemo.Resources` 优先解析为程序集，`YooAssetInitializer` 无法解析。现已改为 namespace `FishDemo.AssetManagement`。
 

@@ -65,6 +65,23 @@ Unity.exe -batchmode -projectPath E:\FishDemo -executeMethod AtmosphereVerify.Ru
 
 `AtmosphereController.OnGUI` 左上角：**最上面是昼夜/天气操作说明**，其下显示时刻/天气/流速；相机操作放在末尾。
 
+**HUD 内容（自上而下）**：键盘操作提示标题 → 昼夜/天气/流速 → 按键说明。
+托管堆状态已移出 HUD；`GCMode` 接管也已移除（大块数据改走原生内存 + 流式，
+见 [grass_brg_progress](grass_brg_progress.md) §6）。
+
+**IMGUI 的四个坑**（2026-11-17 逐个踩过）：
+1. `<size=-2>` 不生效——IMGUI 只认绝对像素 `<size=16>`，相对值等于负字号，**整段不渲染**。
+   小字改用独立 `GUIStyle` + 自己的 `fontSize`。
+2. 默认文字色是深色，压在半透明黑底上等于看不见。必须显式 `textColor = Color.white`，
+   并加 1px 深色投影（IMGUI 没有描边），否则压在树叶/天空上发虚。
+3. 整块 `CalcSize` 会低估含 `
+` 的行高，最后一行被裁半截。用 `MeasureBlock` 逐行量。
+4. 宽度必须用 `ComputeHudWidth` 夹取；且绘制时的左右内边距要和它用同一个 `HudInset`，
+   否则每行比可用宽度宽 2×`HudInset`，右端被裁。
+
+验收：`HudPixelVerify.Run`（**需真实图形设备**，`ScreenCapture` 抓真图并数像素）。
+该脚本必须在编辑器里跑，不能加 `-batchmode`——batchmode 下 `OnGUI` 根本不被调用。
+
 | 键 | 作用 |
 |---|---|
 | `1`–`5` | 天气：Clear / Cloudy 2 / Rain / Foggy / Storm |

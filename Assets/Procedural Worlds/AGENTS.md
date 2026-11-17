@@ -86,6 +86,30 @@ Animancer Pro、Shader Control、Fog Mist 2、Light Beam 2、Lights 2、Beautify
    `couldn't be instanced because one of the materials is missing`**——
    一个材质槽缺失会让整批树放弃 GPU instancing，不是 keyword 问题。
 
+9. **例外四：SECTR 流式被打过补丁（2026-11-17）**。原版有三个问题：
+   ① `activationQueue` 是死代码（从未把 `allowSceneActivation` 设为 false），
+   9 个 chunk 同帧激活；② 加载/卸载一帧全发、无预算；③ 卸载时同步
+   `Resources.UnloadUnusedAssets()`，editor 明显卡顿。
+
+   改了两个文件：
+   - `SECTR/Scripts/Stream/SECTR_Chunk.cs`：跟踪 `UnloadSceneAsync`；资产扫描改走
+     运行时宿主。**没有**关 `allowSceneActivation`——2022.3 批量 additive 下会卡在
+     progress=0.90、isDone 永不为真。
+   - `SECTR/Scripts/Stream/SECTR_RegionLoader.cs`：每帧最多 2 个加载引用 /
+     4 个释放引用；加载按 50ms wall-clock 间隔发起；释放交给 `SectrChunkCache`。
+
+   新增运行时（无 asmdef，编进 `Assembly-CSharp`）：
+   `Assets/Scripts/Runtime/Gameplay/SectrChunkCache.cs`、
+   `SectrStreamingRuntime.cs`。缓存默认 editor 6 块 / 真机 4 块，TTL 15s / 10s。
+
+   **原始副本在 `Tools/sectr-patches/*.orig`；升级/重装 SECTR 会覆盖补丁，必须重打。**
+   参数与验证见 [terrain_streaming](../../Docs/terrain_streaming.md) §12。
+
+   > 内存在 SECTR 之外的归属：草数据由 `Gameplay/SectrGrassStreamer.cs` 跟随 chunk 进出
+   > （`NativeArray` + `GraphicsBuffer` 自管，不走 `Resources.UnloadUnusedAssets`）。
+   > `gcIncremental: 1` 只作兜底，**不接管 GCMode**。见
+   > [terrain_streaming](../../Docs/terrain_streaming.md) §12.5。别把内存问题和 SECTR 补丁混为一谈。
+
 ## 4. 排查入口
 
 | 症状 | 去哪 |

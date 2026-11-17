@@ -1,6 +1,6 @@
 # 草 BRG 化 · 实施进度
 
-> 最后更新：2026-11-17（同步湖区清草后的场景实例数与内存估算）
+> 最后更新：2026-11-17（草数据改为原生内存 + 逐 chunk 流式，托管堆不再持有实例）
 > 对应方案：[grass_brg_plan.md](grass_brg_plan.md)
 > 本文只记录**已落地且有实测证据**的内容。未验证项一律标注「未开始/待验证」。
 
@@ -20,7 +20,8 @@
 | shader 主光 + 环境光 + 风摆 | ✅ 完成（2026-11-11） | `Assets/Grasses/GrassBRG.shader:1-9` |
 | 花显色（albedo 图集 + tint） | ✅ 完成（2026-11-11） | 仅 LOD0 生效，见下条 |
 | **全 LOD 精灵图集化 + 密度减半** | ✅ 完成并验证（2026-11-12） | `Logs/grass-flower.txt` PASS |
-| M3 真机 + 阴影/透光/流式 | ⬜ 未开始 | — |
+| M3 流式加载（原生内存） | ✅ 完成（2026-11-17） | `Logs/Grass/native-data.txt` PASS；`streaming.txt` 见 §6 |
+| M3 真机 + 阴影/透光 | ⬜ 未开始 | — |
 
 **当前状态**：36 个 chunk 全部烘焙并可渲染，**435 万实例（原 1265 万，降 65.6%）**，
 磁盘 133MB（原 386MB）。三层 LOD 全部采样各类型 albedo 图集的真实精灵格，
@@ -29,7 +30,7 @@
 **尚未完成的关键项**：
 - ❌ 真机（Vulkan / iQOO 16）未验证
 - ❌ 阴影/透光（当前是包裹式 Lambert + 常量环境光 + 顶点风摆）
-- ❌ SECTR 流式加载未接（当前全量常驻约 320MB）
+- ✅ SECTR 流式已接（Play Mode 驻留量随 chunk 范围浮动，约 80MB/15 块）
 - ❌ 移动端性能未测
 
 ## 2. 交付物
@@ -39,7 +40,8 @@
 | 文件 | 职责 |
 |---|---|
 | `GrassBRGManager.cs` | BRG 管理器：实例构建、空间分块、多 batch、剔除 Job、LOD 分层 |
-| `GrassInstance.cs` | 32B 磁盘格式 + `GrassChunkData.Read`（魔数/版本/大小校验） |
+| `GrassInstance.cs` | 32B 磁盘格式 + `GrassChunkData.Read`（编辑器工具，托管）+ `GrassChunkFile`（运行时：原生读盘 + 计数排序，零托管分配） |
+| `SectrGrassStreamer.cs`（Gameplay） | 每 0.1s 对齐 SECTR `IsLoaded`，逐 chunk `Add/RemoveGrassChunk`；一次只加/卸一个，驻留上限 24 |
 | `FishDemo.Rendering.asmdef` | 独立程序集，`allowUnsafeCode=true`（工程全局为 false，BRG 输出是裸指针） |
 
 ### 2.2 Shader（`Assets/Grasses/GrassBRG.shader`）
@@ -280,16 +282,21 @@ BRG 单 batch 的 raw buffer 上限 16MB（`EntitiesGraphicsSystem.cs:1156`）�
 
 ### 4.5 内存占用
 
-> 按 435 万实例（32B/实例）估算。场景当前 429 万（湖区清草后），数值略低。
+> 2026-11-17 起 Play Mode 走**逐 chunk 流式**（`SectrGrassStreamer`），不再是全量常驻。
+> 下表旧值仅代表「全量加载」的对比基线（435 万实例）。
 
-| 项 | 大小 |
-|---|---|
-| CPU `GrassInstance[]` | 133 MiB |
-| CPU `_positions`（float3 副本） | ≈ 50 MiB |
-| GPU 实例 buffer | 133 MiB |
-| **合计** | **≈ 316 MiB（约 320MB）** |
+| 项 | 全量（旧） | 流式（现，按 15 块驻留估算） |
+|---|---|---|
+| CPU 实例数据（托管） | 133 MiB + 逐 chunk/排序副本 → 峰值 400MB+ | **0（不进托管堆）** |
+| CPU 位置（native，12B/实例） | 50 MiB | ≈ 44 MiB（chunk 各一份 + 剔除用全局一份） |
+| GPU 实例 buffer | 133 MiB | ≈ 58 MiB |
+| **合计** | **≈ 316 MiB（常驻）** | **≈ 100 MiB（随 SECTR 加载范围浮动）** |
 
-桌面可接受，**移动端必须靠流式加载**。旧的 917MB 是 1265 万实例时的数据，已失效。
+流式路径：`GrassChunkFile.Read`（`NativeArray` + 64KB 复用中转，无托管 byte[]）、
+`SortIntoBlocks`（原生计数排序）、上传后只保留 positions。buffer 走 32MB 上限的复用池，
+驻留 chunk 硬上限 24。全量加载只剩编辑器工具（`GrassSceneSetupM2` / 各种 Verify）使用。
+
+旧的 917MB 是 1265 万实例时的数据，已失效。
 
 ## 5. 踩坑记录（都会导致「草消失且无报错」）
 
@@ -319,19 +326,22 @@ BRG 单 batch 的 raw buffer 上限 16MB（`EntitiesGraphicsSystem.cs:1156`）�
 | 22 | 用 `GetPixels32()` 统计画面区域时忘了行序 | 按「自上而下」写 `y*width`，实际 Color32 第 0 行是画面**底部**，统计到的是天空与树冠（19 万误命中，真实地面只有几千） | 行序自下而上：「画面下半部」= 数组**前** 55% |
 | 23 | 低采样率时按比例直觉估总量 | 0.035→0.0175 以为减半，实际 1265 万→435 万（降 65.6%）。因为稀疏格保底（30% 概率补 1 个）与采样率无关，占比在低 rate 下变大 | 数量以 `Logs/Grass/bake-report.txt` 实测为准；要精确落某个目标值必须按真实分布反算，不能等比缩放 |
 
-## 6. 下一步（M3，未开始）
+## 6. 下一步（M3）
 
 按依赖顺序：
 
-1. **SECTR 流式加载草数据**——按相机位置加载/卸载 chunk，解决约 320MB 常驻（**当前第一优先级**）
-2. **shader 加阴影/透光**（当前有包裹式叶片光照 + 常量环境光 + albedo 图集裁剪）
-3. ~~花迁到 BRG~~ ✅ 已完成（2026-11-12），见 §2.2.2
-4. **剔除并行化**（`IJobParallelFor`）——21.9ms 仍占 33ms 预算的 2/3
-5. **剔除 Job 移出主线程依赖**（当前 `SubmitRenderRequest` 需等 Job 完成）
-6. **真机验证**（Vulkan / iQOO 16 / 30fps）
-7. 分块排序移入烘焙期（省 1~2 秒加载开销）
-8. `_positions` 与 `_instances` 合并（省 145MB）
-9. 草数据改走 YooAsset（当前 `File.ReadAllBytes`，打包后失效）
+1. ~~SECTR 流式加载草数据~~ ✅ 已完成（2026-11-17）：`SectrGrassStreamer` 跟随 chunk 进出；
+   原生读盘/排序；只保留 positions；buffer 池。见 [terrain_streaming](terrain_streaming.md) §12.5
+2. **缓存命中与加载尖峰实测**：当前每次 add 在主线程读盘 + 排序 + 上传（单 chunk 约 12 万实例），
+   需要真机 Profile 单次耗时；必要时把排序移到 Job / 预读下一块
+3. **shader 加阴影/透光**（当前有包裹式叶片光照 + 常量环境光 + albedo 图集裁剪）
+4. ~~花迁到 BRG~~ ✅ 已完成（2026-11-12），见 §2.2.2
+5. **剔除并行化**（`IJobParallelFor`）——21.9ms 仍占 33ms 预算的 2/3
+6. **剔除 Job 移出主线程依赖**（当前 `SubmitRenderRequest` 需等 Job 完成）
+7. **真机验证**（Vulkan / iQOO 16 / 30fps）
+8. ~~分块排序移入烘焙期~~ 部分完成：排序已改原生内存，但仍在加载时做；若要进一步省主线程，可烘进文件
+9. ~~`_positions` 与 `_instances` 合并~~ ✅ 流式路径已只保留 positions
+10. 草数据改走 YooAsset（当前 `File` 直读，打包后失效）
 
 ## 7. 复现步骤
 
@@ -344,7 +354,19 @@ Unity.exe -batchmode -nographics -projectPath E:\FishDemo \
 Unity.exe -batchmode -nographics -projectPath E:\FishDemo \
   -executeMethod FishDemo.EditorTools.GrassSceneSetupM2.Run
 
-# 3. 验证（需真实图形设备，不要加 -nographics）
+# 3. 原生数据通路（无需图形设备）
+Unity.exe -batchmode -nographics -projectPath E:\FishDemo \
+  -executeMethod GrassNativeDataVerify.Run
+
+# 4. 流式增删 + 渲染（需真实图形设备，不要加 -nographics）
+Unity.exe -batchmode -projectPath E:\FishDemo \
+  -executeMethod GrassStreamingVerify.Run
+
+# 4.5 World 集成：SECTR 是否驱动草驻留
+Unity.exe -batchmode -projectPath E:\FishDemo \
+  -executeMethod GrassWorldStreamingVerify.Run
+
+# 5. 多 chunk / 性能验收（需真实图形设备）
 Unity.exe -batchmode -projectPath E:\FishDemo \
   -executeMethod FishDemo.EditorTools.GrassMultiChunkVerify.Run
 Unity.exe -batchmode -projectPath E:\FishDemo \
@@ -362,6 +384,7 @@ Unity.exe -batchmode -projectPath E:\FishDemo \
 | 渲染规约 | [rendering_rules.md](rendering_rules.md) |
 | 性能预算 | [performance_budget.md](performance_budget.md) |
 | 运行时 | `Assets/Scripts/Runtime/Rendering/{GrassBRGManager,GrassInstance}.cs` |
+| 流式宿主 | `Assets/Scripts/Runtime/Gameplay/SectrGrassStreamer.cs` |
 | Shader | `Assets/Grasses/GrassBRG.shader` |
 | 烘焙数据 | `Assets/Scenes/World/GrassData/*.bytes`（36 个，133MB） |
 | 烘焙 / 原型注入 | `GrassBaker.cs`（⑧）、`DetailBrgSetup.cs`（⑮） |

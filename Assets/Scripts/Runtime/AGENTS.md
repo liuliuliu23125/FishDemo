@@ -45,7 +45,10 @@ Pegasus 没有 asmdef、编在 `Assembly-CSharp`。asmdef 程序集引用不到�
 | `Gameplay/PegasusTourController.cs` | 原 F 键巡游/手动飞行切换。**已被 `LakeCameraRig` 接管 F 键后禁用**（保留不删，可随时改回） |
 | `Gameplay/LakeOrbitCamera.cs` | 环湖轨道运动：半径 300m / **高度跟随地形**（地表+18m，且不低于水位+26m，指数平滑）/ 120s 一圈 / 俯仰 12°±3°；`Paused` 让出 transform |
 | `Gameplay/LakeCameraRig.cs` | **C** 切相机（巡游 ⇄ 轨道）+ **F** 自由飞行；同步 Crest `Viewer`、SECTR loader、MainCamera tag、**Enviro `ChangeCamera`** |
-| `Gameplay/AtmosphereController.cs` | 大气运行时配置：质量档、时间流速、天气轮换、草风桥接、水下雾开关；**左上角 HUD 顶部为昼夜/天气操作说明**，其下显示时刻/天气/流速；热键 `1-5` 天气 / `T` 暂停时间 / `[` `]` ±1 小时 / `\` 切流速 |
+| `Gameplay/AtmosphereController.cs` | 大气运行时配置：质量档、时间流速、天气轮换、草风桥接、水下雾开关；**左上角 HUD（自上而下：键盘操作提示标题 → 昼夜/天气/流速 → 按键说明）**；热键 `1-5` 天气 / `T` 暂停时间 / `[` `]` ±1 小时 / `\` 切流速。宽度由 `ComputeHudWidth` 夹取，逐行测量（`MeasureBlock`） |
+| `Gameplay/SectrChunkCache.cs` | SECTR chunk 的 TTL + LRU 保留；接管 RegionLoader 的引用，切相机/边界回走时复用，淘汰才真正卸载 |
+| `Gameplay/SectrStreamingRuntime.cs` | 流式运行时宿主：驱动缓存 Tick；等 `UnloadSceneAsync` 完成后按冷却做异步 `UnloadUnusedAssets`；低内存清草驻留 + buffer 池 + chunk 缓存 |
+| `Gameplay/SectrGrassStreamer.cs` | 草数据跟随 SECTR chunk：`IsLoaded` 才读该 chunk 的 `.bytes`，卸载即释放；每次最多加/卸一个，驻留数硬上限 24。`BeforeSceneLoad` 里调 `GrassBRGManager.RequestStreaming()` |
 
 三条容易踩的：
 1. **切相机必须同步四样东西**：`WaterRenderer.Viewer`（水面 clipmap 以它为中心）、
@@ -109,6 +112,13 @@ UV 重写到该类型的精灵格、并把顶点缩放到原型尺寸（材质�
 **数据加载是临时通路**：`TryAutoLoadChunkData()` 用 `System.IO.File.ReadAllBytes` 直读
 `Assets/Scenes/World/GrassData/*.bytes`（编辑器/开发期）。打包后 `Assets/` 不存在，
 会回退到 M1 合成方阵。正式版必须改成经 YooAsset。
+
+**Play Mode 走流式、不进托管堆**：`SectrGrassStreamer` 在 `BeforeSceneLoad` 置
+`GrassBRGManager.RequestStreaming()`，`Initialize` 因此跳过全量读盘，等 chunk 增量加载。
+流式路径用 `GrassChunkFile.Read/SortIntoBlocks`（NativeArray + `MemCpy`），
+只保留 `positions`（12B/实例），GPU 侧每 chunk 一组 raw buffer。
+**不要再往托管 `GrassInstance[]` 里加数据**：编辑器工具仍走 `GrassChunkData`（托管），
+那是给 `GrassBaker/GrassMultiChunkVerify` 等一次性脚本用的，不要接进 Play Mode。
 
 ## 4. 必须遵守的约束
 

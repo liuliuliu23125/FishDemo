@@ -104,7 +104,29 @@ namespace FishDemo.Gameplay
 
         /// <summary>HUD 用的 GUIStyle，懒创建（OnGUI 里每次 new 会每帧分配）。</summary>
         private GUIStyle _hudStyle;
+        private GUIStyle _hudHintStyle;
+        private GUIStyle _hudShadowStyle;
+        private GUIStyle _hudHintShadowStyle;
         private Texture2D _hudBg;
+        /// <summary>创建 <see cref="_hudStyle"/> 时的屏幕尺寸。变了就重建，字号/换行宽度跟着走。</summary>
+        private int _hudStyleScreenW = -1;
+        private int _hudStyleScreenH = -1;
+        // HUD 文本缓存：内容不变时不重新拼字符串（OnGUI 每帧调用多次）。
+        private GUIContent _hudContent;
+        private GUIContent _hudHintContent;
+        private GUIContent _hudTitleContent;
+        private string _hudText;
+        private string _hudHintText;
+        private string _hudTitle;
+        private int _hudHour = -1;
+        private int _hudMinute = -1;
+        private bool _hudRunning;
+        private string _hudWeather;
+        private int _hudCycle = -1;
+        private float _hudWidth;
+        private float _hudHeight;
+        private float _hudTitleHeight;
+        private float _hudMainHeight;
 
         /// <summary>自动换天气开关。验收脚本会关掉它，保证截图可复现。</summary>
         public bool AutoWeather
@@ -114,6 +136,14 @@ namespace FishDemo.Gameplay
         }
 
         public bool IsApplied => _applied;
+
+        /// <summary>HUD 开关的当前值。`_showHud` 若没被场景序列化就是字段初始值 true，
+        /// 验收需要能读到真实值来判断"看不见"是不是被关掉了。</summary>
+        public bool ShowHud
+        {
+            get => _showHud;
+            set => _showHud = value;
+        }
 
         private void Awake()
         {
@@ -476,24 +506,139 @@ namespace FishDemo.Gameplay
         /// 这只是开发期观察工具，与 `GrassBRGManager.OnGUI`（GrassBRGManager.cs:948）同一做法。
         /// 正式 UI 接入后应删掉本方法。
         /// </summary>
+        /// <summary>HUD 内边距（左右各一份）。文本 rect 与宽度计算必须用同一个值，否则会裁字。</summary>
+        private const float HudInset = 8f;
+
+        /// <summary>
+        /// HUD 背景块宽度：自然宽度 + 左右内边距，且不超过屏幕可用宽度。
+        ///
+        /// 抽成静态纯函数是为了可测：`OnGUI` 里的 `CalcSize` 依赖字体与 GUI 事件，
+        /// 验证脚本拿不到；而"会不会出屏"只取决于这条夹取规则。
+        /// 早先版本直接用 `CalcSize().x`，窄 Game 视图（< ~600px）下操作说明那两行
+        /// 会超出右边界，表现为"看不到"。
+        /// </summary>
+        public static float ComputeHudWidth(float naturalWidth, int screenWidth)
+        {
+            const float margin = 12f;
+            const float minWidth = 64f;
+            float available = Mathf.Max(minWidth, screenWidth - margin * 2f);
+            return Mathf.Min(naturalWidth + HudInset * 2f, available);
+        }
+
+        /// <summary>
+        /// HUD 运行时探针：记录 OnGUI 是否真的执行、实际落笔的 rect 与屏幕尺寸。
+        /// 为什么需要：验收脚本用 `cam.Render()` 到 RenderTexture 截图，而 OnGUI 在屏幕空间、
+        /// **不会进那张 RT**，所以截图永远看不到 HUD，"看不见"既可能是没画也可能是画错位置。
+        /// 这两个计数把两种情况分开。
+        /// </summary>
+        public static int HudDrawCount { get; private set; }
+        public static int HudSkipNotAppliedCount { get; private set; }
+        public static int HudSkipDisabledCount { get; private set; }
+        public static Rect HudLastRect { get; private set; }
+        public static Vector2Int HudLastScreen { get; private set; }
+        /// <summary>实际使用的文字颜色（诊断"黑字画黑底"）。</summary>
+        public static Color HudTextColor { get; private set; }
+
+        /// <summary>
+        /// 按行的块尺寸测量（宽取最长行，高取各行之和）。
+        /// 为什么不用整块 `CalcSize`：含 `\n` 的富文本整块测量会低估行高，
+        /// 实测最后一行被裁掉半截。逐行量再累加与实际绘制一致。
+        /// </summary>
+        private static void MeasureBlock(GUIStyle style, string text, out float width, out float height)
+        {
+            width = 0f;
+            height = 0f;
+            if (string.IsNullOrEmpty(text))
+                return;
+
+            int lineStart = 0;
+            for (int i = 0; i <= text.Length; i++)
+            {
+                if (i < text.Length && text[i] != '\n')
+                    continue;
+
+                var size = style.CalcSize(new GUIContent(text.Substring(lineStart, i - lineStart)));
+                if (size.x > width) width = size.x;
+                height += size.y;
+
+                lineStart = i + 1;
+                if (i >= text.Length) break;
+            }
+        }
+
         private void OnGUI()
         {
-            if (!_showHud || !_applied) return;
-
-            if (_hudStyle == null)
+            if (!_showHud)
             {
-                _hudBg = new Texture2D(1, 1, TextureFormat.RGBA32, false);
-                _hudBg.SetPixel(0, 0, new Color(0f, 0f, 0f, 0.55f));
-                _hudBg.Apply();
-                _hudBg.hideFlags = HideFlags.DontSave;
+                HudSkipDisabledCount++;
+                return;
+            }
+            if (!_applied)
+            {
+                HudSkipNotAppliedCount++;
+                return;
+            }
+
+            // 屏幕尺寸变化必须重建样式：字号按高度缩放，换行宽度按当前宽度算。
+            // 之前只建一次，窗口变大/变小后字号与折行宽度都停在旧值。
+            if (_hudStyle == null ||
+                _hudStyleScreenW != Screen.width || _hudStyleScreenH != Screen.height)
+            {
+                if (_hudBg == null)
+                {
+                    _hudBg = new Texture2D(1, 1, TextureFormat.RGBA32, false);
+                    // 0.55 在明亮树叶背景上对比不足，小字会糊。0.72 仍能看出背景，但字清楚。
+                    _hudBg.SetPixel(0, 0, new Color(0f, 0f, 0f, 0.72f));
+                    _hudBg.Apply();
+                    _hudBg.hideFlags = HideFlags.DontSave;
+                }
+
+                // 整数像素字号：非整数（如 13.5）会让字形落在半像素上，抗锯齿后整体发虚。
+                int baseSize = Mathf.Max(14, Mathf.RoundToInt(_hudFontSize * Screen.height / 1080f));
 
                 _hudStyle = new GUIStyle(GUI.skin.label)
                 {
-                    fontSize = Mathf.Max(10, Mathf.RoundToInt(_hudFontSize * Screen.height / 1080f)),
+                    fontSize = baseSize,
                     richText = true,
                     alignment = TextAnchor.UpperLeft,
-                    padding = new RectOffset(10, 10, 8, 8),
+                    // 不开 wordWrap：文本每一行都已在代码里手工分好，
+                    // 让 IMGUI 再折行反而会让 CalcSize（未折行的自然宽度）与
+                    // 实际绘制宽度不一致，表现为右端被框裁掉。框宽按最长行算即可。
+                    wordWrap = false,
+                    clipping = TextClipping.Overflow,
                 };
+                // 文字必须是亮色：`GUI.skin.label` 的默认色与浅色编辑器主题相关，
+                // 画在深色底上几乎等于黑字黑底。Crest 的调试 HUD 也是显式置白
+                // （DebugGUI.cs:201-202）。
+                _hudStyle.normal.textColor = Color.white;
+                HudTextColor = _hudStyle.normal.textColor;
+
+                // 操作说明单独用一个稍小的样式，而**不是**靠富文本 `<size=-2>`。
+                // 原因：IMGUI 的富文本 `<size>` 只认绝对像素（`<size=12>`），
+                // 相对写法 `<size=-2>` 是 TextMeshPro 的语法，在 IMGUI 下等于把字号设成负数，
+                // 那一段整块不渲染——实测标题/时刻能看见、三条操作说明全丢
+                // （Logs/Atmosphere/hud-1920x1080.png 逐行扫只有 4 段文字）。
+                //
+                // 字号不低于 14：中文在 13px 以下笔画会糊成一团，宁可多占两行。
+                // 颜色接近白而不是 0.82 灰：灰色小字叠在半透明黑底上对比度不够。
+                _hudHintStyle = new GUIStyle(_hudStyle)
+                {
+                    fontSize = Mathf.Max(14, Mathf.RoundToInt(baseSize * 0.85f)),
+                    richText = false,     // 说明行不用富文本，彻底避开 <size> 语法
+                };
+                _hudHintStyle.normal.textColor = new Color(0.93f, 0.93f, 0.93f, 1f);
+
+                // IMGUI 没有描边 API，标准做法是先用深色偏移 1px 画一遍当投影，
+                // 再画正文。文字压在明暗交错的树叶/天空上时，这一步是清晰度的关键。
+                _hudShadowStyle = new GUIStyle(_hudStyle);
+                _hudShadowStyle.normal.textColor = new Color(0f, 0f, 0f, 0.85f);
+                _hudHintShadowStyle = new GUIStyle(_hudHintStyle);
+                _hudHintShadowStyle.normal.textColor = new Color(0f, 0f, 0f, 0.85f);
+
+                _hudStyleScreenW = Screen.width;
+                _hudStyleScreenH = Screen.height;
+                // 样式变了，文本尺寸必须重算。
+                _hudText = null;
             }
 
             float hour = CurrentHour;
@@ -508,24 +653,87 @@ namespace FishDemo.Gameplay
                 : hour < 19f ? "黄昏"
                 : "夜晚";
 
-            string text =
-                "<b>昼夜 / 天气操作</b>\n" +
-                "<size=-2><color=#cccccc>" +
-                "1-5 天气  |  T 暂停/继续时间  |  [ ] 前后 1 小时  |  \\ 切时间流速" +
-                "</color></size>\n" +
-                $"<b>时间 {hh:00}:{mm:00}</b>（{phase}）{(IsTimeRunning ? "" : "  <color=#ffcc66>[已暂停]</color>")}\n" +
-                $"天气 <b>{CurrentWeatherName}</b>\n" +
-                $"流速 {CycleLabels[Mathf.Clamp(_cycleIndex, 0, CycleLabels.Length - 1)]}\n" +
-                "<size=-2><color=#cccccc>" +
-                "C 切相机  |  F 自由飞行（WASD/QE/右键/滚轮）" +
-                "</color></size>";
+            // OnGUI 每帧会被调用多次（Layout / Repaint 各一次），字符串拼接与 GUIContent
+            // 都会产生托管垃圾。本工程正在治 GC 尖峰，观察工具自己不该制造噪声：
+            // 只有显示内容真的变了才重建文本，其余帧复用缓存。
+            if (_hudText == null || _hudHour != hh || _hudMinute != mm ||
+                _hudRunning != IsTimeRunning || _hudWeather != CurrentWeatherName ||
+                _hudCycle != _cycleIndex)
+            {
+                _hudHour = hh;
+                _hudMinute = mm;
+                _hudRunning = IsTimeRunning;
+                _hudWeather = CurrentWeatherName;
+                _hudCycle = _cycleIndex;
 
-            var content = new GUIContent(text);
-            var size = _hudStyle.CalcSize(content);
+                // 第一块（顶部）：键盘操作提示。演示时要先看到"能按什么"，
+                // 所以放最前面，用和大字同级的粗体标题。
+                _hudTitle = "<b>键盘操作提示</b>";
+
+                // 主信息（大字、可加粗）。不用 <size>，字号由 _hudStyle 决定。
+                _hudText =
+                    $"<b>昼夜 / 天气</b>  |  <b>时间 {hh:00}:{mm:00}</b>（{phase}）" +
+                    $"{(IsTimeRunning ? "" : "  <color=#ffcc66>[已暂停]</color>")}\n" +
+                    $"天气 <b>{CurrentWeatherName}</b>  |  流速 {CycleLabels[Mathf.Clamp(_cycleIndex, 0, CycleLabels.Length - 1)]}";
+
+                // 操作说明（小字、单色）。与主信息分开画，字号由 _hudHintStyle 决定。
+                // 只放玩家真正会用的键：昼夜/天气/相机。托管堆状态属诊断信息，
+                // 已从 HUD 移除——它每帧有波动，会一直触发文本重建，也让画面杂乱。
+                _hudHintText =
+                    "1-5 天气  |  T 暂停/继续时间  |  [ ] 前后 1 小时  |  \\ 切时间流速\n" +
+                    "C 切相机  |  F 自由飞行（WASD/QE/右键/滚轮）";
+
+                _hudTitleContent = new GUIContent(_hudTitle);
+                _hudContent = new GUIContent(_hudText);
+                _hudHintContent = new GUIContent(_hudHintText);
+
+                // 逐行测量而不是对整块调 CalcSize：IMGUI 对含 `\n` 的富文本
+                // 整块 CalcSize 会低估行高（实测最后一行被裁半截），
+                // 分行量再加行间距才与实际绘制一致。
+                MeasureBlock(_hudStyle, _hudTitle, out float titleW, out float titleH);
+                MeasureBlock(_hudStyle, _hudText, out float mainW, out float mainH);
+                MeasureBlock(_hudHintStyle, _hudHintText, out float hintW, out float hintH);
+
+                _hudWidth = ComputeHudWidth(Mathf.Max(titleW, Mathf.Max(mainW, hintW)), Screen.width);
+                _hudTitleHeight = titleH;
+                _hudMainHeight = mainH;
+                _hudHeight = titleH + mainH + hintH + 6f;
+            }
+
             // y=40：草 BRG 的调试标签占着 (12,12) 那一条，避让开避免文字叠在一起。
-            var rect = new Rect(12f, 40f, size.x + 8f, size.y + 6f);
+            var rect = new Rect(12f, 40f, _hudWidth, _hudHeight);
             GUI.DrawTexture(rect, _hudBg);
-            GUI.Label(rect, content, _hudStyle);
+
+            // 两块分别画，各用自己的字号。合在一起画就必须用 <size> 控制大小差异，
+            // 而 IMGUI 不支持相对尺寸（见上面 _hudHintStyle 的注释）。
+            // 左右各留 HudInset，与 ComputeHudWidth 加的边距一一对应——
+            // 少减一次就会让每行比可用宽度宽 2×HudInset，右端被裁（实测 [GC] 行截断）。
+            var titleRect = new Rect(rect.x + HudInset, rect.y + 6f,
+                                     rect.width - HudInset * 2f, _hudTitleHeight);
+            var mainRect = new Rect(rect.x + HudInset, titleRect.yMax,
+                                    rect.width - HudInset * 2f, _hudMainHeight);
+            var hintRect = new Rect(rect.x + HudInset, mainRect.yMax,
+                                    rect.width - HudInset * 2f,
+                                    rect.height - _hudTitleHeight - _hudMainHeight - 6f);
+
+            // 先画深色投影（偏移 1px）再画正文：IMGUI 没有描边，
+            // 文字压在明暗交错的树叶/天空上时，只靠半透明底色会发虚、边缘与背景混在一起。
+            const float shadowDx = 1f;
+            const float shadowDy = 1f;
+            GUI.Label(new Rect(titleRect.x + shadowDx, titleRect.y + shadowDy,
+                               titleRect.width, titleRect.height), _hudTitleContent, _hudShadowStyle);
+            GUI.Label(new Rect(mainRect.x + shadowDx, mainRect.y + shadowDy,
+                               mainRect.width, mainRect.height), _hudContent, _hudShadowStyle);
+            GUI.Label(new Rect(hintRect.x + shadowDx, hintRect.y + shadowDy,
+                               hintRect.width, hintRect.height), _hudHintContent, _hudHintShadowStyle);
+
+            GUI.Label(titleRect, _hudTitleContent, _hudStyle);
+            GUI.Label(mainRect, _hudContent, _hudStyle);
+            GUI.Label(hintRect, _hudHintContent, _hudHintStyle);
+
+            HudDrawCount++;
+            HudLastRect = rect;
+            HudLastScreen = new Vector2Int(Screen.width, Screen.height);
         }
 
         private void OnDestroy()
