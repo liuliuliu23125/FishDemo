@@ -170,7 +170,7 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 - **草风桥接**：`AtmosphereController` 每 0.25s 调 `GrassBRGManager.SetWeatherWind`（改 7 个类型材质的 `_WindSpeed/_WindStrength`）。树的风仍由 PW shader 自己管，未接天气。
 - **昼夜操作**：`AtmosphereController.OnGUI` 左上角 HUD，自上而下是**键盘操作提示标题 → 昼夜/天气/流速 → 按键说明**（托管堆状态已从 HUD 移除）；`T` 暂停时间、`[` `]` ±1h、`\` 切流速（20/5/2/1 分钟一天）、`1-5` 天气。注意太阳落山后 Enviro 用**月亮**做主光，18:00 与 00:00 光向接近属正常。
 - **HUD 三件套不能省**：宽度用 `ComputeHudWidth` 夹取（直接 `CalcSize().x` 在窄视图出屏）；尺寸用 `MeasureBlock` 逐行量（整块 `CalcSize` 会低估行高、裁掉最后一行）；文字显式设白色 + 1px 深色投影（默认色是深色，压在深底上等于看不见）。**不要用 `<size=-2>`**：IMGUI 只认绝对像素，相对尺寸会让整段不渲染。
-- **托管 GC 不做"接管"**：`gcIncremental: 1` 保留（非增量无法分帧），但**不再用 `GCMode=Manual`**。正确做法是让大块数据根本不进托管堆：草实例改走 `NativeArray` + 逐 chunk 流式（见 [grass_brg_progress](Docs/grass_brg_progress.md) §6），托管堆不再常驻 260MB+ 的草数组，GC 的标记量随之下降。见 [terrain_streaming](Docs/terrain_streaming.md) §12.5。
+- **托管 GC 不接管、且增量已关闭**：`gcIncremental: 0`（2026-11-17 决策），**不用 `GCMode=Manual/Disabled`**。系统仍会在不可控时机触发**完整**回收，所以唯一有效的策略是让大块数据根本不进托管堆：草实例走 `NativeArray` + 逐 chunk 流式（见 [grass_brg_progress](Docs/grass_brg_progress.md) §6），不再常驻 260MB+ 草数组。见 [terrain_streaming](Docs/terrain_streaming.md) §12.5。
 - **草的驻留跟随 SECTR**：`Gameplay/SectrGrassStreamer` 每 0.1s 对齐一次——chunk `IsLoaded` 才读对应 `.bytes`，卸载即释放；buffer 走 32MB 上限的复用池，驻留 chunk 数硬上限 24。树不需要池：树在 `TerrainData` 的 native 数据里，chunk 缓存已经覆盖。
 - **Enviro 与 Crest 的边界**：Enviro 没有水下检测，体积雾在水下仍会应用；水面雾按背后不透明深度近似。改水/改雾时两者一起看。
 

@@ -107,8 +107,9 @@ Animancer Pro、Shader Control、Fog Mist 2、Light Beam 2、Lights 2、Beautify
 
    > 内存在 SECTR 之外的归属：草数据由 `Gameplay/SectrGrassStreamer.cs` 跟随 chunk 进出
    > （`NativeArray` + `GraphicsBuffer` 自管，不走 `Resources.UnloadUnusedAssets`）。
-   > `gcIncremental: 1` 只作兜底，**不接管 GCMode**。见
-   > [terrain_streaming](../../Docs/terrain_streaming.md) §12.5。别把内存问题和 SECTR 补丁混为一谈。
+   > `gcIncremental: 0`（增量已关闭），**不接管 GCMode**；非增量触发是一次完整停顿，
+   > 只能靠压缩托管堆降成本。见 [terrain_streaming](../../Docs/terrain_streaming.md) §12.5。
+   > 别把内存问题和 SECTR 补丁混为一谈。
 
 ## 4. 排查入口
 

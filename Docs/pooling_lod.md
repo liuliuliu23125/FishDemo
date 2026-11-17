@@ -161,8 +161,9 @@ SECTR 原版只有「区域判定 + 异步加载 + 卸载滞后」，**没有生
 
 **托管 GC 不在这一层**，且**不要试图接管它**。正确做法是把大块反复使用的数据
 移出托管堆：草实例改走 `NativeArray` + `GrassChunkFile`（原生读盘/排序），
-驻留量再按 SECTR chunk 流式封顶。`gcIncremental: 1` 保留作为兜底，但不设
-`GCMode=Manual`、不写每帧收集预算。见 [terrain_streaming](terrain_streaming.md) §12.5。
+驻留量再按 SECTR chunk 流式封顶。`gcIncremental: 0`（增量已关闭，2026-11-17），
+不设 `GCMode=Manual/Disabled`、不写每帧收集预算。代价见
+[terrain_streaming](terrain_streaming.md) §12.5：触发仍不可控，只能靠压缩存活堆降低成本。
 
 **建议**：
 - 地形 chunk 继续用 SECTR 的 `RegionLoader`，但把补丁目录纳入升级检查清单（见

@@ -7,7 +7,7 @@
 | # | 问题 | 出处 | 处理 |
 |---|---|---|---|
 | 1 | Android 最低 SDK 22 | `AndroidMinSdkVersion: 22` | 建议 26+ |
-| 2 | ~~增量 GC 关闭~~ | **已开启（2026-11-17）**：`gcIncremental: 1` | 保留为兜底；**不接管 GCMode**。大块数据（草实例/GPU buffer）已移出托管堆并跟随 chunk 流式，见 [terrain_streaming](terrain_streaming.md) §12.5 |
+| 2 | ~~增量 GC 开关~~ | **已关闭（2026-11-17）**：`gcIncremental: 0` | 按决策关闭增量 GC；**不接管 GCMode**。非增量触发是一次完整停顿，因此必须继续压缩托管堆（草已移出并流式），见 [terrain_streaming](terrain_streaming.md) §12.5 |
 | 3 | Android 默认画质 Medium | `m_PerPlatformDefaultQuality.Android: 2` | 改 High/Ultra |
 | 4 | 无 Input System / Cinemachine | `manifest.json` | 钓鱼玩法需要 |
 | 5 | GPU Baker 未 vendor | 包已下架 | 立即 vendor 进仓库 |

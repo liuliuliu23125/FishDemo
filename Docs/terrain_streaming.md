@@ -293,7 +293,7 @@ chunk 内其余 GameObject 几何约 267 个 `MeshRenderer`（Gaia 撒的树桩/
 | `SECTR_RegionLoader.cs` | 每帧最多 2 个加载引用 / 4 个释放引用；用 `SectrChunkCache` 接管释放的引用 |
 | `SectrChunkCache.cs`（新增） | TTL + LRU 保留；引用转移不额外 AddReference；淘汰时才真正卸载 |
 | `SectrStreamingRuntime.cs`（新增） | 每帧 Tick 缓存；等卸载完成、按冷却、异步 `UnloadUnusedAssets`；低内存清缓存 |
-| `ProjectSettings.asset` | `gcIncremental: 1`（兜底；**不接管 GCMode**） |
+| `ProjectSettings.asset` | `gcIncremental: 0`（增量 GC 关闭；**不接管 GCMode**，见 §12.5） |
 
 > **不要试图用 `allowSceneActivation=false` 修原版的激活队列**：Unity 2022.3 在批量
 > additive 加载时会让某个 scene 停在 `progress=0.90`、`isDone` 永不为真，反而堵死后续激活
@@ -335,9 +335,12 @@ chunk 内其余 GameObject 几何约 267 个 `MeshRenderer`（Gaia 撒的树桩/
 
 ### 12.5 内存归属：不接管 GC，把大块数据移出托管堆
 
-`gcIncremental: 1` 保留（非增量收集无法分帧），但**不再设置 `GCMode=Manual`**。
-原因：GC 成本由「存活堆大小 × 分配速率」决定，接管触发时机只是把同样贵的标记
-挪到别的帧。真正有效的是让大块数据**根本不进托管堆**。
+`gcIncremental: 0`（2026-11-17 决策：关闭增量 GC），且**不设置 `GCMode=Manual/Disabled`**。
+
+必须清楚代价：非增量模式下**触发时机仍不可控**，一旦触发是一次完整停顿；
+关闭增量并不能消除 GC，只是不再把标记分帧。因此这里不把 GC 当兜底，而是
+把策略放在另一个变量上：让大块数据**根本不进托管堆**，把存活堆压到最小，
+使不可避免的完整回收也足够短。
 
 | 数据 | 旧做法 | 现做法 |
 |---|---|---|
@@ -367,4 +370,38 @@ chunk 内其余 GameObject 几何约 267 个 `MeshRenderer`（Gaia 撒的树桩/
 
 > 验收：`GrassNativeDataVerify.Run`（`-nographics`）验证原生读/排序与托管读取逐实例一致；
 > Play Mode 下看 `GrassBRGManager` HUD 的「chunk / 驻留实例」两项。
-> `ManagedHeapGovernor` 已删除；不要再引入 `GCMode=Manual`。
+> `ManagedHeapGovernor` 已删除；不要再引入 `GCMode=Manual/Disabled`。
+> 若真机 Profile 证明完整回收仍造成可见卡顿，正确顺序是继续减少托管分配，
+> 而不是把回收搬到别的帧或彻底禁止。
+
+### 12.6 生命周期与抖动边界（2026-11-17 审计）
+
+**结论：没有每帧 / 每实例的 Instantiate-Destroy；所有加载/卸载都发生在 chunk 进出事件上。**
+
+| 对象 | 创建/销毁时机 | 是否有 GameObject 池 |
+|---|---|---|
+| chunk 场景（Terrain + GTS mesh + TerrainData） | `LoadSceneAsync` / 卸载引用归零后 `UnloadSceneAsync`；缓存命中则完全跳过 | 无（也不该有，Asset 生命周期归场景/资源层） |
+| 树实例 | Terrain 每次加载时从 `TerrainData.treeInstances`（native）建渲染缓冲；随 chunk 销毁 | **无，也不是 GameObject** |
+| 树原型（4 个云杉） | 常驻：`World.unity` 的 Gaia spawner 直接引用其 prefab GUID（如 `7f88b0ba…`），不会被 `UnloadUnusedAssets` 卸掉 | 不需要 |
+| 草 / 花 | chunk `IsLoaded` 变 true 时读 `.bytes` + 排序 + 上传；变 false 时移除 batch、归还 buffer | 无；BRG 实例本来就没有 GameObject |
+| 草 buffer | 归还到 32MB 上限的池；只有池满/退出才 Release | 是（显存池） |
+
+频率控制：
+
+- **加载范围** `LoadSize = 768×768`，**卸载边界 = ×1.25**（`World.unity` 场景里两个 loader 相同）。
+  25% 的滞回让边界来回走不会立刻触发卸载。
+- **缓存** `SectrChunkCache`：editor 6 块/15s，真机 4 块/10s；缓存的 chunk 保持 `Active`，
+  草也不会被移除。
+- **限流**：加载 ≤2 块/帧且间隔 ≥50ms；释放 ≤4 块/帧；缓存淘汰 0.1s/块；草加/卸 0.1s/个。
+- **实测**（`Logs/pegasus-load-interval.log`）：单向巡游一圈触达 36 块，**驻留峰值 15**，
+  缓存命中 2 / 淘汰 28——淘汰数与「走过的块数」同阶，不是来回抖动。
+
+**唯一需要注意的事件是 C 键切相机**：`LakeCameraRig.SetCameraState` 会禁用旧 loader →
+`OnDisable` 一次性把所有 sector 的引用转给缓存；真机缓存只有 4 块，剩下 3~5 块会真正卸载，
+再切回时重载。默认两台相机都在湖区附近，重叠的块能命中缓存；**快速连按 C** 才会放大成
+可感知的加载抖动。若 C 是高频操作，调大真机 `MaxCachedChunks`（4→9）可消除大部分重载，
+代价约 +60MB 常驻；否则保持现状。
+
+**没有实现的部分**：[pooling_lod](pooling_lod.md) §4.1 的「地形 Mesh 池」目前只是建议，
+chunk 卸载时 GTS mesh 随场景释放，重进时由资源系统重新加载/上传。这与 chunk 事件同频，
+不是每帧开销；若要进一步降低，应优先提高缓存命中，而不是自己池化 Unity 资产。
