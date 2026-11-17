@@ -55,8 +55,8 @@ detail 原型的 FBX 只被 `TerrainData` 以子资源引用，运行时
 
 | 类型 | 图集 |
 |---|---|
-| 0 主草 / 2 林下叶 / 3 林下枯枝（wild 系） | `PW_WildGrass_00_D`（2048²，源 4096 导入降采样） |
-| 1 枯草块 / 4 三叶草花 / 5 雏菊 / 6 蒲公英（lawn 系） | `PW_LawnGrass_00_D`（2048²，源 4096 导入降采样） |
+| 0 主草 / 2 林下叶 / 3 林下枯枝（wild 系） | `PW_WildGrass_00_D`（1024²，源 4096 导入降采样） |
+| 1 枯草块 / 4 三叶草花 / 5 雏菊 / 6 蒲公英（lawn 系） | `PW_LawnGrass_00_D`（1024²，源 4096 导入降采样） |
 
 **⑮ 用 `ApplyDetailPrototypeSetup(..., rebuild:false)` 一次写入，不要连续调两个 setter**：
 每次 `Initialize → BuildInstances` 要处理数百万实例（分块排序 1~2 秒），

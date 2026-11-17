@@ -67,7 +67,7 @@
 
 | 事实 | 证据 |
 |---|---|
-| 7 个原型只用 2 张 RGBA 图集（Wild 4096²、Lawn 4096²，实测 `AssetDatabase` 加载结果）：lawn 系（枯草/三叶草/雏菊/蒲公英）共用 `PW_LawnGrass_00_D`，wild 系（主草/林下叶/枯枝）共用 `PW_WildGrass_00_D` | 解析 7 个 FBX 内嵌贴图引用 + `PW_Detail_Lawn/WildGrass.mat` 的 `_BaseMap` guid |
+| 7 个原型只用 2 张 RGBA 图集（源 PNG 4096²，导入 `maxTextureSize=1024` → 运行时 1024²）：lawn 系（枯草/三叶草/雏菊/蒲公英）共用 `PW_LawnGrass_00_D`，wild 系（主草/林下叶/枯枝）共用 `PW_WildGrass_00_D` | 解析 7 个 FBX 内嵌贴图引用 + `PW_Detail_Lawn/WildGrass.mat` 的 `_BaseMap` guid |
 | FBX **无顶点色**（`LayerElementColor` 0 处） | FBX 二进制解析 |
 | 图集透明背景占比高（Lawn 69% / Wild 84% 的像素 alpha==0），不裁剪会画出实心色块 | PNG 解码采样 |
 | 原 `PW_Details_Foliage_URP` shadergraph 的贴图节点 `useTilingAndOffset: false`，即**直接用网格 UV 采样、不缩放** | shadergraph JSON |

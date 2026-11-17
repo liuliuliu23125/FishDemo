@@ -51,7 +51,7 @@ Crest 的 `CopyTargetsRenderPass` 受 `[Conditional(k_Refraction)]` 与 `WriteTo
 
 - Tonemapping + Color Grading + LUT 在 URP 内置**同一个 Uber pass**；ACES 只是 Tonemapping 模式，**不另起 pass**。LUT 保持 32（`m_ColorGradingLutSize=32`）。
 - 只保留一套后处理；不叠 Beautify 等第二套。Bloom 保持默认降采样链，不改全分辨率。
-- 后处理预算 2.5ms；加 Volume 效果后用 Frame Debugger 数 pass。
+- 后处理只登记 pass / 全屏 RT 数；ms 分项预算等角色接入后按真机基线分配。
 
 ## 2. 当前 pass 顺序（代码事实）
 

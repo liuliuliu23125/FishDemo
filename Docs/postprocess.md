@@ -12,7 +12,7 @@
 3. **LUT 保持 32**，只在参数变化时重建，不要每帧生成。
 4. **Bloom 保持 URP 默认降采样链**，不改全分辨率。
 5. **水下效果由 Crest 提供**（入水才执行），不再叠一层全屏后处理。
-6. 每加一个 Volume 效果，用 Frame Debugger 核对 pass 数与全屏 RT 数；预算 2.5ms。
+6. 每加一个 Volume 效果，用 Frame Debugger 核对 pass 数与全屏 RT 数；不设 ms 分项预算，等角色接入后按真机基线分配。
 
 **对马岛风格落点**：强对比 + 低饱和 + 青橙 + 轻微颗粒，靠 `Color Adjustments + LUT + Bloom + Film Grain` 实现，全部在内置 Uber pass 体系内。
 
