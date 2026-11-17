@@ -18,14 +18,14 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | Unity / URP | 2022.3.62f2 / 14.0.12 |
 | 色彩空间 / 后端 / 压缩 | Linear / IL2CPP+ARM64 / ASTC 8x8 |
 | 帧率 / 机型 | 30fps / iQOO 16（未真机验证） |
-| 同屏角色上限 | 20 |
+| 同屏角色上限 | 200 |
 | 联网 | 将来需要，当前不实现；客户端表现需可承载多人 |
 | 合批 | **SRP Batcher 唯一路径；静态与动态合批均关闭**（PlayerSettings Android/Standalone 0/0） |
 | Android 图形 API | **仅 Vulkan，排除 GLES**（`m_APIs=15000000`，`m_Automatic=0`） |
 
 **Android 仅 Vulkan**：BRG shader 需要 `#pragma target 4.5` + `#pragma exclude_renderers gles`；回落 GLES 草会消失。工具 `GraphicsApiSetup`，详见 [grass_brg_plan](Docs/grass_brg_plan.md) §1.1。
 
-**2022.3 没有**：GPUResidentDrawer、Forward+、内置体积雾/光/水体、RenderGraph。
+**2022.3 没有**：GPUResidentDrawer、内置体积雾/光/水体、RenderGraph。**Forward+ 例外**：URP 14.0.12 已实现（`RenderingMode.ForwardPlus=2`），但**当前决定不切**；工程保持 Forward（`m_RenderingMode=0`），200 人 VAT 已在 Forward 下渲染 PASS。见 [gpu_ecs_animation_baker](Docs/gpu_ecs_animation_baker.md) §1.2。
 
 **ASTC**：地形 albedo 数组用 `ASTC_8x8`，不用 6x6（GTS 的 `ASTC_6x6(50)` 实际映射到无 alpha 的 `ASTC_RGB_6x6`，而 alpha 是高度混合权重）。见 [gts_srp_batcher](Docs/gts_srp_batcher.md) §8.5。
 
@@ -47,7 +47,7 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | 树 | Terrain 渲染 + Impostor：7 原型（4 云杉占 99.99%）；4.6 万实例；每 prefab 2 级 LOD；`TreeDistance=450` | 阴影/透光、BRG 化、真机 | [vegetation](Docs/vegetation.md) §6 |
 | 植被 LOD | Amplify Impostors 1.1.0（4 个云杉，URP14） | 其余 41 个原型未烘 | [vegetation](Docs/vegetation.md) §6.6 |
 | 玩家动画 | 未接入 | Animancer Pro（CPU） | [character_animation](Docs/character_animation.md) |
-| NPC 动画 | 未接入 | GPU ECS Animation Baker（VAT） | 同上 |
+| NPC 动画 | GPU ECS Animation Baker 1.3.6：**200 人整圈落地**（Ch19/Ch14/Ch09/Ch46 四种角色，4× 大小，r=191–205，Y=267.06–301.84）；Forward 下渲染 PASS，真机未验 | 湖边人群视觉/岸坡优化、真机性能 | [gpu_ecs_animation_baker](Docs/gpu_ecs_animation_baker.md) |
 | 资源管理 | YooAsset 3.0.7 **已实现但无调用方** | 唯一资源入口 | [模块规约](Packages/com.tuyoogame.yooasset/AGENTS.md) |
 
 ## 3. 高频规则
@@ -115,7 +115,14 @@ SRP Batcher（地表/树/常规物体）→ GPU Instancing → BRG（草）。�
 - 托管 GC 增量已关闭，不要依赖 `GCMode=Manual/Disabled`；大块数据不进托管堆。
 - 草驻留跟随 SECTR，buffer 复用池上限 32MB，驻留 chunk 硬上限 24。
 - 渲染分层：Gameplay 不得直接操作 `CommandBuffer` / `Graphics.*`。
-- 夜晚光源 ≤ 6，其余靠 emissive + Bloom（无 Forward+，per-object limit 4）。
+- 夜晚光源 ≤ 6，其余靠 emissive + Bloom（当前 Forward，per-object limit 4；Forward+ 未启用）。
+
+### 3.8 角色动画
+
+- 玩家选型 **Animancer（CPU，未接入）**；NPC/人群选型 **GPU ECS Animation Baker（VAT，200 人整圈落地，4 种角色 × 4× 大小）**。两者可用同一套 PBR ShaderGraph + VAT keyword 保持视觉一致，但渲染路径不同、不会合批。
+- VAT 硬约束：网格只用 UV0；材质必须是 ShaderGraph + `GpuEcsAnimator` Subgraph；运行时只用 `BakedAssets_*` prefab，改源资产必须重烘。
+- 实体走 Entities Graphics（BRG），**不是 SRP Batcher**；普通物件仍靠 SRP Batcher，URP Asset 的 SRP Batcher 保持开启。
+- Entities Graphics 1.4 文档要求 URP Forward+，工程保持 **Forward**；200 人 VAT 实测 PASS，不切 Forward+。详见 [包规约](Assets/GPUECSAnimationBaker/AGENTS.md)。
 
 ## 4. 子目录规约
 
@@ -129,6 +136,7 @@ SRP Batcher（地表/树/常规物体）→ GPU Instancing → BRG（草）。�
 | [Assets/Editor](Assets/Editor/AGENTS.md) | 改 SECTR 切块 / GTS 转换 / 地形调参 / 树的密度与 LOD / 验证脚本 |
 | [Assets/Procedural Worlds](Assets/Procedural%20Worlds/AGENTS.md) | 用第三方插件、排查 Gaia/SECTR/GTS/Pegasus |
 | [Assets/Scenes](Assets/Scenes/AGENTS.md) | 改场景、重跑世界生成、重接草/Pegasus |
+| [Assets/GPUECSAnimationBaker](Assets/GPUECSAnimationBaker/AGENTS.md) | 接 NPC/人群、改 VAT 材质或 shader、排查实体不显示 |
 | [Packages/com.tuyoogame.yooasset](Packages/com.tuyoogame.yooasset/AGENTS.md) | 改资源层代码前 |
 
 ## 5. 文档索引
@@ -156,6 +164,7 @@ SRP Batcher（地表/树/常规物体）→ GPU Instancing → BRG（草）。�
 | [vegetation](Docs/vegetation.md) | 植被、树的密度/LOD/impostor/keyword；**改树前先读 §6** |
 | [postprocess](Docs/postprocess.md) | 调色、后处理；**§0 性能规则** |
 | [character_animation](Docs/character_animation.md) | 玩家动画、NPC GPU 动画 |
+| [gpu_ecs_animation_baker](Docs/gpu_ecs_animation_baker.md) | 接 NPC/人群、查角色清单、性能账与验证步骤 |
 | [pooling_lod](Docs/pooling_lod.md) | 资源缓存、chunk 加载策略 |
 
 **查阅型（长，只跳读需要的节）**

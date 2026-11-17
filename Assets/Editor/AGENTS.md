@@ -59,6 +59,9 @@ SECTR 与 GTS 都没有自己的 asmdef，其编辑器 API（`SECTR_TerrainWindo
 | `AtmosphereVerify.cs` | **需真实图形设备**：Play Mode 验昼夜/天气/体积雾/光，8 张截图 + 状态断言 | `-executeMethod AtmosphereVerify.Run` |
 | `AtmosphereTimeVerify.cs` | **可 `-nographics`**：验昼夜控制接口（设时刻 / 平移 / 暂停 / 流速 / 主光响应） | `-executeMethod AtmosphereTimeVerify.Run` |
 | `HudPixelVerify.cs` | **需真实图形设备、且不能加 `-batchmode`**（batchmode 下 `OnGUI` 不被调用）：切窄屏抓真图，数 HUD 区域像素，证明文字真的可见 | `-executeMethod HudPixelVerify.Run` |
+| `LakesideShoreProbe.cs` | **只读**：扫一圈湖岸高度（r=188..240），找可站立低岸 | `-executeMethod LakesideShoreProbe.Run` |
+| `LakesideCrowdSetup.cs` | 湖边人群：采样岸线、创建 `LakesideCrowd.unity` + World SubScene；菜单 ③ | `ApplyOne` / `ApplyThirty` / `ApplyCrowd`（200） |
+| `LakesideCrowdVerify.cs` | **需真实图形设备；可 `-batchmode`（离屏 RT 截图）**：Play Mode 验实体数/岸线高度/动画帧变化；预加载 9 chunk，抓图前等 10s | `-executeMethod LakesideCrowdVerify.Run` |
 
 ## 3. 铁律
 

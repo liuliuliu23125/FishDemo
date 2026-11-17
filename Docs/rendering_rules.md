@@ -74,6 +74,7 @@ Enviro 的 pass 位置补丁在 `EnviroURPRenderPass.cs` 构造函数，升级�
 |---|---|
 | 地表（GTS mesh）/ 树 / 常规物体 | SRP Batcher |
 | 草（烘焙 435 万，场景 429 万） | BRG，不经 SRP Batcher |
+| NPC / 人群（GPU ECS Animation Baker） | Entities Graphics（BRG + DOTS instancing），不经 SRP Batcher |
 | Crest 水面（Quad） | 1 次 `DrawMesh` |
 | 天空 / 雾 / 体积 | Enviro RenderFeature |
 
@@ -84,11 +85,11 @@ SRP Batcher 三条实战结论：合批单位是 CBUFFER 布局而不是材质�
 ## 4. 光照
 
 - 唯一启用的主光是 Enviro 的 Sun/Moon Directional Light；旧 `Directional Light` 的 Light 组件已禁用。不要再加第二盏方向光。
-- 夜晚 additional lights ≤ 6，其余靠 emissive + Bloom。2022.3 无 Forward+，per-object light limit = 4。
+- 夜晚 additional lights ≤ 6，其余靠 emissive + Bloom。当前 Forward，per-object light limit = 4；URP 14.0.12 已实现 Forward+，但工程未启用（切换前必须回归，见 [gpu_ecs_animation_baker](gpu_ecs_animation_baker.md) §1.2）。
 
 ## 5. 禁止
 
-- ❌ 假设 URP 14 有 Forward+ / RenderGraph / 内置水体 / 内置体积雾。
+- ❌ 假设 RenderGraph / 内置水体 / 内置体积雾存在。Forward+ 在 URP 14.0.12 已有，但工程未启用；不要在未回归前依赖它。
 - ❌ 加第二个天空盒；无消费者时打开 `m_RequireOpaqueTexture` / `m_RequireDepthTexture`；新增全屏 Blit 链或 ping-pong。
 - ❌ 每帧无条件开水面反射相机；叠第二套后处理。
 - ❌ 用 Terrain detail 做大规模草；用 `drawTreesAndFoliage=false` 关草（会连树一起关，当前 46,472 棵）。

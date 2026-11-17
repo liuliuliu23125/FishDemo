@@ -35,6 +35,7 @@
 | YooAsset 启动入口 | `YooAssetInitializer.InitializeAsync()` 目前**无任何调用方**，资源层尚未接线 |
 | 模拟构建产物 | 菜单 `YooAsset/FishDemo/执行模拟构建并注入路径` 未实际执行过 |
 | 后处理未接入 | 主场景无 Volume，ACES / Color Grading / LUT / Bloom 均未配置；接入规则见 [postprocess](postprocess.md) §0 |
+| NPC 动画与湖边人群 | GPU ECS Animation Baker 已接 **200 人整圈**（Ch19/Ch14/Ch09/Ch46 四种角色，4× 大小；r=191–205，Y=267.06–301.84；Forward 渲染 PASS）；121/200 在高于水位 10m 以上的陡坎。下一步决定“低岸弧段加密”或“改 `LakeCarve` 造岸坡”；真机 30fps 待测；见 [gpu_ecs_animation_baker](gpu_ecs_animation_baker.md) §9 |
 | Enviro 雾的固有全屏 pass | 每帧 1 次全屏 color copy + 1 次合成；体积云开启后还会加全分辨率 temp。要优化必须改 Enviro 并打 `[FishDemo]` 标记，见 [atmosphere](atmosphere.md) §0.7 |
 
 ## 3. 待决策
@@ -44,9 +45,11 @@
 | 选择 | 收益 | 代价 |
 |---|---|---|
 | 锁定 2022.3 | 现有第三方包全部验证过 | 需自研 BRG、体积雾、水体 |
-| 升级 Unity 6 | 白拿 Forward+ / RenderGraph / GPUResidentDrawer / 内置水体 | 全部第三方包需重新验证，含已下架的 GPU Baker |
+| 升级 Unity 6 | 白拿 RenderGraph / GPUResidentDrawer / 内置水体（Forward+ 在 URP 14.0.12 已有，工程当前未启用） | 全部第三方包需重新验证，含已下架的 GPU Baker |
 
 **当前建议**：先按 2022.3 推进，渲染抽象层留迁移口。demo 阶段换引擎收益低于把内容做出来。
+
+**Forward+ 决策点**：**当前决定不切**，保持 Forward。200 人 VAT 已在 Forward 下渲染 PASS（俯瞰 draw=4/rendered=95、弧段 draw=8/rendered=34；控制台仍有 Forward+ warning）；真机性能待验。Forward+ 不再作为接入前提，见 [gpu_ecs_animation_baker](gpu_ecs_animation_baker.md) §1.2。
 
 ### 3.2 `InstallCleanupMode`
 

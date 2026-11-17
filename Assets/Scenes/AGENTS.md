@@ -26,6 +26,13 @@ Assets/Scenes/World/GrassData/*.bytes        36 份 BRG 草烘焙数据（132.8 
 | Pegasus 巡游 | 菜单 `FishDemo/World/② 布置 Pegasus 环绕巡游` | 没有巡游路线 / POI 悬空 |
 | **中心湖** | `LakeCarve.Apply` → `LakeVegetationClear.Apply` → 重转 GTS（受影响 2 chunk） → `LakeCrestSetup.Apply` | 湖没水 / 水边长树 / 地形没凹陷 |
 | **大气** | `AtmosphereSetup.Apply`（首次/干净导入先 `EnsureDefines`） | 没有天空/雾/天气；旧 `Directional Light` 与 Enviro 的光形成双主光 |
+| **湖边人群** | `LakesideCrowdSetup.ApplyOne`（1 人）/ `ApplyThirty`（30 人）/ `ApplyCrowd`（200 人，当前） | World 里没有 SubScene / 没有角色 |
+
+**湖边人群**：`Assets/Scenes/LakesideCrowd.unity` 是 authoring scene，`World.unity` 里的
+`Lakeside Crowd (SubScene)` 引用它（`AutoLoadScene=1`）。当前是 **200 人整圈**（1.8° 间隔，4 种角色，
+4× 大小，r=191–205，Y=267.06–301.84）。`LakeCarve` 在 r>190 直接恢复原始地形：南岸约 283.8m；
+**121/200 个点位高于水位 10m 以上**，最南侧约 +37.8m。要全部贴水站立需改低岸弧段密集布点或改湖盆造岸坡。详见
+[gpu_ecs_animation_baker](../../Docs/gpu_ecs_animation_baker.md) §9。
 
 生成链路与参数见 [world_implementation](../../Docs/world_implementation.md)。
 

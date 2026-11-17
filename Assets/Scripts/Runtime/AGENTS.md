@@ -49,6 +49,7 @@ Pegasus 没有 asmdef、编在 `Assembly-CSharp`。asmdef 程序集引用不到�
 | `Gameplay/SectrChunkCache.cs` | SECTR chunk 的 TTL + LRU 保留；接管 RegionLoader 的引用，切相机/边界回走时复用，淘汰才真正卸载 |
 | `Gameplay/SectrStreamingRuntime.cs` | 流式运行时宿主：驱动缓存 Tick；等 `UnloadSceneAsync` 完成后按冷却做异步 `UnloadUnusedAssets`；低内存清草驻留 + buffer 池 + chunk 缓存 |
 | `Gameplay/SectrGrassStreamer.cs` | 草数据跟随 SECTR chunk：`IsLoaded` 才读该 chunk 的 `.bytes`，卸载即释放；每次最多加/卸一个，驻留数硬上限 24。`BeforeSceneLoad` 里调 `GrassBRGManager.RequestStreaming()` |
+| `Gameplay/LakesideCrowdBehaviour.cs` | 湖边人群 Baker + Spawn 系统（Entities + GPU ECS Animation Baker）；200 人、4 种 prefab、4× 缩放 |
 
 三条容易踩的：
 1. **切相机必须同步四样东西**：`WaterRenderer.Viewer`（水面 clipmap 以它为中心）、
@@ -61,6 +62,12 @@ Pegasus 没有 asmdef、编在 `Assembly-CSharp`。asmdef 程序集引用不到�
    禁 GameObject 会触发 "no audio listeners"。
 
 验收：`LakeOrbitVerify.Run`（可 `-nographics`，9 项断言）。
+
+### 2.6 NPC / 人群动画（规划）
+
+- 玩家选型 Animancer（CPU，未接入）；NPC/人群选型 GPU ECS Animation Baker（VAT，**200 人整圈落地**：`Gameplay/LakesideCrowdBehaviour.cs`，Ch19/Ch14/Ch09/Ch46，4×，r=191–205；121/200 在陡坎上）。
+- NPC/人群代码放 `Gameplay/`（无 asmdef）；实体走 Entities Graphics（BRG + DOTS instancing），不是 SRP Batcher。
+- 接入前读 [GPU ECS Animation Baker 规约](../../GPUECSAnimationBaker/AGENTS.md) 与 [落地手册](../../../Docs/gpu_ecs_animation_baker.md)。
 
 ## 3. Rendering（草 BRG）
 

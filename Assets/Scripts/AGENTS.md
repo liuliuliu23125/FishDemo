@@ -69,3 +69,4 @@ Editor/                     Gaia 世界生成工具链 + 草烘焙/验证（菜�
 | [world_implementation](../../Docs/world_implementation.md) | 要理解 World 场景怎么生成的 |
 | [rendering_rules](../../Docs/rendering_rules.md) | 写任何渲染代码前 |
 | [grass_brg_progress](../../Docs/grass_brg_progress.md) | 改草相关代码前 |
+| [GPUECSAnimationBaker/AGENTS.md](../GPUECSAnimationBaker/AGENTS.md) | 接 NPC/人群、写 VAT 接入代码前（细节见 [落地手册](../../Docs/gpu_ecs_animation_baker.md)） |
