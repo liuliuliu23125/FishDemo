@@ -31,11 +31,11 @@ public static class TreeKeywordCleanup
         int changed = 0, skipped = 0;
         foreach (var path in mats)
         {
+            string text = File.ReadAllText(path);
+            if (!text.Contains("- " + TargetKeyword)) { skipped++; continue; }
+
             var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (mat == null) continue;
-
-            var kws = mat.shaderKeywords ?? new string[0];
-            if (!kws.Contains(TargetKeyword)) { skipped++; continue; }
 
             float cover = mat.HasProperty("_PW_Cover") ? mat.GetFloat("_PW_Cover") : 0f;
             float prog0 = mat.HasProperty("_PW_CoverLayer0Progress") ? mat.GetFloat("_PW_CoverLayer0Progress") : 0f;
@@ -52,8 +52,10 @@ public static class TreeKeywordCleanup
             string bak = Path.Combine(BackupDir, mat.name + ".mat");
             if (!File.Exists(bak)) File.Copy(path, bak);
 
-            mat.DisableKeyword(TargetKeyword);
-            EditorUtility.SetDirty(mat);
+            string updated = RemoveKeywordLine(text, TargetKeyword);
+            if (updated == text) { skipped++; continue; }
+            File.WriteAllText(path, updated);
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
             changed++;
         }
 
@@ -65,10 +67,10 @@ public static class TreeKeywordCleanup
         var combosTree = new HashSet<string>();
         foreach (var path in mats)
         {
+            if (File.ReadAllText(path).Contains("- " + TargetKeyword)) stillHas++;
             var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (mat == null) continue;
             var kws = (mat.shaderKeywords ?? new string[0]).OrderBy(k => k).ToArray();
-            if (kws.Contains(TargetKeyword)) stillHas++;
             combosAll.Add(string.Join(",", kws));
             combosTree.Add(string.Join(",", kws.Where(k =>
                 k.StartsWith("_PW_SF_") || k == "_ALPHATEST_ON" || k == "_ALPHATEST_OFF")));
@@ -86,6 +88,19 @@ public static class TreeKeywordCleanup
         Directory.CreateDirectory("Logs");
         File.WriteAllText(ResultPath, sb.ToString());
         if (Application.isBatchMode) EditorApplication.Exit(ok ? 0 : 2);
+    }
+
+    private static string RemoveKeywordLine(string text, string keyword)
+    {
+        string[] lines = text.Split('\n');
+        var sb = new StringBuilder(text.Length);
+        for (int i = 0; i < lines.Length; i++)
+        {
+            if (lines[i].Trim() == "- " + keyword) continue;
+            sb.Append(lines[i]);
+            if (i < lines.Length - 1) sb.Append('\n');
+        }
+        return sb.ToString();
     }
 
     public static void RestoreAll()
