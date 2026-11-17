@@ -147,6 +147,7 @@ namespace FishDemo.Rendering
 
         public int StreamingChunkCount => _streamChunks.Count;
 
+        private const int kSyntheticMaxInstances = 10000;
         private const int kPoolBucketInstances = 65536;
         private const long kMaxPooledBufferBytes = 32L * 1024 * 1024;
         private static readonly Dictionary<int, Stack<GraphicsBuffer>> s_bufferPool =
@@ -294,12 +295,19 @@ namespace FishDemo.Rendering
             }
 
             if (Application.isPlaying && s_streamingRequested &&
-                !string.IsNullOrEmpty(_grassDataDir) && System.IO.Directory.Exists(_grassDataDir) &&
                 _chunkData == null && _chunkDataList == null)
             {
-                InitStreamingEmpty();
-                _ready = true;
-                return;
+                bool dataDirReady = !string.IsNullOrEmpty(_grassDataDir) &&
+                                    System.IO.Directory.Exists(_grassDataDir);
+                if (dataDirReady || !Application.isEditor)
+                {
+                    if (!dataDirReady)
+                        Debug.LogError($"[GrassBRG] 流式模式已请求，但草数据目录不存在：{_grassDataDir}。" +
+                                       "打包后 Assets/ 不可用，必须先接 YooAsset；本次不渲染草。");
+                    InitStreamingEmpty();
+                    _ready = true;
+                    return;
+                }
             }
 
             BuildInstances();
@@ -1281,6 +1289,7 @@ namespace FishDemo.Rendering
             else
             {
                 _instances = SynthesizeGridInstances();
+                _instanceCount = _instances.Length;
                 SortInstancesIntoBlocks();
                 GroundResolved = !_snapToGround || FindObjectsOfType<Terrain>().Length > 0;
             }
@@ -1351,13 +1360,16 @@ namespace FishDemo.Rendering
 
         private GrassInstance[] SynthesizeGridInstances()
         {
-            int side = Mathf.CeilToInt(Mathf.Sqrt(_instanceCount));
-            var result = new GrassInstance[_instanceCount];
+            int count = Mathf.Min(_instanceCount, kSyntheticMaxInstances);
+            if (count != _instanceCount)
+                Debug.LogWarning($"[GrassBRG] 合成兜底实例数从 {_instanceCount:N0} 夹到 {count:N0}，避免移动端 OOM。");
+            int side = Mathf.CeilToInt(Mathf.Sqrt(count));
+            var result = new GrassInstance[count];
 
             Vector3 origin = _anchor != null ? _anchor.position : transform.position;
             Terrain[] terrains = _snapToGround ? FindObjectsOfType<Terrain>() : null;
 
-            for (int i = 0; i < _instanceCount; i++)
+            for (int i = 0; i < count; i++)
             {
                 int x = i % side;
                 int z = i / side;
