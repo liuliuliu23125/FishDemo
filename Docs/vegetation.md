@@ -149,7 +149,7 @@ depth and keep early-z.
 | 路径 | BRG（`GrassBRGManager` + `GrassBRG.shader`） | 代码 |
 | 实例 | 烘焙 **4,350,225**；场景当前 **4,292,694**（湖区清草后） | `Logs/Grass/bake-report.txt`、`World.unity` |
 | 烘焙产物 | **132.8 MiB**，32B/实例 | `GrassData/*.bytes` |
-| 烘焙采样率 | `0.035`（≈0.82 株/m²） | `GrassBaker.cs:58` |
+| 烘焙采样率 | `0.0175`（≈0.41 株/m²） | `GrassBaker` 的 `SamplingRate` |
 | LOD | 3 级，阈值 100/25/8 px，三层均采 albedo 图集精灵格 | `GrassBRGManager.cs` |
 | 剔除 | 32m 空间分块 + 块级距离剔除；21.9ms 是 1265 万实例旧测，当前未重测 | `Logs/Grass/perf-probe.txt` |
 | Terrain detail | **已关**（`DetailObjectDistance=0`） | 36 个 chunk 场景 |
@@ -228,9 +228,9 @@ keyword 与它严格对应——
 树干开 `ALPHATEST` 会变透明，树叶关 `ALPHATEST` 会丢掉镂空轮廓——
 所以「统一 keyword」在物理上不成立，能统一的只有那个无效的 `COVER`。
 
-**2026-11-12 已清除 COVER**（`TreeKeywordCleanup.Run`，备份在
-`Tools/tree-keyword-backup/`）。地形实际在用的 10 个树材质，
-组合数 **4 种 → 2 种**：
+**COVER 已清除（2026-11-17 复核）**：`TreeKeywordCleanup.Run`，备份在
+`Tools/tree-keyword-backup/`。仓库内 `_PW_SF_COVER_ON` 出现次数为 **0**；
+地形实际在用的 10 个树材质，组合数 **4 种 → 2 种**：
 
 | 改后组合 | 材质数 | 角色 |
 |---|---|---|
@@ -242,7 +242,8 @@ keyword 与它严格对应——
 **⚠️ 清除 keyword 必须直接改 .mat 文本**：`Material.DisableKeyword()` 对 ShaderGraph
 材质**不持久**——内存里改了，但 `m_ValidKeywords` 在 ShaderGraph 重编译时会写回原值。
 第一版 `TreeKeywordCleanup` 用 `DisableKeyword` 并报告"已清零"，实际复查发现
-4 个在用针叶材质仍带 `COVER`，是假 PASS。改为直接删 .mat 里 `m_ValidKeywords` 的那一行才生效。
+4 个在用针叶材质仍带 `COVER`，是假 PASS。现在工具改为直接删 `m_ValidKeywords` 的那一行，
+并直接读 `.mat` 文本复核，不再用 `shaderKeywords` 自检。
 
 **Frame Debugger 实测（编辑器截图确认）**：
 - 批次拆分原因显示 `SRP: Node use different shader keywords`；

@@ -1,6 +1,6 @@
 # World 场景实现分析
 
-> **本文件 396 行，是查阅型参考，不要通读。**
+> **本文件是查阅型参考，不要通读。**
 > 只在以下情况打开：要重跑世界生成、排查 chunk 加载不出来、要改世界尺寸/海平面、要接 YooAsset 替换 SECTR、或核对"这个场景到底是怎么来的"。
 >
 > 结论分三类标注：**代码事实**（file:line）、**产物事实**（解析 `World.unity` / 资产文件得到）、**推断**（注明依据）。
@@ -10,10 +10,10 @@
 
 | 项 | 值 | 依据 |
 |---|---|---|
-| 场景文件 | `Assets/Scenes/World.unity`（80719 行 / 2.1MB） | 产物事实 |
-| 世界规模 | 3×3 tile × 1024m = 3072m × 3072m | `WorldPipeline.cs:38-40` |
+| 场景文件 | `Assets/Scenes/World.unity` | 产物事实 |
+| 世界规模 | 3×3 tile × 1024m = 3072m × 3072m | `WorldPipeline.cs` |
 | 地形高度 | 700m，海平面 **60**（代码）/ **85**（session） | 见 §6.1 冲突 |
-| 分块 | 每 tile 2×2 → 9×4 = **36 个 chunk**，每块 512m | `WorldPipeline.cs:43`、`SectrPipeline.cs:28` |
+| 分块 | 每 tile 2×2 → 9×4 = **36 个 chunk**，每块 512m | `WorldPipeline.cs`、`SectrPipeline.cs` |
 | **地表渲染形态** | **GTS Mesh**（每 chunk 4 个 256m subTile），Terrain 只留碰撞，`drawHeightmap=false` | 见 §4.1 |
 | 流式实现 | SECTR `SECTR_RegionLoader` + `SECTR_Chunk`（`SceneManager.LoadSceneAsync`） | `SECTR_Chunk.cs:238` |
 | 资源入口 | **绕过 YooAsset**（SECTR 直接按场景路径加载） | 同上一行 |
@@ -35,7 +35,7 @@
 | `Assets/Scripts/Editor/` | `FishDemo.Editor`（asmdef） | `GaiaCore`、`GaiaEditor`、`YooAsset.Editor` | Gaia 有 asmdef |
 | `Assets/Editor/` | `Assembly-CSharp-Editor`（默认） | 一切 + SECTR | **SECTR 没有 asmdef**，其 `SECTR_TerrainWindow` / `SECTR_StreamExport` 编进默认程序集；asmdef 程序集引用不到它 |
 
-`SectrPipeline.cs:11-15` 的注释就是这个结论的原始记录。**把 SECTR 调用写进 `Assets/Scripts/Editor/` 会编译失败。**
+`SectrPipeline.cs` 的注释就是这个结论的原始记录。**把 SECTR 调用写进 `Assets/Scripts/Editor/` 会编译失败。**
 
 ## 2. 五阶段流水线
 
@@ -50,63 +50,63 @@
 
 ### 2.1 ① 世界创建（`WorldPipeline.cs`）
 
-- 参数在 `WorldPipeline.cs:38-43`：`TilesX/Z=3`、`TileSize=1024`、`TileHeight=700`、`SeaLevel=60`、`SectorsPerSide=2`。
-- `PrepareScene`（`:100-121`）：新建空场景 → 相机 `(0, 420, -1228.8)` 俯视 25° → 平行光 → 存 `World.unity`。
-- `StartWorldCreation`（`:123-166`）：
+- 参数在 `WorldPipeline.cs`：`TilesX/Z=3`、`TileSize=1024`、`TileHeight=700`、`SeaLevel=60`、`SectorsPerSide=2`。
+- `PrepareScene`：新建空场景 → 相机 `(0, 420, -1228.8)` 俯视 25° → 平行光 → 存 `World.unity`。
+- `StartWorldCreation`：
   - `m_targetSizePreset=Custom`，`m_qualityPreset=Desktop`；
-  - **`m_createInScene=false`（`:135`）**：关掉 Gaia 自带的 TerrainLoader 场景流式，避免与 SECTR 双重加载；
-  - `GaiaDefaults`：heightmap 1025 / control 1024 / basemap 1024 / detail 1024，`m_terrainSize=1024`、`m_terrainHeight=700`（`:143-149`）。
-- **状态机而非同步等待**（`:15-21` 注释）：`CreateOrUpdateWorld` 把协程挂到 `EditorApplication.update`；在 `-executeMethod` 里 while 等待会占死主线程、协程永不前进（实测死等）。所以入口立即返回，由 `Tick`（`:176-242`）分帧推进，完成时显式 `EditorApplication.Exit`。
+  - **`m_createInScene=false`**：关掉 Gaia 自带的 TerrainLoader 场景流式，避免与 SECTR 双重加载；
+  - `GaiaDefaults`：heightmap 1025 / control 1024 / basemap 1024 / detail 1024，`m_terrainSize=1024`、`m_terrainHeight=700`。
+- **状态机而非同步等待**：`CreateOrUpdateWorld` 把协程挂到 `EditorApplication.update`；在 `-executeMethod` 里 while 等待会占死主线程、协程永不前进（实测死等）。所以入口立即返回，由 `Tick` 分帧推进，完成时显式 `EditorApplication.Exit`。
   - **命令行不要加 `-quit`**，否则进程会在流水线跑完前退出。
-  - 单阶段超时 40 分钟（`:58`）。
+  - 单阶段超时 40 分钟。
 
 ### 2.2 ② 地貌塑形（`TerrainStamper.cs`）
 
 - `CreateOrUpdateWorld` **只建空白网格，高度恒为 0**；必须显式调 `GaiaSessionManager.Stamp`（`GaiaSessionManager.cs:2038`）才有起伏。
-- 9 张官方 exr 印章 3×3 平铺，`StampSize=1400m` 覆盖 3072m 世界（重叠约 20%），`TerrainStamper.cs:28-30`。
-- **关键换算**（`:32-41`、`:144-147`）：`StamperSettings.m_height` 不是米，是 0..50 的垂直缩放系数：
+- 9 张官方 exr 印章 3×3 平铺，`StampSize=1400m` 覆盖 3072m 世界（重叠约 20%），`TerrainStamper.cs`。
+- **关键换算**：`StamperSettings.m_height` 不是米，是 0..50 的垂直缩放系数：
   ```
   scaleY = 50 × 目标米数 / terrainData.size.y
   ```
-  早期误填 260 导致纹理被压扁、起伏只剩 0.0085（`:36-39` 注释记录了这次实测）。
-- 成功判据：抽样 `max-min > 0.01`（归一化），`SampleRelief`（`:166-177`）。
+  早期误填 260 导致纹理被压扁、起伏只剩 0.0085。
+- 成功判据：抽样 `max-min > 0.01`（归一化），`SampleRelief`。
 
 ### 2.3 ③ Biome 撒点（`BiomeSpawner.cs`）
 
-照抄 `BiomeControllerEditor` 的 GUI 流程：`CreateBiome(true)` → `UpdateSpawnerList()` → `Spawner.HandleAutoSpawnerStack(...)` → 轮询 `m_spawnComplete`（`:43-111`）。
+照抄 `BiomeControllerEditor` 的 GUI 流程：`CreateBiome(true)` → `UpdateSpawnerList()` → `Spawner.HandleAutoSpawnerStack(...)` → 轮询 `m_spawnComplete`。
 
-- 预设：`Gaia Pro Assets and Biomes/Biomes/Alpine Meadow.asset`（`:34-35`）。
-- 撒点是异步协程，必须分帧等（`TickBiomeSpawn`，`:97-111`）。
+- 预设：`Gaia Pro Assets and Biomes/Biomes/Alpine Meadow.asset`。
+- 撒点是异步协程，必须分帧等（`TickBiomeSpawn`）。
 
-**⚠ 这个脚本会写第三方资产**（`FixTreeHeightMasksOnPreset`，`:151-212`）：
+**⚠ 这个脚本会写第三方资产**（`FixTreeHeightMasksOnPreset`）：
 
-- 预设里树规则的 HeightMask 原本按"世界高 115m / 海平面 25m"标定，与本工程（700m / 60m）错位，导致 **0 棵树**（`:132-140` 有实测对照：清空掩码单块地形 217558 棵）。
+- 预设里树规则的 HeightMask 原本按"世界高 115m / 海平面 25m"标定，与本工程（700m / 60m）错位，导致 **0 棵树**（实测对照：清空掩码单块地形 217558 棵）。
 - 修法：把 `HeightMaskType` 改为 `WorldSpace` + `Meter`，区间 `[海平面+2, 地形高×0.95]` = `[62, 665]`。
 - **副作用**：修改直接落在 `Alpine Meadow/Alpine Meadow-Trees.asset` 上，是持久化的第三方资产改动。已核实该文件当前 `m_heightMaskType: 0`、`m_absoluteHeightMin: 62`、`Max: 665`（产物事实）。换预设或重装 Gaia 会丢，需重跑。
-- 只改 TerrainTree（树/灌木/蕨），草（TerrainDetail）与石头（GameObject）不动（`:148-150`）。
+- 只改 TerrainTree（树/灌木/蕨），草（TerrainDetail）与石头（GameObject）不动。
 
 ### 2.4 ④ 切块与导出（`Assets/Editor/SectrPipeline.cs`）
 
-- 遍历 `FindObjectsOfType<Terrain>()`，**不要按 transform.root 去重**（`:39-43`）：Gaia 把 9 块地形挂在同一 `Gaia Terrains` 根下，按 root 去重只会得到 1 个不含 Terrain 的根，导致一块都没切。
-- 每块调 `SECTR_TerrainWindow.SectorizeTerrain(terrain, 2, 2, 1, splitTerrain:true, createPortalGeo:false, includeStatic:true, includeDynamic:false, sortGaiaObjects:true)`（`:59-68`；方法定义在 `SECTR_TerrainWindow.cs:106`）。
+- 遍历 `FindObjectsOfType<Terrain>()`，**不要按 transform.root 去重**：Gaia 把 9 块地形挂在同一 `Gaia Terrains` 根下，按 root 去重只会得到 1 个不含 Terrain 的根，导致一块都没切。
+- 每块调 `SECTR_TerrainWindow.SectorizeTerrain(terrain, 2, 2, 1, splitTerrain:true, createPortalGeo:false, includeStatic:true, includeDynamic:false, sortGaiaObjects:true)`（方法定义在 `SECTR_TerrainWindow.cs:106`）。
   - `includeDynamic:false` → 水面不进 chunk（全局平面分块会产生接缝）。
   - `sortGaiaObjects:true` → 撒点物按位置归入各自 sector。
-- 校验 Sector 数 = 9×2×2 = 36（`:71-78`），然后 `SECTR_StreamExport.ExportSceneChunks()`（`:87`，定义 `SECTR_StreamExport.cs:945`）把每个 sector 导出成独立 `.unity`。
-- 校验"已冻结（已导出）"的 Sector 数 = 36（`:90-96`）。
+- 校验 Sector 数 = 9×2×2 = 36，然后 `SECTR_StreamExport.ExportSceneChunks()`（定义 `SECTR_StreamExport.cs:945`）把每个 sector 导出成独立 `.unity`。
+- 校验"已冻结（已导出）"的 Sector 数 = 36。
 
-**工序顺序不可颠倒**（`WorldPipeline.cs:23-29`）：地形 → 植被 → 水 → 切块 → 导出。
+**工序顺序不可颠倒**（`WorldPipeline.cs`）：地形 → 植被 → 水 → 切块 → 导出。
 因为 `SectorizeTerrain` 会把原 TerrainData 的高度/Alpha/Detail/Tree 按块复制，并在结尾把原地形 `SetActive(false)`；切块后再撒点会撒到失活地形上。
 
 ### 2.5 ⑤ 收尾（`Assets/Editor/WorldFinalize.cs`）
 
 两件事：
 
-1. **删原始地形残留**（`:37-53`）：切块只 `SetActive(false)`，不清 TerrainData。9 块 × 1025² 高度图约 945 万顶点，会在加载主场景时全部进内存，与 36 个 chunk 重复。只删 `!activeInHierarchy` 的，避免误删 sector 内容。
-2. **挂 `SECTR_RegionLoader`**（`:71-81`）：挂到主相机上，`LoadSize=(768,1000,768)`、`UnloadBuffer=0.25`、`LayersToLoad=~0`。
+1. **删原始地形残留**：切块只 `SetActive(false)`，不清 TerrainData。9 块 × 1025² 高度图约 945 万顶点，会在加载主场景时全部进内存，与 36 个 chunk 重复。只删 `!activeInHierarchy` 的，避免误删 sector 内容。
+2. **挂 `SECTR_RegionLoader`**：挂到主相机上，`LoadSize=(768,1000,768)`、`UnloadBuffer=0.25`、`LayersToLoad=~0`。
    - 768 ≈ 1.5 块（512m），常驻约 3×3 chunk。
    - `UnloadBuffer=0.25` → 离开 25% 才卸载，防边界抖动。
 
-校验项（`:84-110`）：残留 Terrain=0、Chunk=36、Sector=36、无零边界 Sector；否则 exit 2。
+校验项：残留 Terrain=0、Chunk=36、Sector=36、无零边界 Sector；否则 exit 2。
 
 ## 3. World.unity 实际构成
 
@@ -223,7 +223,7 @@ Terrain 仍保留的关键参数（草/树/碰撞仍由它负责）：
 
 | 位置 | 值 | 依据 |
 |---|---|---|
-| 生成代码常量 | 60 | `WorldPipeline.cs:42` |
+| 生成代码常量 | 60 | `WorldPipeline.cs` |
 | Gaia session `GS-20261109 - 162006` | 85 | `Assets/Gaia User Data/Sessions/GS-20261109 - 162006.asset:26` |
 | 水面实例位置 y | 60 | `World.unity` 中 Gaia Water 的 `m_LocalPosition.y` |
 | 水面实例覆盖的 `m_seaLevel` | 85 | `World.unity` PrefabInstance 修改项（目标为嵌套 `PWS_WaterSystem`） |
@@ -265,7 +265,7 @@ Terrain 仍保留的关键参数（草/树/碰撞仍由它负责）：
 | 问题 | 依据 | 影响 |
 |---|---|---|
 | ~~深度图未开~~ | **当前 `m_RequireDepthTexture=1`、`m_RequireOpaqueTexture=0`**：depth 是 Enviro 体积雾/云的硬依赖；Crest SimpleTransparency 自身不采样这两张图 | 不接大气时可改回 0，省一次 CopyDepth；opaque 保持 0（见 [rendering_rules](rendering_rules.md) §1.2） |
-| 阴影距离 50m / 级联 1 | `UniversalRP.asset:48-49` | 3072m 世界下只有极近处有阴影 |
+| 阴影距离 50m / 级联 1 | `UniversalRP.asset` | 3072m 世界下只有极近处有阴影 |
 | 主场景无 Volume | `World.unity` 无 Volume 组件 | 后处理（Bloom/Tonemap）当前无配置载体 |
 | ~~草走 Terrain detail~~ | **已修**：BRG 接管，`DetailObjectDistance=0` / `DetailObjectDensity=0` | 不再与 BRG 重复绘制 |
 | 无反射/光照探针 | `!u!215` / `!u!220` 计数 = 0 | |
@@ -276,7 +276,7 @@ Terrain 仍保留的关键参数（草/树/碰撞仍由它负责）：
 
 - 36 个 chunk × 512m；`LoadSize=768` 单点最多选中 4 块（`final-integrity.txt`）。
 - 每块 TerrainData ≈4.68MB，常驻 4 块 ≈19MB（未含贴图/树资源）。
-- 单块原 1.26 万棵树 + 570 万 detail 密度（PC 桌面预设，`m_qualityPreset=Desktop`，`WorldPipeline.cs:127`）；
+- 单块原 1.26 万棵树 + 570 万 detail 密度（PC 桌面预设，`m_qualityPreset=Desktop`，`WorldPipeline.cs`）；
   树已按 1/10 抽样降到 46,472，Terrain detail 已关闭（BRG 接管草）。
 
 ### 6.6 chunk 渲染参数已调优（2026-11-09）
@@ -400,10 +400,10 @@ Build Settings 重建为 37 个场景（含主场景），缺失 0
 
 ## 9. 改动前必读
 
-- 改世界尺寸：`WorldPipeline.cs:38-43` 的常量与 `BiomeSpawner.cs:33` 的 `SeaLevel` **必须同步**，否则植被高度判定错位（注释原话）。
+- 改世界尺寸：`WorldPipeline.cs` 的常量与 `BiomeSpawner.cs` 的 `SeaLevel` **必须同步**，否则植被高度判定错位（注释原话）。
 - 改海平面：同时处理 §6.1 的 5 个位置，否则运行时会被水面 transform 覆盖。
-- 改切块粒度：`SectorsPerSide` 在 `WorldPipeline.cs:43` 与 `SectrPipeline.cs:28` 各有一份，且 chunk/sector 数量（36）写死在 `WorldFinalize.cs:109`、`FinalIntegrity.cs:82`、`RichWorldVerify.cs:83`。
-- 改加载半径：`WorldFinalize.cs:29` 的 `LoadSizeXY`，改完跑 `StreamingVerify` 确认"单点最多 < 36 且全覆盖 36"。
+- 改切块粒度：`SectorsPerSide` 在 `WorldPipeline.cs` 与 `SectrPipeline.cs` 各有一份，且 chunk/sector 数量（36）写死在 `WorldFinalize.cs`、`FinalIntegrity.cs`、`RichWorldVerify.cs`。
+- 改加载半径：`WorldFinalize.cs` 的 `LoadSizeXY`，改完跑 `StreamingVerify` 确认"单点最多 < 36 且全覆盖 36"。
 - **改 GTS mesh 相关**：先读 [gts_srp_batcher](gts_srp_batcher.md)。三个易踩点：
   1. shader 改动在第三方目录，重装 GTS 会覆盖（备份在 `Tools/gts-shader-backup/`）
   2. `GTSMesh` 组件的 `worldSize` 决定贴图 tiling，必须按实际 subTile 尺寸（256m）设置，不能用默认 1024

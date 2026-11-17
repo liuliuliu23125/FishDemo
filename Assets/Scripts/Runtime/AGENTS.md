@@ -34,7 +34,7 @@ Pegasus 没有 asmdef、编在 `Assembly-CSharp`。asmdef 程序集引用不到�
 2. 菜单 `YooAsset/FishDemo/执行模拟构建并注入路径` —— 否则 `EditorSimulatePackageRoot` 为空，初始化会抛 `InvalidOperationException`。
 3. 调用方必须在进入依赖资源的场景**之前** `await YooAssetInitializer.InitializeAsync()`。
 
-**地址规则必须是 `AddressByFolderAndFileName`**（`YooAssetSetup.cs:96`）。
+**地址规则必须是 `AddressByFolderAndFileName`**（`YooAssetSetup.cs`）。
 `Assets/Scenes` 下场景与烘焙数据同名（`World/Chunks/*Sector.unity` 与 `World/GrassData/*Sector.bytes`），
 纯文件名规则会让两者撞 Address，收集阶段直接抛 `Address already exists`（`BundleCollector.cs:226`）。
 
@@ -110,8 +110,8 @@ UV 重写到该类型的精灵格、并把顶点缩放到原型尺寸（材质�
 - 不要开 `AlphaToMask`：工程 MSAA=1，alpha-to-coverage 会退化并把草切成碎屑。
 
 **数据加载是临时通路**：`TryAutoLoadChunkData()` 用 `System.IO.File.ReadAllBytes` 直读
-`Assets/Scenes/World/GrassData/*.bytes`（编辑器/开发期）。打包后 `Assets/` 不存在，
-会回退到 M1 合成方阵。正式版必须改成经 YooAsset。
+`Assets/Scenes/World/GrassData/*.bytes`（编辑器/开发期）。打包后 `Assets/` 不存在：
+流式模式下禁用草并报错；编辑器兜底合成最多 10000 实例。正式版必须改成经 YooAsset。
 
 **Play Mode 走流式、不进托管堆**：`SectrGrassStreamer` 在 `BeforeSceneLoad` 置
 `GrassBRGManager.RequestStreaming()`，`Initialize` 因此跳过全量读盘，等 chunk 增量加载。

@@ -9,7 +9,7 @@ SECTR 与 GTS 都没有自己的 asmdef，其编辑器 API（`SECTR_TerrainWindo
 
 **asmdef 程序集无法引用 `Assembly-CSharp-Editor`**（依赖方向是反的）。所以凡是要调这些 API 的脚本，必须放在这里、走默认程序集。
 
-`SectrPipeline.cs:11-15` 是这条结论的原始记录。**不要给 `Assets/Editor/` 加 asmdef**，加了 SECTR/GTS 调用就编不过。
+`SectrPipeline.cs` 是这条结论的原始记录。**不要给 `Assets/Editor/` 加 asmdef**，加了 SECTR/GTS 调用就编不过。
 
 代价：这里的脚本拿不到 `FishDemo.Editor` 的引用（默认程序集能引用 asmdef，反向不行），需要复用 Gaia 工具时用 `-executeMethod` 分两步跑。
 
@@ -76,7 +76,7 @@ SECTR 与 GTS 都没有自己的 asmdef，其编辑器 API（`SECTR_TerrainWindo
 ### 3.1 切块遍历 Terrain 组件，不要按 root 去重
 
 
-Gaia 把 9 块地形挂在同一个 `Gaia Terrains` 根下。按 `transform.root` 去重只会得到 1 个**不含 Terrain 组件**的根，导致一块都没切（`SectrPipeline.cs:39-43`）。
+Gaia 把 9 块地形挂在同一个 `Gaia Terrains` 根下。按 `transform.root` 去重只会得到 1 个**不含 Terrain 组件**的根，导致一块都没切（`SectrPipeline.cs`）。
 
 正确做法：`FindObjectsOfType<Terrain>()` 取快照再逐个处理（`SectorizeTerrain` 结尾会把原地形 `SetActive(false)`，边遍历边改会漏）。
 
@@ -89,7 +89,7 @@ Gaia 把 9 块地形挂在同一个 `Gaia Terrains` 根下。按 `transform.root
 
 切块只 `SetActive(false)`，不清 TerrainData。9 块 × 1025² 高度图约 945 万顶点会在加载主场景时全部进内存，与 36 个 chunk 重复，流式就失去意义。
 
-只删 `!activeInHierarchy` 的，避免误删 sector 内容（`WorldFinalize.cs:44-52`）。
+只删 `!activeInHierarchy` 的，避免误删 sector 内容（`WorldFinalize.cs`）。
 chunk 引用的 TerrainData 在 `World/TerrainSplits/`，与原始地形独立，删原始地形安全。
 
 ### 3.4 chunk 里的 Terrain 渲染参数会被重跑覆盖
@@ -175,10 +175,10 @@ AtmosphereSetup.EnsureDefines   （干净导入/换机时一次；加 ENVIRO_URP
 
 ### 3.6 数量断言硬编码了 36
 
-`WorldFinalize.cs:109`、`FinalIntegrity.cs:82`、`RichWorldVerify.cs:83` 三处把 chunk/sector 数量写死为 36。
+`WorldFinalize.cs`、`FinalIntegrity.cs`、`RichWorldVerify.cs` 三处把 chunk/sector 数量写死为 36。
 
 改世界尺寸或切块粒度时，这三处**必须同步改**，否则验证会误报 FAIL。
-（`StreamingVerify.cs:104-108` 用的是 `sectors.Length`，不写死，无需改。）
+（`StreamingVerify.cs` 用的是 `sectors.Length`，不写死，无需改。）
 
 ### 3.7 Exit code 语义
 
@@ -194,16 +194,16 @@ AtmosphereSetup.EnsureDefines   （干净导入/换机时一次；加 ENVIRO_URP
 
 这些脚本会被反复重跑。新增逻辑时：
 
-- 挂组件前先清掉已有的（`WorldFinalize.cs:71-75` 的做法）；
-- 重建 Build Settings 时整体覆盖而不是追加（`FinalIntegrity.cs:32-40`）；
-- 清理资产时按**当前场景实际引用的批次**判断，不要盲删目录（`CleanupOrphanAssets.cs:33-44`）。
+- 挂组件前先清掉已有的（`WorldFinalize.cs` 的做法）；
+- 重建 Build Settings 时整体覆盖而不是追加（`FinalIntegrity.cs`）；
+- 清理资产时按**当前场景实际引用的批次**判断，不要盲删目录（`CleanupOrphanAssets.cs`）。
 
 ### 3.9 诊断脚本只写文件、不逐条打 Console
 
 `TreeRenderProbe` 这类逐原型诊断会产生几千行输出。**batchmode 下逐条 `Debug.Log`
 会触发 Unity 自己的日志缓冲崩溃**（实测 `EditorMonoConsole::LogToConsoleImplementation`
 处 `RaiseException`）。做法：明细全写文件，Console 只打汇总
-（`TreeRenderProbe.cs:36-41` 的 `W` / `C` 两个委托）。
+（`TreeRenderProbe.cs` 的 `W` / `C` 两个委托）。
 
 ### 3.10 验证脚本的三条提速规则（2026-11-13，实测 9m50s → 1m02s）
 

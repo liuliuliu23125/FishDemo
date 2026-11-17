@@ -216,7 +216,7 @@ m_BuildTargetBatching:
   Standalone:        m_StaticBatching: 0, m_DynamicBatching: 0
 ```
 
-同时 `GtsApplyMeshToChunks.cs:138-141` 已改为 `go.isStatic = false`，重跑 GTS 流水线
+同时 `GtsApplyMeshToChunks.cs` 已改为 `go.isStatic = false`，重跑 GTS 流水线
 不会再把 subTile 标回 static。存量 chunk 里的 static 标记仍保留，但全局静态合批已关，
 不再参与合批。
 

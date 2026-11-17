@@ -14,9 +14,10 @@
 | 天空/大气 | ≤ 1.5ms |
 | 后处理 | ≤ 2.5ms |
 | 水下后处理 | ≤ 1.5ms |
-| UI + 余量 | ≤ 4ms |
+| UI | ≤ 2ms |
+| 余量 | ≤ 1.8ms |
 
-当前：水面 SimpleTransparency + Quad（平面反射关闭，1 次 DrawMesh）；Enviro 体积雾 Low（1/4 res、steps 32）、体积云关。均为估值，待实机校准。
+各项合计 31.5ms + 余量 1.8ms = 33.3ms。当前：水面 SimpleTransparency + Quad（平面反射关闭，1 次 DrawMesh）；Enviro 体积雾 Low（1/4 res、steps 32）、体积云关。均为估值，待实机校准。
 
 ## 2. 管线 pass / 带宽预算
 

@@ -190,9 +190,9 @@ SRP Batcher 现在确实吃到了；静态合批已全局关闭。**为了合批
 
 | 机制 | 是否跨 scene | 依据 | 本工程是否吃到 |
 |---|---|---|---|
-| SRP Batcher | **是**（按 shader + CBUFFER 布局归并，不看 scene 边界） | `UniversalRP.asset:63` `m_UseSRPBatcher: 1` | **是**：GTS 地表 + 树/常规物体 |
+| SRP Batcher | **是**（按 shader + CBUFFER 布局归并，不看 scene 边界） | `UniversalRP.asset` `m_UseSRPBatcher: 1` | **是**：GTS 地表 + 树/常规物体 |
 | 静态合批 | **否**（构建期按 scene 合并 VBO） | Unity 构建行为 | **已关闭**（Android/Standalone 0/0） |
-| 动态合批 | 否 | `UniversalRP.asset:64` `m_SupportsDynamicBatching: 0`（且规约要求关闭） | 不用 |
+| 动态合批 | 否 | `UniversalRP.asset` `m_SupportsDynamicBatching: 0`（且规约要求关闭） | 不用 |
 
 **当前事实（2026-11-17）**：每个 chunk 除 `Terrain` 组件外还挂着 GTS 生成的 `GTS_Mesh`
 （144 个 subTile mesh），**地表实际由 GTS mesh 渲染并进 SRP Batcher**，关键前提是
@@ -366,7 +366,7 @@ chunk 内其余 GameObject 几何约 267 个 `MeshRenderer`（Gaia 撒的树桩/
 | `YooAssetInitializer` / `AssetLoader` | 已实现，但 `InitializeAsync()` 全工程无调用 | — |
 
 结论：**YooAsset 目前只是"已实现的入口"，不是实际加载路径**。打包后 `Assets/` 不存在，
-草会回退到旧的全量/合成方阵路径；正式版必须先把上面三条接进 YooAsset。
+草会被禁用并报错（编辑器兜底合成最多 10000 实例）；正式版必须先把上面三条接进 YooAsset。
 
 > 验收：`GrassNativeDataVerify.Run`（`-nographics`）验证原生读/排序与托管读取逐实例一致；
 > Play Mode 下看 `GrassBRGManager` HUD 的「chunk / 驻留实例」两项。

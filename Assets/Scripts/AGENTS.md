@@ -56,7 +56,8 @@ Editor/                     Gaia 世界生成工具链 + 草烘焙/验证（菜�
 - **草 BRG 是当前唯一在跑的自研渲染逻辑**：`GrassBRGManager` 属 `FishDemo.Rendering`，
   已进 `FishDemo.Editor` 的引用列表（编辑器工具要写 `SetDetailPrototypeMeshes`）。
   它的草数据仍用 `System.IO.File.ReadAllBytes` 直读 `GrassData/`（编辑器/开发期通路），
-  **打包后会失败并回退到 M1 合成方阵**——正式版必须改成经 YooAsset（[grass_brg_progress](../../Docs/grass_brg_progress.md) §6）。
+  **打包后 `Assets/` 不存在：流式模式下禁用草并报错**；编辑器兜底合成最多 10000 实例。
+  正式版必须改成经 YooAsset（[grass_brg_progress](../../Docs/grass_brg_progress.md) §6）。
 
 ## 5. 相关文档
 

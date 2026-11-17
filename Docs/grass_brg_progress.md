@@ -17,7 +17,7 @@
 | M2.2 多 chunk + 空间分块剔除 | ✅ 完成 | `Logs/Grass/multi-chunk-verify.txt` + `perf-probe.txt` |
 | 关闭 Terrain 自带草 | ✅ 完成（2026-11-11） | 36 个 chunk 场景 `m_DetailObjectDistance: 0` |
 | 真实 detail 原型 mesh | ✅ 完成（2026-11-11） | `Logs/Grass/detail-brg-setup.txt`，`LOD0=128 tri` |
-| shader 主光 + 环境光 + 风摆 | ✅ 完成（2026-11-11） | `Assets/Grasses/GrassBRG.shader:1-9` |
+| shader 主光 + 环境光 + 风摆 | ✅ 完成（2026-11-11） | `Assets/Grasses/GrassBRG.shader` |
 | 花显色（albedo 图集 + tint） | ✅ 完成（2026-11-11） | 仅 LOD0 生效，见下条 |
 | **全 LOD 精灵图集化 + 密度减半** | ✅ 完成并验证（2026-11-12） | `Logs/grass-flower.txt` PASS |
 | M3 流式加载（原生内存） | ✅ 完成（2026-11-17） | `Logs/Grass/native-data.txt` PASS；`streaming.txt` 见 §6 |
@@ -71,7 +71,7 @@
 | FBX **无顶点色**（`LayerElementColor` 0 处） | FBX 二进制解析 |
 | 图集透明背景占比高（Lawn 69% / Wild 84% 的像素 alpha==0），不裁剪会画出实心色块 | PNG 解码采样 |
 | 原 `PW_Details_Foliage_URP` shadergraph 的贴图节点 `useTilingAndOffset: false`，即**直接用网格 UV 采样、不缩放** | shadergraph JSON |
-| 磁盘 32B 格式的 `Color` 字段恒写 `0xFFFFFFFF` 且从未上传 GPU | `GrassBaker.cs:267`、`UploadInstanceData` 只有 2 段 |
+| 磁盘 32B 格式的 `Color` 字段恒写 `0xFFFFFFFF` 且从未上传 GPU | `GrassBaker.cs`、`UploadInstanceData` 只有 2 段 |
 
 所以「给不同 Type 传不同 tint」单独做是**显不出花色的**——必须同时给 shader
 加图集采样与 alpha 裁剪。tint 只做类型间的轻微区分（如枯草块偏黄），
@@ -188,13 +188,13 @@ shader 按需重建变换，省 33% 带宽且保留运行时调缩放/LOD 的能
 
 ```
 对每层每格：n = GetDetailLayer[x,y]
-  n' = round(n × 0.035)
+  n' = round(n × 0.0175)
   if n>0 && n'==0 → 30% 概率保底 1 个（避免空洞）
   格内均匀随机抖动（消除网格感）
   过滤：坡度 tan > 1.0（45°）、高度 < 海平面+2m
 ```
 
-- `SamplingRate = 0.035`（`GrassBaker.cs:58`）
+- `SamplingRate = 0.0175`（`GrassBaker` 的 `SamplingRate`）
 - 坡度用高度图中心差分自算（米/米），**不用语义不明的 `TerrainData.GetSteepness`**
 - 确定性种子（按 chunk 名哈希），重烘结果一致
 
@@ -222,7 +222,7 @@ shader 按需重建变换，省 33% 带宽且保留运行时调缩放/LOD 的能
 BRG 单 batch 的 raw buffer 上限 16MB（`EntitiesGraphicsSystem.cs:1156`）→ **524,288 实例/批**。
 超限的实测表现：shader 读到垃圾 → NaN → **全黑且无任何报错**。
 
-435 万实例 → **13 个 batch**（实测 `Logs/flowerverify4.log`），每个独立 `GraphicsBuffer` + 独立 `BatchID`。
+**非流式全量**时 435 万实例 → **13 个 batch**（1265 万实例阶段旧测）；**流式路径**按 chunk × 类型切 buffer，15 块驻留约 90 个 batch。
 命令矩阵 = batch × LOD（最多 75 条）。
 
 ### 3.5 空间分块剔除（性能关键）
@@ -314,10 +314,10 @@ BRG 单 batch 的 raw buffer 上限 16MB（`EntitiesGraphicsSystem.cs:1156`）�
 | 10 | `_scaleMultiplier=8` 残留 | 密度看似正常但顶点爆炸（LOD 距离被放大 8 倍） | 阶段切换必须清理上一阶段的权宜参数 |
 | 11 | 运行时按名字找 detail 原型 mesh | `Resources.FindObjectsOfTypeAll<Mesh>()` 实测 0 命中，7 种植物长一样，`LOD0 三角形 = 24` | 编辑器期用 `AssetDatabase` 拿引用、序列化进组件（`DetailBrgSetup`）；且 FBX 内 mesh 名带 `_E` 后缀 |
 | 12 | 与 Terrain detail 重复绘制 | 同一处画两遍草，且 detail 无法与 BRG 合批 | `DetailObjectDistance = 0`；**不要用 `drawTreesAndFoliage=false`**（会关掉 46,472 棵树） |
-| 13 | 打包后草消失 | `Assets/` 不存在，`File.ReadAllBytes` 失败 → 静默回退合成方阵 | 正式版改走 YooAsset（M3） |
+| 13 | 打包后草消失 | `Assets/` 不存在，`File.ReadAllBytes` 失败 → 静默回退合成方阵 | 现已改为：流式模式禁用草并报错，编辑器兜底最多 10000 实例；正式版改走 YooAsset（M3） |
 | 14 | `[Toggle]` 属性设了但没 EnableKeyword | `shader_feature` 变体不切换：LOD0 花仍是绿色、无 alpha 裁剪，**静默失效** | 代码里必须显式 `mat.EnableKeyword("_USE_ALBEDO_TEX")`，`SetFloat` 只影响属性值不影响变体 |
 | 15 | 只传 tint 不给贴图 | 花仍是纯绿（tint 乘在绿色渐变上，乘什么都是绿） | 花色在图集里，必须采样 + `clip(a - _Cutoff)` |
-| 16 | **MSAA=1 时开 `AlphaToMask On`** | alpha-to-coverage 退化，近景草被切成亮绿碎屑、前景出现大块纯色（实测截图） | 工程 `Assets/Settings/UniversalRP.asset:28` 的 `m_MSAA: 1`，**不要开 A2M**；靠 `clip` 硬边即可 |
+| 16 | **MSAA=1 时开 `AlphaToMask On`** | alpha-to-coverage 退化，近景草被切成亮绿碎屑、前景出现大块纯色（实测截图） | 工程 `Assets/Settings/UniversalRP.asset` 的 `m_MSAA: 1`，**不要开 A2M**；靠 `clip` 硬边即可 |
 | 17 | 编辑器脚本里连续调两个 setter | 各重建一次 BRG，每次上千万实例分块排序 → 整脚本超 60 秒被截断，连保存都走不到 | 用 `ApplyDetailPrototypeSetup(..., rebuild:false)` 一次写入；编辑器期只写字段，下次打开场景自然重建 |
 | 18 | **只给 LOD0 配图集，LOD1/2 用程序化几何** | 图集链路正常（单独渲染雏菊出白、三叶草出粉）但画面上几乎没花：可见 14,029 实例里 LOD0 只占 28 个（0.2%），其余 99.8% 走无贴图纯色分支 | LOD1/LOD2 改成「每类型采样自己图集格的精灵交叉片」，三层共用带图材质。**排查时先看 `GetLastLodCount` 的分布，别急着怀疑贴图** |
 | 19 | 用原型 mesh 的 UV **包围盒**当精灵格 | 雏菊/蒲公英的 bbox 横跨图集顶部一条纯色绿渐变条（占采样面积 94%/77%），照样采不出花 | 精灵格要靠 alpha 连通域 + mesh UV 重心光栅化命中率交叉验证，剔除 `fill>0.97` 的实心矩形 |
@@ -336,7 +336,7 @@ BRG 单 batch 的 raw buffer 上限 16MB（`EntitiesGraphicsSystem.cs:1156`）�
    需要真机 Profile 单次耗时；必要时把排序移到 Job / 预读下一块
 3. **shader 加阴影/透光**（当前有包裹式叶片光照 + 常量环境光 + albedo 图集裁剪）
 4. ~~花迁到 BRG~~ ✅ 已完成（2026-11-12），见 §2.2.2
-5. **剔除并行化**（`IJobParallelFor`）——21.9ms 仍占 33ms 预算的 2/3
+5. **剔除并行化**（`IJobParallelFor`）——21.9ms 是 1265 万实例旧测，当前未重测
 6. **剔除 Job 移出主线程依赖**（当前 `SubmitRenderRequest` 需等 Job 完成）
 7. **真机验证**（Vulkan / iQOO 16 / 30fps）
 8. ~~分块排序移入烘焙期~~ 部分完成：排序已改原生内存，但仍在加载时做；若要进一步省主线程，可烘进文件

@@ -28,7 +28,7 @@
 
 | 脚本 | 菜单 | 职责 |
 |---|---|---|
-| `GrassBaker.cs` | ⑧ | 读 36 chunk 的 TerrainData detail 层 → 烘焙 `.bytes`（`SamplingRate=0.035`，435 万实例 / 133MiB） |
+| `GrassBaker.cs` | ⑧ | 读 36 chunk 的 TerrainData detail 层 → 烘焙 `.bytes`（`SamplingRate=0.0175`，435 万实例 / 133MiB） |
 | `DetailBrgSetup.cs` | ⑮ | 把 7 种 detail 原型的 **LOD0 mesh + albedo 图集 + tint** 写进场景里的 `GrassBRGManager` |
 | `WorldProbe.cs` | ③ | 地表高度探测（烘焙 / 相机摆位要用） |
 | `GrassM1Verify.cs` | ① | BRG 链路端到端（离屏渲染 + 像素回读 + 负向剔除） |
@@ -56,7 +56,7 @@ detail 原型的 FBX 只被 `TerrainData` 以子资源引用，运行时
 | 类型 | 图集 |
 |---|---|
 | 0 主草 / 2 林下叶 / 3 林下枯枝（wild 系） | `PW_WildGrass_00_D`（4096²） |
-| 1 枯草块 / 4 三叶草花 / 5 雏菊 / 6 蒲公英（lawn 系） | `PW_LawnGrass_00_D`（2048²） |
+| 1 枯草块 / 4 三叶草花 / 5 雏菊 / 6 蒲公英（lawn 系） | `PW_LawnGrass_00_D`（4096²） |
 
 **⑮ 用 `ApplyDetailPrototypeSetup(..., rebuild:false)` 一次写入，不要连续调两个 setter**：
 每次 `Initialize → BuildInstances` 要处理数百万实例（分块排序 1~2 秒），
@@ -67,7 +67,7 @@ detail 原型的 FBX 只被 `TerrainData` 以子资源引用，运行时
 ### 2.1 不要用同步等待包异步
 
 `CreateOrUpdateWorld`、Biome 撒点、`GaiaSessionManager.Stamp` 都挂到 `EditorApplication.update` 上分帧推进。
-在 `-executeMethod` 里 `while` 等待会占死主线程，协程永不前进（**实测死等**，`WorldPipeline.cs:15-21`）。
+在 `-executeMethod` 里 `while` 等待会占死主线程，协程永不前进（**实测死等**，`WorldPipeline.cs`）。
 
 正确形态：入口立即返回 → `EditorApplication.update += Tick` → 状态机分帧推进 → 完成时 `EditorApplication.Exit(code)`。
 
@@ -85,7 +85,7 @@ detail 原型的 FBX 只被 `TerrainData` 以子资源引用，运行时
 
 ### 2.3 会写第三方资产，改之前想清楚
 
-`BiomeSpawner.FixTreeHeightMasksOnPreset`（`:151-212`）会**直接改写** `Gaia Pro Assets and Biomes/Biomes/Alpine Meadow/Alpine Meadow-Trees.asset` 里的 HeightMask。
+`BiomeSpawner.FixTreeHeightMasksOnPreset`会**直接改写** `Gaia Pro Assets and Biomes/Biomes/Alpine Meadow/Alpine Meadow-Trees.asset` 里的 HeightMask。
 
 - 现状：`m_heightMaskType: 0`（WorldSpace）、`m_absoluteHeightMin: 62`、`m_absoluteHeightMax: 665`。
 - 原因：预设按"世界高 115m / 海平面 25m"标定，与本工程 700m / 60m 错位，导致 0 棵树。
@@ -96,13 +96,13 @@ detail 原型的 FBX 只被 `TerrainData` 以子资源引用，运行时
 ### 2.4 单位陷阱
 
 - `StamperSettings.m_height` 是 **0..50 的垂直缩放系数，不是米**。
-  换算：`scaleY = 50 × 目标米数 / terrainData.size.y`（`TerrainStamper.cs:32-41`）。
+  换算：`scaleY = 50 × 目标米数 / terrainData.size.y`（`TerrainStamper.cs`）。
   误填大值会把纹理压扁成近平地。
 - `ImageMask.m_heightMaskType`：`0=WorldSpace`、`1=RelativeToSeaLevel`（`ImageMask.cs:31`）。
 
 ### 2.5 海平面有多份，改一处不够
 
-`WorldPipeline.cs:42` 的 `SeaLevel` 与 `BiomeSpawner.cs:33` 的 `SeaLevel` 必须一致。
+`WorldPipeline.cs` 的 `SeaLevel` 与 `BiomeSpawner.cs` 的 `SeaLevel` 必须一致。
 但**还有第三处**：Gaia session 与水面预制体字段（见 [world_implementation §6.1)](../../../Docs/world_implementation.md)）。
 只改常量不改 session，运行时水面 transform 会把字段覆盖回去。
 
