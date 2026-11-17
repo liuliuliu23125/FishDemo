@@ -8,33 +8,6 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using FishDemo.Rendering;
 
-/// <summary>
-/// 清掉湖区（湖盆 + 岸线过渡带）内的树与草，让水面干净。
-///
-/// ── 为什么树和草要分开处理 ──
-/// 二者存在完全不同的地方，改法也不同（见 AGENTS.md §3）：
-///   - 树：TerrainData.treeInstances（归一化 XZ + 世界 Y），由 Terrain 渲染。
-///   - 草：已全部迁到 BRG，磁盘上是 Assets/Scenes/World/GrassData/*.bytes
-///     （32B/实例，位置是世界坐标）。Terrain 的 detail 渲染已关闭（DetailObjectDistance=0），
-///     所以**只改 .bytes 就够，不需要动 TerrainData.detailLayer**。
-///
-/// ── 为什么按「水位 + 岸线缓冲」而不是按湖盆半径删 ──
-/// 要删的是"会被水淹掉"和"贴着水面会穿帮"的植被，判据应该是**高度**：
-///   - 高度 &lt; 水位 + 1m  → 一定在水里或水线上，删；
-///   - 湖盆半径内（r &lt;= R + 8m）→ 即使地形高于水位也在碗壁上，删；
-/// 两条取并集。这样即使个别树在碗壁上悬空，也不会露出来。
-///
-/// ── 可逆性 ──
-/// 树：备份受影响 chunk 的 treeInstances 到 Tools/lake-veg-backup/&lt;chunk&gt;.trees
-/// 草：备份受影响 chunk 的 .bytes 原文件到 Tools/lake-veg-backup/&lt;chunk&gt;.bytes
-/// Restore 完整还原。重跑世界生成/草烘焙会覆盖，需重做。
-///
-/// 用法：
-///   -executeMethod LakeVegetationClear.Apply
-///   -executeMethod LakeVegetationClear.Restore
-///   -executeMethod LakeVegetationClear.Report
-/// 输出 Logs/Lake/lake-vegetation.txt
-/// </summary>
 public static class LakeVegetationClear
 {
     private const string Tag = "[LakeVeg]";
@@ -44,7 +17,6 @@ public static class LakeVegetationClear
     private const string ResultPath = OutDir + "/lake-vegetation.txt";
     private const string BackupDir = "Tools/lake-veg-backup";
 
-    /// <summary>岸线额外缓冲（米）：r &lt;= R + 此值时也删，避免碗壁上的植被悬在水面。</summary>
     private const float ShoreBuffer = 8f;
 
 
@@ -70,7 +42,6 @@ public static class LakeVegetationClear
             long treesRemoved = 0, grassRemoved = 0;
             int chunksTouched = 0;
 
-            // ── 树 ──
             W("");
             W("=== 树（TerrainData.treeInstances）===");
             foreach (var chunkPath in LoadActiveChunkPaths())
@@ -145,7 +116,6 @@ public static class LakeVegetationClear
             }
             AssetDatabase.SaveAssets();
 
-            // ── 草（.bytes）──
             W("");
             W("=== 草（GrassData/*.bytes，世界坐标）===");
             var files = Directory.GetFiles(GrassDir, "*.bytes").OrderBy(f => f).ToList();
@@ -194,7 +164,6 @@ public static class LakeVegetationClear
             W($"删除树 = {treesRemoved}，删除草 = {grassRemoved}，改写 chunk 场景 = {chunksTouched}");
             W($"备份目录 = {BackupDir}");
 
-            // ── 校验：重新读一遍，确认湖区内已无植被 ──
             if (mode != "report")
             {
                 W("");
@@ -216,16 +185,6 @@ public static class LakeVegetationClear
         }
     }
 
-    /// <summary>
-    /// 是否应被删除。
-    ///
-    /// 判据只用「到湖心的水平距离」，**不加全局高度判据**。
-    /// 原因（实测踩过）：本地形整体高度 236~350m，世界边缘大片区域低于任何合理水位；
-    /// 若加 `h &lt; 水位` 这一条，会把世界另一头（离湖 1km 外）的草也删掉
-    /// ——实测第一次统计就命中 25 万株，几乎全是无关区域。
-    /// 挖方只在 r&lt;=R 内，所以半径判据已经完整覆盖"会被淹"的区域；
-    /// 再加 ShoreBuffer 覆盖碗壁上可能悬空的植被即可。
-    /// </summary>
     private static bool ShouldCull(float wx, float wz, float wy)
     {
         float dx = wx - LakeCarve.Center.x, dz = wz - LakeCarve.Center.y;
@@ -245,7 +204,6 @@ public static class LakeVegetationClear
     {
         bool ok = true;
 
-        // 草
         int grassLeft = 0;
         foreach (var f in Directory.GetFiles(GrassDir, "*.bytes"))
         {
@@ -257,7 +215,6 @@ public static class LakeVegetationClear
         W($"  湖区残留草 = {grassLeft}");
         if (grassLeft > 0) ok = false;
 
-        // 树
         int treesLeft = 0;
         var chunkPaths = LoadActiveChunkPaths();
         foreach (var cp in chunkPaths) if (File.Exists(cp)) EditorSceneManager.OpenScene(cp, OpenSceneMode.Additive);
@@ -280,14 +237,12 @@ public static class LakeVegetationClear
         return ok;
     }
 
-    // ───────────────────────── 文件读写 ─────────────────────────
 
-    /// <summary>树的备份：magic(4) count(4) + count × TreeInstance(归一化 position float3 + widthScale + heightScale + color rgba + prototypeIndex)。</summary>
     private static void WriteTreeBackup(string path, TreeInstance[] insts)
     {
         using var fs = new FileStream(path, FileMode.Create, FileAccess.Write);
         using var bw = new BinaryWriter(fs);
-        bw.Write(0x4552544Cu);   // "LTRE"
+        bw.Write(0x4552544Cu);
         bw.Write(insts.Length);
         foreach (var t in insts)
         {
@@ -321,7 +276,6 @@ public static class LakeVegetationClear
         return arr;
     }
 
-    /// <summary>按 GrassInstance 的磁盘格式重写草文件（头部 + 32B/实例）。</summary>
     private static void WriteGrassFile(string path, List<GrassInstance> insts, Bounds bounds)
     {
         using var fs = new FileStream(path, FileMode.Create, FileAccess.Write);

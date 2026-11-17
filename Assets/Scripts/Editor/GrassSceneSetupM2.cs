@@ -9,16 +9,6 @@ using FishDemo.Rendering;
 
 namespace FishDemo.EditorTools
 {
-    /// <summary>
-    /// 把 World.unity 里的 GrassBRG (M1) 节点接入烘焙数据：
-    /// 加载第一个 chunk 的 .bytes（作为演示），替换硬编码方阵。
-    ///
-    /// M2 阶段单节点单 chunk 是演示性质；M3 才做按 SECTR 流式的多 chunk 管理
-    /// （GrassChunkManager），届时本节点的职责会被拆分。
-    ///
-    /// 用法：-executeMethod FishDemo.EditorTools.GrassSceneSetupM2.Run
-    /// 菜单：FishDemo/Rendering/⑪ 场景草接入烘焙数据（M2）
-    /// </summary>
     public static class GrassSceneSetupM2
     {
         private const string Tag = "[GrassSceneM2]";
@@ -33,10 +23,6 @@ namespace FishDemo.EditorTools
             var sb = new StringBuilder();
             void W(string s) { Debug.Log($"{Tag} {s}"); sb.AppendLine(s); }
 
-            // 加载全部烘焙产物（36 个 chunk）。
-            //
-            // 早先只加载 files[0]，导致「只有一个 chunk 有草」——这是实现缺口不是配置问题。
-            // 现在全量加载，实例合并成一个连续数组，batch 按 16MB 容量自动切分。
             string[] files = Directory.GetFiles(GrassDataDir, "*.bytes");
             if (files.Length == 0)
             {
@@ -60,12 +46,6 @@ namespace FishDemo.EditorTools
             var mgr = FindOrCreateManager(scene, W);
             if (mgr == null) { Flush(sb); return; }
 
-            // 写「数据目录」而不是注入实例数组。
-            //
-            // 为什么改：GrassChunkData 不可序列化（无 [Serializable]，且 1265 万实例
-            // 也放不进场景文件）。早先这里直接 SetChunkDataList 再 SaveScene，
-            // 日志显示"已接入"，但数据根本没落盘——重开工程就退回 M1 合成方阵。
-            // 改存路径后，组件在 OnEnable 时自己读盘，配置真正持久化。
             mgr.SetGrassDataDir(GrassDataDir);
 
             if (!mgr.IsReady)

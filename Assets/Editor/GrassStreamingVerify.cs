@@ -8,19 +8,6 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
 
-/// <summary>
-/// 验证草流式的运行时增删路径：BRG 的 AddBatch/RemoveBatch、剔除表重建、
-/// buffer 池复用，以及「驻留集合 = 当前加入的 chunk」。
-///
-/// 不打开 World 场景：直接 new 一个 GrassBRGManager，用真实 .bytes 驱动，
-/// 避免把 SECTR 加载时序混进本项验证（那由 LakeOrbitVerify / PegasusTourVerify 覆盖）。
-///
-/// 渲染部分需要真实图形设备；`SystemInfo.graphicsDeviceType == Null` 时跳过，
-/// 但增删与表重建仍必须通过。
-///
-/// 用法：Unity.exe -batchmode -projectPath E:\FishDemo \
-///   -executeMethod GrassStreamingVerify.Run -logFile Logs/Grass/streaming.log
-/// </summary>
 [InitializeOnLoad]
 public static class GrassStreamingVerify
 {
@@ -33,8 +20,6 @@ public static class GrassStreamingVerify
 
     public static void Run()
     {
-        // 用空场景隔离：否则会打开上次的 World，场景里的 SECTR 加载/第二个
-        // GrassBRGManager 会干扰本项断言。
         EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
         SessionState.SetBool(PendingKey, true);
         EditorApplication.isPlaying = true;
@@ -111,7 +96,6 @@ public static class GrassStreamingVerify
                 Path.GetFileNameWithoutExtension(files[1]),
             };
 
-            // 标志必须在 AddComponent 之前置位，否则 OnEnable 已走全量读盘。
             GrassBRGManager.RequestStreaming();
             var go = new GameObject("~GrassStreamingMgr");
             go.hideFlags = HideFlags.DontSave;
@@ -186,8 +170,6 @@ public static class GrassStreamingVerify
 
             _renderRt = RenderTexture.GetTemporary(256, 256, 24);
             _renderCam.targetTexture = _renderRt;
-            // 第一次渲染只是建立剔除输出，Job 可能还没完成；
-            // 结果留到下一帧读，避免和 Job 抢同一块 NativeArray。
             _renderCam.Render();
         }
 

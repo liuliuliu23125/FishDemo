@@ -5,19 +5,6 @@ using System.Text;
 using UnityEditor;
 using UnityEngine;
 
-/// <summary>
-/// 逐个 mesh 对比：原树各级 LOD 的顶点/面数 vs impostor mesh 的顶点/面数。
-///
-/// ── 为什么要看这个 ──
-/// impostor 的收益来自"用极少几何替代中远景的高模"。
-/// 如果 impostor mesh 本身顶点数没降下来（例如仍沿用原 LOD 的网格），
-/// 那这轮改造只是换了贴图，几何开销没变，收益要打折扣。
-/// 这里把每个 LOD 级实际引用的 Mesh 资产找出来，读 vertexCount / 三角面数，
-/// 用数据回答"到底降了多少"，而不是假设。
-///
-/// 用法：-executeMethod TreeMeshStats.Run
-/// 输出 Logs/tree-mesh-stats.txt
-/// </summary>
 public static class TreeMeshStats
 {
     private const string Tag = "[MeshStats]";
@@ -72,7 +59,6 @@ public static class TreeMeshStats
                     for (int sm = 0; sm < mesh.subMeshCount; sm++)
                         tris += (long)mesh.GetIndexCount(sm) / 3;
 
-                    // 多材质槽时 mesh 是共享的，这里按槽数说明
                     string matNames = string.Join("/", r.sharedMaterials
                         .Where(m => m != null).Select(m => m.name));
 
@@ -81,7 +67,6 @@ public static class TreeMeshStats
 
                     if (i == 0) lod0Tris += tris;
 
-                    // 判断是不是 impostor：材质 shader 名里带 Amplify Impostors
                     bool isImp = r.sharedMaterials.Any(m => m != null && m.shader != null &&
                                                             m.shader.name.Contains("Amplify Impostors"));
                     if (isImp) impTris += tris;
@@ -100,7 +85,6 @@ public static class TreeMeshStats
             W("");
         }
 
-        // 单独把 impostor 的 AmplifyImpostorAsset 里记录的 mesh 信息打出来
         W("===== Impostor 资产内的 mesh 引用 =====");
         foreach (var p in AssetDatabase.FindAssets("t:ScriptableObject", new[] { "Assets" })
                      .Select(AssetDatabase.GUIDToAssetPath)

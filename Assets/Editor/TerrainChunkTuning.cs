@@ -7,31 +7,6 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
-/// <summary>
-/// 地形 chunk 渲染参数调优 / 基线导出。
-///
-/// ── 为什么需要它 ──
-/// 36 个 chunk 场景里的 Terrain 参数（drawInstanced / detail 距离 / 草密度 / 树距离）
-/// 是 Gaia "Desktop" 预设的产物，面向 PC。移动端 30fps 目标下这些值是主要瓶颈：
-///   - m_DrawInstanced: 0 → 草走 per-object 提交，单块 570 万 detail 实例（实测）
-///   - m_DetailObjectDistance: 150 → 移动端草可见距离远超标
-/// 批量改这些字段必须走脚本：手改 36 个场景既不可行也不可复现。
-///
-/// ── 为什么带 Apply/Restore 两个方向 ──
-/// 调参是一次实验，必须能一键回到原值再对比。Restore 恢复的是 Gaia 原始桌面预设值
-/// （见 Baseline 常量），不是"猜测的默认值"，所以来回执行是幂等的。
-///
-/// ── 为什么不碰 TerrainData ──
-/// 草密度既可以调 Terrain.m_DetailObjectDensity（渲染期密度，无损、可逆），
-/// 也可以改 TerrainData 的 detail layer 数据（破坏性、需重新撒点）。
-/// 这里只用前者：同一份数据，只改渲染密度，随时可还原。
-///
-/// 用法：
-///   Unity.exe -batchmode -projectPath <proj> -executeMethod TerrainChunkTuning.Report
-///   Unity.exe -batchmode -projectPath <proj> -executeMethod TerrainChunkTuning.ApplyMobile
-///   Unity.exe -batchmode -projectPath <proj> -executeMethod TerrainChunkTuning.RestoreDesktop
-///   不要加 -quit，由脚本自己 Exit。
-/// </summary>
 public static class TerrainChunkTuning
 {
     private const string WorldScenePath = "Assets/Scenes/World.unity";
@@ -39,7 +14,6 @@ public static class TerrainChunkTuning
     private const string ResultDir = "Logs/Gaia";
     private const string Tag = "[TerrainTuning]";
 
-    /// <summary>Gaia Desktop 预设的原始值。Restore 恢复到这里，保证可逆。</summary>
     private static readonly Dictionary<string, float> Baseline = new Dictionary<string, float>
     {
         { "DrawInstanced", 0f },
@@ -53,19 +27,6 @@ public static class TerrainChunkTuning
         { "SplatMapDistance", 1024f },
     };
 
-    /// <summary>
-    /// 移动端档位。
-    ///
-    /// 取值依据（不是拍脑袋）：
-    /// - DrawInstanced=1：草从 per-object 提交改为 instanced，这是单项收益最大的开关。
-    /// - DetailObjectDistance=70：150m 的草在 6 寸屏上屏幕占比 < 1 像素/实例，
-    ///   降到 70m 直接砍掉大部分实例；配合 density 下调，实测需确认无明显"草地边界"。
-    /// - DetailObjectDensity=0.35：渲染期密度，不改数据，可逆。
-    /// - TreeBillboardDistance=60：早切 billboard，减少全 LOD 树数量。
-    /// - TreeDistance=600：远景树靠地形烘焙/低模，1000m 无意义。
-    /// - HeightmapPixelError=10：地形网格精度略降，移动端可接受（默认 5 过密）。
-    /// - SplatMapDistance=512：贴图细节距离减半，与 detail 距离匹配。
-    /// </summary>
     private static readonly Dictionary<string, float> Mobile = new Dictionary<string, float>
     {
         { "DrawInstanced", 1f },
@@ -93,56 +54,16 @@ public static class TerrainChunkTuning
         Run("restore", Baseline, "terrain-tuning-restore.txt");
     }
 
-    /// <summary>
-    /// 关闭 Terrain Detail（细节物体）渲染，只保留 BRG 草。
-    ///
-    /// 为什么需要：实测每个 chunk 的 TerrainData 登记了 7 种 detail 原型
-    /// （1 种草 404 万 + 3 种花约 170 万 + 枯草等，合计约 570 万/块），
-    /// 它们走 Terrain 的 detail 渲染路径，与 BRG 草（1265 万实例）叠在同一片地表
-    /// ——同一处地方被画两遍草，且 detail 那套各原型是独立 draw call，无法与 BRG 合批。
-    /// 设 DetailObjectDistance=0 是 Unity 文档规定的"关闭 detail 渲染"方式，
-    /// 不改 TerrainData 里的撒点数据，随时可用 RestoreDesktop 恢复。
-    ///
-    /// 代价：CloverFlower / Daisy / Dandelions 这些花也一并消失（它们都是 detail 原型）。
-    /// 若将来要保留花，应改为把花也做成 BRG 实例、并入同一套数据管线。
-    /// </summary>
     public static void DisableDetail()
     {
-        // 用复制构造 + 索引器覆盖（不能用 Add，同样的 key 会抛重复键异常）。
         var targets = new Dictionary<string, float>(Mobile);
-        targets["DetailObjectDistance"] = 0f;   // 0 = 不渲染 detail
+        targets["DetailObjectDistance"] = 0f;
         targets["DetailObjectDensity"] = 0f;
         Run("disable-detail", targets, "terrain-tuning-disable-detail.txt");
     }
 
-    /// <summary>
-    /// 树的同屏开销档位：不动世界里的树数量，只压"同屏要画多少"。
-    ///
-    /// ── 为什么不减树的数量 ──
-    /// Unity 的 Terrain 树**没有任何运行时密度参数**（不像草有 detailObjectDensity）。
-    /// 降数量只能改写占 TerrainData.treeInstances 或改 Gaia 撒点规则重跑世界生成，
-    /// 后者会连带重做 GTS 转换、草 BRG 烘焙、Pegasus 挂点，代价极大。
-    /// 所以这里只压渲染期参数，全部可逆。
-    ///
-    /// ── 取值依据 ──
-    /// chunk 边长 512m，而 TreeDistance 原来是 600m —— 比块还大，
-    /// 意味着**一块之内的树无论多远都要画**，这个设置等于没做距离裁剪。
-    ///
-    /// TreeDistance 取 450m（实测对比后确定，不是拍脑袋）：
-    ///   600m → 约 54,762 棵可见；450m → 约 30,803 棵（降 44%）。
-    ///   更激进的值（320m/260m）能降到 72%/81%，但会被目视验收抓出来：
-    ///   高空/远眺机位能直接看到 treeDistance 处"树突然没有"的秃边界。
-    ///   450m 贴近地形视距边缘，地面平视时基本看不出断带，是收益与观感的平衡点。
-    ///   TreeBillboardDistance 60→35：更早切末级，减少完整 mesh 数量。
-    ///   TreeMaximumFullLODCount 32→16：每块最多 16 棵用完整 LOD0~2，其余直接末级。
-    ///   TreeCrossFadeLength 50→20：过渡带收窄，减少"两个 LOD 同时画"的区间。
-    /// </summary>
     public static void ApplyTreeLight()
     {
-        // 必须沿用 DisableDetail 的两个 0，而不是 Mobile 的 70/0.35：
-        // Terrain detail 草已经由 BRG 草完全接管（GrassBRGManager，435 万实例）。
-        // 若这里回填 70，Terrain 会把 detail 草重新打开 → 同一片地表画两遍草，
-        // 且 Terrain detail 那条路是逐原型提交、无法与 BRG 合批，等于白搭开销。
         var targets = new Dictionary<string, float>(Mobile)
         {
             ["DetailObjectDistance"] = 0f,
@@ -155,12 +76,6 @@ public static class TerrainChunkTuning
         Run("tree-light", targets, "terrain-tuning-tree-light.txt");
     }
 
-    /// <summary>
-    /// 统一入口：targets 为 null 时只统计不修改。
-    ///
-    /// 为什么要逐个 OpenScene 而不是改主场景：chunk 是独立场景文件，
-    /// 参数存在各自场景的 Terrain 组件上，主场景里没有 Terrain。
-    /// </summary>
     private static void Run(string mode, Dictionary<string, float> targets, string outFile)
     {
         var sb = new StringBuilder();
@@ -173,7 +88,6 @@ public static class TerrainChunkTuning
             .ToList();
         W($"chunk 场景文件数 = {chunkScenes.Count}");
 
-        // 只处理主场景实际引用的那一批（活跃批次），避免动到孤儿批次
         var activeChunks = LoadActiveChunkPaths();
         W($"主场景引用的活跃 chunk 数 = {activeChunks.Count}");
         if (activeChunks.Count > 0)
@@ -206,7 +120,6 @@ public static class TerrainChunkTuning
                 }
             }
 
-            // 只统计、不修改时不需要保存，避免无意义地重写场景文件
             if (dirty)
             {
                 EditorSceneManager.MarkSceneDirty(scene);
@@ -235,10 +148,6 @@ public static class TerrainChunkTuning
         EditorApplication.Exit(ok ? 0 : 2);
     }
 
-    /// <summary>
-    /// 从主场景的 SECTR_Chunk.NodeName 反推活跃 chunk 文件名集合。
-    /// 与 CleanupOrphanAssets 用的是同一判定口径，保证"改哪些"和"留哪些"一致。
-    /// </summary>
     private static HashSet<string> LoadActiveChunkPaths()
     {
         var result = new HashSet<string>();
@@ -270,7 +179,6 @@ public static class TerrainChunkTuning
         Add("SplatMapDistance", t.basemapDistance > 0 ? t.basemapDistance : 0f);
     }
 
-    /// <summary>把 targets 里的值应用到单个 Terrain，返回是否真的发生了改变。</summary>
     private static bool ApplyTargets(Terrain t, Dictionary<string, float> targets, string scenePath, Action<string> W)
     {
         bool changed = false;
@@ -302,7 +210,6 @@ public static class TerrainChunkTuning
         return changed;
     }
 
-    /// <summary>把一组值压成 "值(数量)" 摘要，便于人工核对 36 块是否一致。</summary>
     private static string Describe(List<float> values)
     {
         var groups = values.GroupBy(v => v)

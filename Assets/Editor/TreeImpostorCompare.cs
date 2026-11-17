@@ -5,18 +5,6 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
-/// <summary>
-/// 渲染验证：把烘好的云杉 impostor 与原始 LOD0 mesh 并排摆出来，
-/// 同一机位、同一光照下各出一张图，肉眼与像素级对比。
-///
-/// ── 为什么要并排对比，而不是只看 impostor 一张图 ──
-/// Impostor 的价值是"远距离看起来和真树差不多"。
-/// 单独渲一张 impostor 很好看没有意义——必须有真树作为参照，
-/// 才能判断切换距离该设多远、以及这个包在本工程的光照/色调下会不会明显失真。
-///
-/// 用法：-executeMethod TreeImpostorCompare.Run
-/// 输出 Logs/impostor-compare.png + Logs/impostor-compare.txt
-/// </summary>
 public static class TreeImpostorCompare
 {
     private const string Tag = "[ImpostorCmp]";
@@ -32,7 +20,6 @@ public static class TreeImpostorCompare
 
         var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
-        // 一盏方向光，参数照抄 World.unity 的主光（白、1.2、50° 仰角）
         var lightGo = new GameObject("Sun");
         var light = lightGo.AddComponent<Light>();
         light.type = LightType.Directional;
@@ -48,8 +35,6 @@ public static class TreeImpostorCompare
         var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath);
         if (prefab == null) { W("FAIL：prefab 载入失败"); Flush(sb, 2); return; }
 
-        // 左：真实 LOD0；右：impostor
-        // 用 prefab 实例化后强制各自只显示一个 LOD 级
         for (int i = 0; i < 2; i++)
         {
             var inst = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
@@ -60,21 +45,16 @@ public static class TreeImpostorCompare
                 var lods = lg.GetLODs();
                 W($"实例{i}: LOD 级数={lods.Length}, 各级 renderer={string.Join(",", lods.Select(l => l.renderers.Length))}");
 
-                // 直接禁用 LODGroup 才能让 renderer.enabled 生效：
-                // LODGroup 每帧会按屏幕占比重算并覆盖各级 renderer 的 enabled，
-                // 手动关掉某几级之后马上又被它打开，表现就是"什么都不显示"。
                 lg.enabled = false;
 
                 if (i == 0)
                 {
-                    // 左：只看 LOD0（真树最高精度）
                     for (int k = 1; k < lods.Length; k++)
                         foreach (var r in lods[k].renderers) if (r != null) r.enabled = false;
                     W($"  左：只保留 LOD0（{lods[0].renderers.Length} 个 renderer）");
                 }
                 else
                 {
-                    // 右：只看最末级（ReplaceLast 后应是 impostor）
                     for (int k = 0; k < lods.Length - 1; k++)
                         foreach (var r in lods[k].renderers) if (r != null) r.enabled = false;
                     var last = lods[lods.Length - 1].renderers.FirstOrDefault();
@@ -98,7 +78,6 @@ public static class TreeImpostorCompare
         var rt = new RenderTexture(size, size, 24, RenderTextureFormat.ARGB32);
         rt.Create();
         cam.targetTexture = rt;
-        // 多渲几帧，确保 shader 变体编译完成、贴图 mip 就绪
         for (int i = 0; i < 5; i++) cam.Render();
 
         var prev = RenderTexture.active;
@@ -112,7 +91,6 @@ public static class TreeImpostorCompare
         File.WriteAllBytes(PngPath, tex.EncodeToPNG());
         W($"已写出 {PngPath}");
 
-        // 左右两半各自统计，确认两边都画出了东西（而不是某一侧全黑）
         var px = tex.GetPixels32();
         int leftN = 0, rightN = 0;
         double lr = 0, lg_ = 0, lb = 0, rr = 0, rg = 0, rb = 0;
@@ -122,7 +100,6 @@ public static class TreeImpostorCompare
             for (int x = 0; x < size; x++)
             {
                 var c = px[y * size + x];
-                // 与背景色差异明显就算"有物体"
                 if (Mathf.Abs(c.r - bg.r) + Mathf.Abs(c.g - bg.g) + Mathf.Abs(c.b - bg.b) < 30) continue;
                 if (x < size / 2) { leftN++; lr += c.r; lg_ += c.g; lb += c.b; }
                 else { rightN++; rr += c.r; rg += c.g; rb += c.b; }

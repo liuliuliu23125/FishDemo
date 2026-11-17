@@ -4,19 +4,6 @@ using System.Text;
 using UnityEditor;
 using UnityEngine;
 
-/// <summary>
-/// 诊断 detail 原型 mesh 的 UV 是否与图集匹配。
-///
-/// 背景：给 GrassBRG.shader 加 albedo 图集采样后，花的颜色应来自图集像素，
-/// 但截图显示草变成碎片状、前景有大片纯色块 —— 典型「UV 采错区域」的表现。
-/// 需要确认：
-///   1. 原型 mesh 到底有没有 UV0（没有的话采样恒为同一个点）；
-///   2. UV 的实际范围（是否落在 [0,1]，是否只占图集某一小块）；
-///   3. 材质槽数量（多材质槽时 submeshIndex=0 只会画第一个）。
-///
-/// 用法：-executeMethod DetailUvProbe.Run
-/// 结果写 Logs/detail-uv-probe.txt
-/// </summary>
 public static class DetailUvProbe
 {
     private const string Tag = "[DetailUvProbe]";
@@ -54,7 +41,6 @@ public static class DetailUvProbe
             for (int s = 0; s < mesh.subMeshCount; s++)
                 W($"    subMesh[{s}] indexCount = {mesh.GetIndexCount(s)}");
 
-            // UV0 是否存在 + 实际范围
             var uvs = mesh.uv;
             W($"  uv0 数量 = {uvs.Length}");
             if (uvs.Length == 0)
@@ -77,19 +63,16 @@ public static class DetailUvProbe
                   ((uMax - uMin) < 0.9f || (vMax - vMin) < 0.9f
                       ? "  → 只占图集一部分（必须配对应区域采样）"
                       : "  → 接近整张图集"));
-                // 前 6 个顶点的 UV，便于肉眼比对
                 var head = new StringBuilder("  前 6 UV: ");
                 for (int k = 0; k < Mathf.Min(6, uvs.Length); k++)
                     head.Append($"({uvs[k].x:F3},{uvs[k].y:F3}) ");
                 W(head.ToString());
             }
 
-            // 网格包围盒（判断比例是否合理）
             var b = mesh.bounds;
             W($"  bounds size = ({b.size.x:F2}, {b.size.y:F2}, {b.size.z:F2})");
         }
 
-        // 图集本身的信息
         W("");
         W("===== 图集 =====");
         string texDir = FbxDir.Replace("/Mesh", "/Textures");

@@ -8,25 +8,6 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
-/// <summary>
-/// 只读探针：把全世界的真实地形高度采成网格，用于选湖址、定水位、算挖方量。
-///
-/// ── 为什么要先采网格再动手 ──
-/// 主场景 World.unity 里没有 Terrain（地形全在 36 个 chunk 场景里，由 SECTR 运行时加载），
-/// 所以必须把 chunk 场景 additive 打开才能拿到真实高度。
-/// 而"选哪块洼地、水位定多少、要挖多深"是几何问题，先落一份网格数据，
-/// 后续设计（Python 分析）与施工（CarveLake）用同一份数据，避免反复跑 Unity。
-///
-/// ── 为什么用 Terrain.SampleHeight 而不是读 heightmap ──
-/// 各 chunk 的 TerrainData 是切块产物，原点/分辨率不一；SampleHeight 是世界坐标，
-/// 与 GTS mesh 的顶点空间一致（mesh 顶点也是米），可直接对照。
-///
-/// 用法：
-///   Unity.exe -batchmode -projectPath <proj> -executeMethod LakeSiteProbe.Run -logFile <log>
-/// 输出：
-///   Logs/Lake/site-probe.txt   元数据 + 统计
-///   Logs/Lake/height-grid.csv  世界高度网格（x,z,height）
-/// </summary>
 public static class LakeSiteProbe
 {
     private const string Tag = "[LakeProbe]";
@@ -35,7 +16,6 @@ public static class LakeSiteProbe
     private const string ResultPath = OutDir + "/site-probe.txt";
     private const string GridPath = OutDir + "/height-grid.csv";
 
-    /// <summary>网格采样步长（米）。32m 对 3072m 世界是 97×97，够选湖址。</summary>
     private const float Step = 32f;
 
     public static void Run()
@@ -48,7 +28,6 @@ public static class LakeSiteProbe
             Directory.CreateDirectory(OutDir);
             EditorSceneManager.OpenScene(WorldScenePath, OpenSceneMode.Single);
 
-            // 与 WorldProbe 同理：用 Build Settings 枚举 chunk，绕开 SECTR 程序集依赖。
             var chunkPaths = new List<string>();
             foreach (var s in EditorBuildSettings.scenes)
             {
@@ -63,7 +42,6 @@ public static class LakeSiteProbe
             W($"chunk 场景 {chunkPaths.Count}，Terrain {terrains.Length}");
             if (terrains.Length == 0) { W("==== 结论：FAIL（无 Terrain） ===="); Flush(sb, 2); return; }
 
-            // ── 每块元数据 ──
             W("");
             W("=== 逐块元数据 ===");
             W("name | pos | size | hmRes | detailRes | trees | layers");
@@ -75,7 +53,6 @@ public static class LakeSiteProbe
                   $"detail={d.detailResolution} | trees={d.treeInstanceCount} | layers={d.terrainLayers?.Length ?? 0}");
             }
 
-            // ── 世界包围 ──
             float minX = float.MaxValue, maxX = float.MinValue, minZ = float.MaxValue, maxZ = float.MinValue;
             foreach (var t in terrains)
             {
@@ -86,7 +63,6 @@ public static class LakeSiteProbe
             W("");
             W($"世界 XZ 范围 = [{minX}, {maxX}] × [{minZ}, {maxZ}]");
 
-            // ── 高度网格 ──
             var heights = new List<float>();
             var csv = new StringBuilder("x,z,height\n");
             int nx = Mathf.CeilToInt((maxX - minX) / Step) + 1;
@@ -115,7 +91,6 @@ public static class LakeSiteProbe
             W($"min={heights[0]:F1}  p1={P(0.01f):F1}  p5={P(0.05f):F1}  p25={P(0.25f):F1}  " +
               $"median={P(0.5f):F1}  p75={P(0.75f):F1}  p95={P(0.95f):F1}  max={heights[heights.Count - 1]:F1}");
 
-            // ── 中央区域（|x|,|z| <= 800）最低点：湖址候选 ──
             W("");
             W("=== 中央区域（±800m）最低 10 个采样点 ===");
             var central = new List<(float x, float z, float h)>();
@@ -133,7 +108,6 @@ public static class LakeSiteProbe
             foreach (var c in central.OrderBy(c => c.h).Take(10))
                 W($"  ({c.x:F0}, {c.z:F0}) h={c.h:F1}");
 
-            // ── 以最低点为中心，半径 300m 内的高度统计（估湖盆大小） ──
             var best = central.OrderBy(c => c.h).First();
             W("");
             W($"=== 候选湖心 ({best.x:F0}, {best.z:F0}) 周边统计 ===");
@@ -149,7 +123,6 @@ public static class LakeSiteProbe
                   $"mean={ring.Average():F1} p90={ring[Mathf.RoundToInt(0.9f * (ring.Count - 1))]:F1}");
             }
 
-            // ── 候选区内的树（TerrainData.treeInstances，位置是归一化的） ──
             W("");
             W("=== 候选湖心半径 400m 内的树（按 chunk） ===");
             int totalTrees = 0;
@@ -181,7 +154,6 @@ public static class LakeSiteProbe
         }
     }
 
-    /// <summary>世界坐标取高度：找覆盖该点的 Terrain，用 SampleHeight 并加上地形原点 y。</summary>
     private static float SampleWorld(Terrain[] terrains, float x, float z)
     {
         foreach (var t in terrains)

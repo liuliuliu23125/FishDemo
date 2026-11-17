@@ -6,28 +6,6 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
-/// <summary>
-/// 按比例削减 Terrain 上的树实例数量（真正改数据，不是渲染参数）。
-///
-/// ── 为什么只能改数据 ──
-/// Unity 的 Terrain 树没有任何运行时密度参数（草有 detailObjectDensity，树没有）。
-/// 要真正减少世界里的树，只能改写 TerrainData.treeInstances。
-///
-/// ── 为什么用固定种子 ──
-/// 必须可复现：同样的参数重跑，删掉的必须是同一批树。
-/// 用每块地形的名字做种子，保证各块独立且稳定。
-/// 削除时按"均匀抽样"而非"取前 N 个"——treeInstances 是按撒点顺序存的，
-/// 取前 N 个会让整片森林出现半边空缺。
-///
-/// ── 可逆性 ──
-/// 备份原始 treeInstances 到 Tools/tree-instance-backup/（每块一个 .bytes），
-/// RestoreAll 可完整还原。注意：重跑 Gaia 世界生成会覆盖，需重做。
-///
-/// 用法：
-///   -executeMethod TreeDensityReduce.Apply10   降到 1/10
-///   -executeMethod TreeDensityReduce.RestoreAll
-/// 输出 Logs/tree-density-reduce.txt
-/// </summary>
 public static class TreeDensityReduce
 {
     private const string Tag = "[TreeDensity]";
@@ -69,11 +47,9 @@ public static class TreeDensityReduce
                 if (insts.Length == 0) continue;
                 beforeTotal += insts.Length;
 
-                // 备份：按地形名存原始实例的序列化数据
                 string bak = Path.Combine(BackupDir, Sanitize(td.name) + ".bytes");
                 if (!File.Exists(bak)) WriteInstances(bak, insts);
 
-                // 均匀抽样：用固定种子洗牌索引，取前 1/divisor
                 var rng = new System.Random(StableHash(td.name));
                 var idx = Enumerable.Range(0, insts.Length).ToArray();
                 for (int i = idx.Length - 1; i > 0; i--)
@@ -154,7 +130,6 @@ public static class TreeDensityReduce
         if (Application.isBatchMode) EditorApplication.Exit(0);
     }
 
-    /// <summary>TreeInstance 逐字段二进制写出。字段顺序固定，还原时按同样顺序读回。</summary>
     private static void WriteInstances(string path, TreeInstance[] arr)
     {
         using var fs = new FileStream(path, FileMode.Create);
@@ -199,7 +174,6 @@ public static class TreeDensityReduce
         return s;
     }
 
-    /// <summary>稳定的字符串哈希（string.GetHashCode 跨进程不保证一致）。</summary>
     private static int StableHash(string s)
     {
         unchecked

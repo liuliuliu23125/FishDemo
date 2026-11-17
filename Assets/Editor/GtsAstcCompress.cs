@@ -5,35 +5,6 @@ using UnityEditor;
 using UnityEngine;
 using ProceduralWorlds.GTS;
 
-/// <summary>
-/// 把 GTS 纹理数组改为 ASTC 压缩并重建（移动端体积优化）。
-///
-/// ── 为什么必须用带 alpha 的 ASTC ──
-/// albedo 数组的 **alpha 通道被当作高度混合权重**使用：
-///   GTS_Functions.hlsl:591  float masks[] = { albedoA.a, albedoB.a, albedoC.a, albedoD.a };
-///   GTS_Functions.hlsl:592  float4 splatHeight = float4(...) * splatControl.rgba;
-/// 若用 ASTC_RGB_*（无 alpha），高度混合会失效，材质过渡变成硬边。
-///
-/// ── 格式陷阱（实测）──
-/// GTSCompressionFormat 的枚举值与 Unity TextureFormat 的映射并不都带 alpha：
-///   GTS ASTC_4x4 (48) → TextureFormat.ASTC_4x4      ✓ 带 alpha
-///   GTS ASTC_6x6 (50) → TextureFormat.ASTC_RGB_6x6  ✗ 无 alpha（实测确认）
-///   GTS ASTC_8x8 (51) → TextureFormat.ASTC_8x8      ✓ 带 alpha
-/// 因此本脚本显式使用 ASTC_8x8，避开 6x6。
-///
-/// ── 体积对照（2048×2048×8 层，未含 mip）──
-///   RGBA32   128 MB  ← 当前
-///   ASTC_4x4  32 MB
-///   ASTC_8x8   8 MB  ← 采用
-///
-/// ── 前提 ──
-/// 需要 gtsLayers 有数据（由 GTSTerrain.ApplyProfile 填充）。
-/// 本脚本先打开一个 chunk 场景、挂 GTSTerrain 跑 ApplyProfile，
-/// 再改设置并重建数组。之后所有 chunk 复用同一套数组（数组是全局共享的）。
-///
-/// 用法：-executeMethod GtsAstcCompress.Run
-/// 结果写 Logs/Gaia/gts-astc.txt
-/// </summary>
 public static class GtsAstcCompress
 {
     private const string Tag = "[GTS-ASTC]";
@@ -58,7 +29,6 @@ public static class GtsAstcCompress
             W($"旧数组体积：albedo={SizeOf("Albedo Texture Array.asset"):F1}MB, " +
               $"normal={SizeOf("Normal Texture Array.asset"):F1}MB");
 
-            // gtsLayers 需要被填充，否则 CreateTextureArrays 直接返回
             if (profile.gtsLayers.Count == 0)
             {
                 W("gtsLayers 为空，先从一个 chunk 场景加载地形层…");
@@ -66,7 +36,6 @@ public static class GtsAstcCompress
             }
             W($"gtsLayers 数 = {profile.gtsLayers.Count}");
 
-            // ── 关键设置 ──
             profile.textureArraySettings.compressed = true;
             profile.textureArraySettings.compressionFormat = GTSCompressionFormat.ASTC_8x8;
             profile.textureArraySettings.maxTextureSize = GTSTextureSize.Is2048MetersSq;
@@ -83,7 +52,6 @@ public static class GtsAstcCompress
             W($"新数组体积：albedo={SizeOf("Albedo Texture Array.asset"):F1}MB, " +
               $"normal={SizeOf("Normal Texture Array.asset"):F1}MB");
 
-            // 校验实际格式
             var albedo = profile.textureArraySettings.albedoArray;
             var normal = profile.textureArraySettings.normalArray;
             W($"albedo 数组：{(albedo != null ? albedo.format.ToString() : "null")}, " +
@@ -106,11 +74,6 @@ public static class GtsAstcCompress
         }
     }
 
-    /// <summary>
-    /// 打开一个 chunk 场景、给地形挂 GTSTerrain 并 ApplyProfile，
-    /// 让 profile.gtsLayers 被 RefreshTerrainLayers 填充。
-    /// 只用于拿层数据，不改场景（不保存）。
-    /// </summary>
     private static bool PopulateLayers(GTSProfile profile, Action<string> W)
     {
         string[] files = Directory.GetFiles(ChunkDir, "*162007*.unity");

@@ -5,36 +5,6 @@ using System.Text;
 using UnityEditor;
 using UnityEngine;
 
-/// <summary>
-/// 去掉树材质上无效的 _PW_SF_COVER_ON keyword。
-///
-/// ── 为什么这是"无效"，不是"可选" ──
-/// 逐材质实测（92 个树材质）：
-///   69 个启用了 _PW_SF_COVER_ON，
-///   但全部是 _PW_Cover=0 且 _PW_CoverLayer0Progress=0，
-///   其中绝大多数连 _PW_CoverLayer0 贴图都没设。
-/// 看 PW_GeneralFuncs.cginc 的 CoverSurface：
-///   amount = progress * min(worldY² + wrap, 1) * alpha
-///   o_albedo = lerp(i_albedo, albedo, amount)
-/// progress=0 → amount=0 → lerp 结果等于原 albedo，**完全不改变画面**。
-/// 也就是说这 69 个材质白扛了一个 shader 变体。
-///
-/// ── 去掉能带来什么 ──
-/// 实测在用的 shader+keyword 组合从 5 种降到 3 种
-/// （树干 / 树叶 / billboard 各一种）。
-/// 变体越少，SRP Batcher 越容易把不同树合进同一批，
-/// 也少一份 shader 编译与包体。
-///
-/// ── 为什么保留 SSS / WIND / WORLDMAP / ALPHATEST / BILLBOARD ──
-/// 这五个都在真实生效：
-///   ALPHATEST 叶片镂空、SSS 背光透光、WIND 摆动、
-///   WORLDMAP 世界色变（48 个材质都设了贴图）、BILLBOARD 面片朝向。
-/// 只有 COVER 是空转。删有效的会让树失去镂空或透光，不能动。
-///
-/// 用法：
-///   -executeMethod TreeKeywordCleanup.Run         去掉 COVER
-///   -executeMethod TreeKeywordCleanup.RestoreAll  还原
-/// </summary>
 public static class TreeKeywordCleanup
 {
     private const string Tag = "[KwCleanup]";
@@ -67,11 +37,6 @@ public static class TreeKeywordCleanup
             var kws = mat.shaderKeywords ?? new string[0];
             if (!kws.Contains(TargetKeyword)) { skipped++; continue; }
 
-            // 安全检查：只有确实没在用的才删。
-            // 判据是 **progress**，不是贴图：CoverSurface 里
-            //   amount = progress * min(worldY²+wrap,1) * alpha
-            // progress 为 0 时 amount 恒为 0，无论贴图设没设都不会画出来。
-            // （PW_Tree_Log_01 就属于"设了贴图但 progress=0"，同样是空转。）
             float cover = mat.HasProperty("_PW_Cover") ? mat.GetFloat("_PW_Cover") : 0f;
             float prog0 = mat.HasProperty("_PW_CoverLayer0Progress") ? mat.GetFloat("_PW_CoverLayer0Progress") : 0f;
             float prog1 = mat.HasProperty("_PW_CoverLayer1Progress") ? mat.GetFloat("_PW_CoverLayer1Progress") : 0f;
@@ -84,7 +49,6 @@ public static class TreeKeywordCleanup
                 continue;
             }
 
-            // 备份原始 .mat（只备份一次，避免覆盖真正的原件）
             string bak = Path.Combine(BackupDir, mat.name + ".mat");
             if (!File.Exists(bak)) File.Copy(path, bak);
 
@@ -96,11 +60,6 @@ public static class TreeKeywordCleanup
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
 
-        // 复核：重新读取，确认 keyword 已消失。
-        // 统计口径要分开：
-        //   全量 keyword 组合里混着 _DISABLE_DECALS / _DISABLE_SSR_TRANSPARENT / _DOUBLESIDED_ON
-        //   这些 URP 内置项，它们不随材质角色变化，把它们算进"变体数"会虚高。
-        //   真正决定树能否合进同一批的是 _PW_SF_* + _ALPHATEST 这组。
         int stillHas = 0;
         var combosAll = new HashSet<string>();
         var combosTree = new HashSet<string>();
@@ -136,7 +95,6 @@ public static class TreeKeywordCleanup
         int n = 0;
         foreach (var bak in Directory.GetFiles(BackupDir, "*.mat"))
         {
-            // 备份文件名就是材质名，按名字回到原路径
             var found = AssetDatabase.FindAssets(Path.GetFileNameWithoutExtension(bak) + " t:Material",
                 new[] { TreeRoot }).Select(AssetDatabase.GUIDToAssetPath).FirstOrDefault();
             if (found == null) continue;

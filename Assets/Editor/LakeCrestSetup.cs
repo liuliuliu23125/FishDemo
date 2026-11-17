@@ -8,53 +8,6 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using WaveHarmonic.Crest;
 
-/// <summary>
-/// 把 Crest 水体接进 World.unity，替换掉原来的 Gaia Water。
-///
-/// ── 第一性原理：Crest 怎么"只在凹陷里出水" ──
-/// Crest 默认生成**无限大的水面**（SeaLevel 处一张平面），不是"往坑里灌水"。
-/// 要让它只出现在湖盆内，靠的是两个东西配合（代码事实，见 SurfaceRenderer.cs:774-915）：
-///
-///   1. `WaterRenderer.DefaultExcludes = Surface` → 全局默认无水；
-///   2. `WaterBody` 组件 + `Exclusion = Include` → 只在这个 AABB 内加水。
-///      ApplyWaterBodyCulling 对每个水面 chunk 与 WaterBody AABB 求交，
-///      与水体矩形不相交的 chunk 直接 `forceRenderingOff = true`。
-///      这是**逐 chunk 的渲染剔除**，不是遮罩，所以湖外一点成本都不付。
-///
-///   ⚠ 第一版实测踩坑：用了 `Exclusion = Exclude`（语义是"这块不是水"，用来挖洞），
-///   效果恰好相反——湖里没水、湖外全是海。Include/Exclude 语义不要凭直觉猜。
-///
-///   3. `WaterRenderer` 的 `LodLevels` 与 `ScaleRange` 压小
-///      → 水面网格只铺到湖盆附近，不做无限远。湖很小（半径 190m），
-///        默认 9 级 LOD 是给大海准备的，必须压到 4 级。
-///
-/// ── 为什么还要 WaterBody，而不是直接缩小水面 ──
-/// 因为水面是以**视点为中心**的 clipmap（`SurfaceRenderer` 的 chunk 网格跟着相机走）。
-/// 只缩 LOD 只能减小"覆盖半径"，水面依然是个以相机为中心的圆盘，
-/// 站在湖边会看到水面铺到湖外的地形上。WaterBody 的 AABB 剔除才是把水面**裁成矩形湖面**的那一步。
-///
-/// ── 性能取舍（对应 AGENTS.md 的 30fps / iQOO 16 目标）──
-/// 关掉对本 demo 无收益的模块：
-///   - DynamicWaves：船/鱼交互波，每帧多一次仿真 pass。钓鱼玩法将来要，先关。
-///   - Flow：大范围流向，湖里不需要。
-///   - Shadow：水面接收阴影，成本高，且 demo 主光只有一个方向光。
-///   - Clip：不用 clip 贴图（我们用 WaterBody AABB 剔除）。
-/// 保留 AnimatedWaves（波浪）+ Foam（岸边泡沫）+ Depth/Absorption（水下颜色）+ Level（水位）。
-/// 反射默认关闭（`Reflections.Enabled = false`）——这是最贵的一项，
-/// 且 Crest 没有"水体不在视锥内就跳过反射"的判断（见 Docs/water.md §3），
-/// demo 阶段先不开，等有需要再按需补。
-///
-/// ── 与旧 Gaia Water 的关系 ──
-/// 旧 `Gaia Water` 预制体实例会被**禁用并移出主场景**（不是删除），
-/// 其 `PWS_WaterSystem` 与 Gaia session 的海平面耦合（见 world_implementation §6.1），
-/// 留着会干扰。禁用后仍可从场景历史找回。
-///
-/// 用法：
-///   -executeMethod LakeCrestSetup.Apply
-///   -executeMethod LakeCrestSetup.Remove
-///   -executeMethod LakeCrestSetup.Report
-/// 输出 Logs/Lake/lake-crest.txt
-/// </summary>
 public static class LakeCrestSetup
 {
     private const string Tag = "[LakeCrest]";
@@ -65,31 +18,16 @@ public static class LakeCrestSetup
     private const string WaterMatPath = "Packages/com.waveharmonic.crest/Runtime/Materials/Water.mat";
     private const string VolumeMatPath = "Packages/com.waveharmonic.crest/Runtime/Materials/Water Volume.mat";
 
-    /// <summary>水面节点名。重复执行时按这个名字找已有对象，保证幂等。</summary>
     private const string NodeName = "Crest Lake";
 
-    /// <summary>
-    /// 固定 LOD 视点相对水面的高度（米）。
-    /// 取 26（与 LakeOrbitCamera 默认高度一致）：固定一个适中的 LOD 尺度。
-    /// 26m 时 Scale=16；5 级 LOD 最外层 cascade 半边长 = 2*Scale*2^4 = 512m（宽度 1024m）。
-    /// </summary>
     private const float ViewpointHeightAboveWater = 26f;
 
-    /// <summary>
-    /// Clip 盒体半边长（米）。R=190 的湖需要 >190m；当前取 320m（640 方形），
-    /// 让方形水面边界远离湖岸。高度网格检查：半径外、半边长 320m 内所有采样点
-    /// 都高于水位 264（最低 264.87）；到 384m 时南侧有一个 263.71 的低点，不能再大。
-    /// </summary>
     private const float ClipHalfExtent = 320f;
 
     public static void Apply() { Run("apply"); }
     public static void Remove() { Run("remove"); }
     public static void Report() { Run("report"); }
 
-    /// <summary>
-    /// 只重写水面材质的光学参数，不动场景节点。调水色时用它，比 Apply 快得多
-    /// （Apply 会销毁重建 Crest 节点，还会重跑 URP 前置检查与全量校验）。
-    /// </summary>
     public static void Retune()
     {
         var sb = new StringBuilder();
@@ -129,7 +67,6 @@ public static class LakeCrestSetup
             var scene = EditorSceneManager.OpenScene(WorldScenePath, OpenSceneMode.Single);
             W($"模式 = {mode}  场景 = {WorldScenePath}");
 
-            // ── 旧的 Gaia Water：apply 时禁用，remove 时恢复 ──
             var gaiaWater = GameObject.Find("Gaia Water");
             if (mode == "apply" && gaiaWater != null && gaiaWater.activeSelf)
             {
@@ -169,8 +106,6 @@ public static class LakeCrestSetup
                     var oldWater = old.GetComponent<WaterRenderer>();
                     if (oldWater != null) UnityEngine.Object.DestroyImmediate(oldWater);
 
-                    // 根上若还挂着 LakeCameraRig，保留节点给 LakeCameraSetup.Remove 处理；
-                    // 只剩 Transform 时才删除空根。
                     if (old.GetComponents<Component>().Length <= 1)
                     {
                         UnityEngine.Object.DestroyImmediate(old);
@@ -186,10 +121,6 @@ public static class LakeCrestSetup
                 return;
             }
 
-            // ── apply ──
-            // 幂等：只清掉旧的水面数据，保留根节点。
-            // 不能 DestroyImmediate(root)：LakeCameraRig 挂在同一个根上，
-            // 整棵删掉会让 C/F 相机切换和轨道相机引用一起消失。
             var root = GameObject.Find(NodeName);
             if (root == null)
             {
@@ -214,59 +145,27 @@ public static class LakeCrestSetup
             root.transform.position = new Vector3(LakeCarve.Center.x, LakeCarve.WaterLevel, LakeCarve.Center.y);
             W($"水面节点位置 = {root.transform.position}");
 
-            // ── 固定 LOD 视点 ──
-            // Crest 默认用相机作为 clipmap 中心：相机一动，depth/foam/wave/clip 的采样
-            // 就跟着漂，表现为水面高度/岸线观感随相机变化。湖是固定的小水体，
-            // 把 Viewpoint 锚在湖心上方后，水面数据不再跟相机；
-            // Viewer 仍然是相机，水下检测/反射继续跟相机走。
             var viewpointGo = new GameObject("Lake Viewpoint");
             viewpointGo.transform.SetParent(root.transform, false);
             viewpointGo.transform.localPosition = new Vector3(0f, ViewpointHeightAboveWater, 0f);
 
             var water = root.AddComponent<WaterRenderer>();
-            // AddComponent 会调 Reset()，Reset 里已把 Water.mat / Chunk.prefab 填好。
-            // 但 Reset 只在编辑器里、且通过 Inspector 添加时才走；这里显式兜底一次。
             water.Surface.Material = waterMat;
             water.Surface.VolumeMaterial = volumeMat;
             water.Viewpoint = viewpointGo.transform;
             W($"LOD 视点 = {viewpointGo.name} @ {viewpointGo.transform.position}（固定；Viewer 仍跟相机）");
-            // 当前性能模式是 Quad。Apply 会重建节点，必须在这里显式写回；
-            // 否则新节点会回到 SurfaceRenderer 的默认值 Chunks（49 个 chunk）。
             CrestPerformanceMode.SetMeshType(water, 1, W);
 
-            // ── 写入水的颜色参数（否则水面渲染成纯黑）──
-            // 机制（代码事实）：Crest 的 Absorption/Scattering 仿真把
-            // `_Crest_Absorption` / `_Crest_Scattering` 两个**全局**向量注入 shader，
-            // 而这两个值来自水面材质上的 `_Crest_AbsorptionColor` 等属性，
-            // 由 `WaterRenderer.UpdateAbsorptionFromColor(Material)` 在
-            // **材质 Inspector 改动时**才计算写入（OnChange 回调）。
-            // 工程里的 Water.mat 只序列化了 blend 参数，没有这两个属性 →
-            // 运行时取到 (0,0,0,0) → 水面全黑（实测：湖盆形状正确、水面铺满，像素 0,0,0）。
-            // 这里用 Crest 的 public API `CalculateAbsorptionValueFromColor` 按默认色算好写入。
             ApplyWaterColor(waterMat, volumeMat, W);
 
-            // ── 视点与光 ──
             water.Viewer = Camera.main;
             water.PrimaryLight = UnityEngine.Object.FindObjectsOfType<Light>()
                 .FirstOrDefault(l => l.type == LightType.Directional);
 
-            // ── LOD：湖很小，压到最低档 ──
-            // 默认 9 级是给"无限海洋"的，每级翻倍覆盖范围，9 级能铺到几十公里。
-            //
-            // 固定视点 26m 时 Scale = 2^floor(log2(26-4)) = 16。
-            // cascade 世界宽度 = 4 * Scale * 2^slice（半边长 = 2 * Scale * 2^slice）：
-            //   4 级最外层半边长 = 2*16*2^3 = 256m，方形边界离 R=190m 的岸线只有 66m；
-            //   5 级最外层半边长 = 2*16*2^4 = 512m，把方形边界推到湖岸之外。
-            // Clip 盒体半边长 320m，所以最终可见方形边界由 Clip 的 640m 决定。
             water.LodLevels = 5;
-            // 默认 384 对 190m 的湖太浪费；128 在湖边看水面起伏已足够。
             water.LodResolution = 128;
-            // ScaleRange 下限压到 1：水面网格跟着相机高度缩放，湖面不需要放大。
             water.ScaleRange = new Vector2(1f, 16f);
 
-            // ── 各模块分辨率：默认 256 对 560m 的湖过大 ──
-            // AnimatedWaves/Level 跟随 WaterRenderer.LodResolution（128）；
-            // Depth/Foam/Clip 默认 OverrideResolution=true + 256，这里统一压到 128。
             water.AnimatedWavesLod.OverrideResolution = false;
             water.LevelLod.OverrideResolution = false;
             water.DepthLod.OverrideResolution = true;
@@ -276,30 +175,12 @@ public static class LakeCrestSetup
             water.ClipLod.OverrideResolution = true;
             water.ClipLod.Resolution = 128;
 
-            // Depth 的 SDF 通道只有 DepthProbe 才会写入；本工程没有 DepthProbe，
-            // 开着它只会把深度纹理从 R16 变成 R16G16，白付一倍带宽（DepthLod.cs:21）。
             water.DepthLod.EnableSignedDistanceFields = false;
 
             W($"LodLevels={water.LodLevels}, LodResolution={water.LodResolution}, " +
               $"Depth={water.DepthLod.Resolution}, Foam={water.FoamLod.Resolution}, " +
               $"Clip={water.ClipLod.Resolution}, ScaleRange={water.ScaleRange}");
 
-            // ── 模块裁剪（移动端 30fps）──
-            // Clip 必须开：Crest 是海洋系统，水面是以视点为中心的 clipmap、铺到无限远。
-            // 湖泊要靠 Clip 把湖盆以外的水面精确裁掉（见下方 Clip 配置）。
-            //
-            // ── Absorption / Scattering 仿真：关闭，改用材质恒定色 ──
-            // shader 逻辑（Fragment.hlsl:274-306）：`absorption = 0` 后，只有
-            // `g_Crest_SampleAbsorptionSimulation == true` 时才从仿真纹理采样，
-            // 否则保留材质上的 `_Crest_Absorption` / `_Crest_Scattering`。
-            // 因此关掉仿真 = 水面用材质恒定色（青蓝），且省掉两个每帧仿真 pass。
-            // 对一个小湖（半径 190m）来说，空间变化的吸收色没有视觉收益：
-            // 深浅变化主要靠 Depth 仿真 + 岸边泡沫体现。
-            //
-            // 实测背景：开启仿真时水面渲染成**纯黑**（湖盆形状与水面几何完全正确，
-            // 像素却是 0,0,0）—— batchmode 的 Camera.Render() 不驱动 Crest 的
-            // 仿真 compute pass，仿真纹理是空白，采样出来就是 0。
-            // 即使不是 batchmode 环境，这个选择对移动端也更划算。
             water.AbsorptionLod.Enabled = false;
             water.ScatteringLod.Enabled = false;
             water.AlbedoLod.Enabled = false;
@@ -309,9 +190,6 @@ public static class LakeCrestSetup
             water.ShadowLod.Enabled = false;
             water.ClipLod.Enabled = true;
             water.FoamLod.Enabled = true;
-            // 不通过降低 SimulationFrequency 来省 dispatch：PersistentLod 在
-            // substeps==0 时仍会做一次 delta=0 的 dispatch（PersistentLod.cs:105-116），
-            // 降频只减少完整仿真步，dispatch 次数不变。
             water.FoamLod.SimulationFrequency = 30;
             water.DepthLod.Enabled = true;
             water.AnimatedWavesLod.Enabled = true;
@@ -319,30 +197,14 @@ public static class LakeCrestSetup
             W("模块：AnimatedWaves/Foam/Depth/Level/Clip = ON；" +
               "Absorption/Scattering/Albedo/DynamicWaves/Flow/Shadow = OFF（水色用材质恒定值）");
 
-            // ── 反射：默认关（最贵的一项，且 Crest 无视锥剔除）──
             water.Reflections.Enabled = false;
             W("平面反射 = OFF");
 
-            // ── 水下效果：保留但降配 ──
             water.Underwater.Enabled = true;
 
-            // ── Clip：把无限水面裁成湖盆矩形（关键）──
-            // 机制（代码事实）：
-            //   Crest 的水面网格是以**视点**为中心的 clipmap，`LateUpdatePosition` 把
-            //   Position 设为 (视点.x, 水面y, 视点.z)，各 chunk 相对它按 LOD 翻倍铺开，
-            //   最外圈能到 ±数十公里。所以 WaterRenderer 的 transform XZ 位置**不影响水面**，
-            //   而 WaterBody 的 chunk 级 AABB 剔除也挡不住这种巨型外圈 chunk
-            //   （实测：49 个 chunk 里只有 8 个被剔除，水面仍铺满全世界）。
-            // 因此用 Surface Clipping 做精确裁剪：
-            //   1. ClipLod.DefaultClippingState = EverythingClipped → 默认全裁；
-            //   2. ClipLodInput（Primitive/Cube，变换定义范围）→ 在湖盆矩形内把水加回来。
-            //   对应手册 §14.1（"EverythingClipped + inputs add water"）。
-            //   材质已带 _ALPHATEST_ON / _BUILTIN_AlphaClip（Water.mat），数据通路就绪。
             water.ClipLod.DefaultClippingState = DefaultClippingState.EverythingClipped;
             W("ClipLod.DefaultClippingState = EverythingClipped");
 
-            // 湖盆加水区：用 ClipLodInput 的 Primitive(Cube) 模式。
-            // Cube 的 SDF 对该 transform 的盒体内部写"有水"。
             var clipGo = new GameObject("Lake Clip Area");
             clipGo.transform.SetParent(root.transform, false);
             clipGo.transform.localPosition = Vector3.zero;
@@ -350,24 +212,13 @@ public static class LakeCrestSetup
                                                       DepthForClip(water), ClipHalfExtent * 2f);
             var clip = clipGo.AddComponent<ClipLodInput>();
             clip.Primitive = LodInputPrimitive.Cube;
-            // ── Inverted 的语义（读 ClipPrimitive.compute:99-104 精确推导）──
-            //   初始数据：EverythingClipped → 全部写 1（>0.5 即裁掉）
-            //   Inverted=true : target = min(target, sdf)
-            //     盒内 sdf<0 → target<0 → 不裁（保留水）；盒外远处 sdf 大 → min(1,sdf)=1 → 裁。
-            //   Inverted=false: target = max(target, 1-sdf) ≥ 1 → 全裁，一滴水都不剩。
-            // 所以「默认全裁 + 只在盒内出水」必须用 Inverted=true。
-            // 注意：2026-11-13 曾误改为 false 导致整湖消失（compute 语义推导见上）。
             clip.Inverted = true;
             W($"ClipLodInput: Cube, Inverted=true（盒内保留水）, 尺寸 {clipGo.transform.localScale}");
 
-            // ── WaterBody：给水下体积/物理限定范围 ──
-            // 注意：WaterBody 的 AABB 剔除是**整 chunk 粒度**，对"水面只在湖里"这个需求
-            // 不够精确（巨型外圈 chunk 一定与 AABB 相交，全被保留）。
-            // 真正裁水面靠上面的 Clip；WaterBody 这里只负责 Volume（水下效果）与物理的限域。
             var bodyGo = new GameObject("Lake Body");
             bodyGo.transform.SetParent(root.transform, false);
             bodyGo.transform.localPosition = Vector3.zero;
-            float ext = LakeCarve.WaterHalfExtent;      // R + Blend = 280m
+            float ext = LakeCarve.WaterHalfExtent;
             bodyGo.transform.localScale = new Vector3(ext * 2f, 1f, ext * 2f);
 
             var body = bodyGo.AddComponent<WaterBody>();
@@ -376,15 +227,9 @@ public static class LakeCrestSetup
             body.Affects = WaterBodyAffects.Volume | WaterBodyAffects.Physics;
             W($"WaterBody: AABB 半边长 = {ext}m，Exclusion=Include，Affects=Volume|Physics");
 
-            // ── 波浪输入 ──
-            // Crest 的波浪来自 **Input 组件**，不是 WaterRenderer 上的参数：
-            // 只开 AnimatedWavesLod 而没有 Shape* 输入时，水面是绝对平坦的
-            // （实测：水面渲染成一块纯色平板，完全没有起伏）。
-            // 这里挂 ShapeGerstner 并指定 Crest 自带的 WavesModerate 频谱。
             var shapeGo = new GameObject("Lake Waves");
             shapeGo.transform.SetParent(root.transform, false);
             var shape = shapeGo.AddComponent<ShapeGerstner>();
-            // 128 对 20km/h 的小湖波浪过大；96 仍能被 8 整除（线程组要求）。
             shape.Resolution = 96;
             var spectrum = AssetDatabase.LoadAssetAtPath<WaveSpectrum>(
                 "Packages/com.waveharmonic.crest/Runtime/Data/WaveSpectra/WavesModerate.asset");
@@ -393,14 +238,9 @@ public static class LakeCrestSetup
                 shape.Spectrum = spectrum;
                 W($"波浪频谱 = {spectrum.name}, Resolution={shape.Resolution}");
             }
-            // 湖面不需要大风浪：风程短，20 km/h 左右起小波（默认 10 太静）。
             water.WindSpeed = 20f;
             W($"风速 = {water.WindSpeed} km/h，ShapeGerstner 已挂");
 
-            // ── URP 前置：按当前透明度模式决定 Depth/Opaque 开关 ──
-            // SimpleTransparency = 1 时水面不再请求 opaque/depth，URP 资产必须保持 0，
-            // 否则 URP 仍会为所有相机做 CopyColor/CopyDepth（water.md §14.3）。
-            // 非 SimpleTransparency 才需要 1（折射/深度交互）。
             if (CrestPerformanceMode.IsSimpleTransparencyEnabled())
             {
                 if (CrestPerformanceMode.HasOtherDepthOrOpaqueConsumers(W))
@@ -425,7 +265,6 @@ public static class LakeCrestSetup
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 
-            // ── 校验 ──
             W("");
             W("=== 校验 ===");
             bool ok = Verify(W);
@@ -440,16 +279,6 @@ public static class LakeCrestSetup
         }
     }
 
-    /// <summary>
-    /// 打开 URP 资产上的 Depth Texture / Opaque Texture。
-    ///
-    /// 只用于**非 SimpleTransparency** 模式。Crest 的
-    ///   - 水下吸收/散射（UnderwaterRenderer 读 _CameraDepthTexture）
-    ///   - 水面与地形的深度比较（判断哪部分在水下、岸边泡沫）
-    ///   - 折射（需要 _CameraOpaqueTexture）
-    /// 都依赖这两张图。当前 SimpleTransparency 模式下水面不请求它们，资产必须保持 0
-    /// （见 water.md §14.3）；切回折射路径时才走这里。
-    /// </summary>
     private static void EnableUrpDepthAndOpaque(Action<string> W)
     {
         const string path = "Assets/Settings/UniversalRP.asset";
@@ -477,42 +306,6 @@ public static class LakeCrestSetup
         }
     }
 
-    /// <summary>
-    /// 把 Crest 的 Absorption / Scattering 消光系数写进材质，决定水体的透明程度。
-    ///
-    /// ── 为什么"透明度"由这两个系数决定（代码事实）──
-    /// `Fragment.hlsl:625-670`：
-    ///     o_Emission *= 1 - volumeOpacity;          // 场景色（折射采样）被衰减
-    ///     o_Emission += volumeLight * volumeOpacity; // 补上水体自身的散射光
-    /// 其中 `VolumeLighting.hlsl:22-25`：
-    ///     volumeOpacity = 1 - exp(-extinction * 视线在水中的长度)
-    ///     extinction    = absorption + scattering
-    /// 所以 **extinction 越大越不透明**，与材质的 alpha 通道无关
-    /// （`CREST_SIMPLE_TRANSPARENCY (0)`，见 `Settings.Crest.Default.hlsl:23`，
-    ///  非 SimpleTransparency 路径下 `o_Alpha` 恒为 1，走的是折射合成而非 alpha 混合）。
-    ///
-    /// ── 2026-11-13 的参数为什么必须改 ──
-    /// 上一版 absorption=(0.194,0.064,0.029) + scattering=(0.10,0.42,0.50)
-    /// → extinction≈(0.29,0.48,0.53)/m → 5m 处只剩 exp(-2.4)≈9%，
-    /// 等于下水就看不见底，观感就是"一块不透明的蓝板"。
-    /// 现按"岸边看得见水底、湖心 30m 渐变成深青"反推：
-    ///   目标 extinction ≈(0.061,0.041,0.045)/m → 1/e 深度 16/24/22m
-    ///   → 3m 处保留 83% 场景色（能看见底），30m 处 16%（深水区自然是深色）。
-    ///
-    /// ── 颜色怎么反推成系数 ──
-    /// `WaterRenderer.UpdateAbsorptionFromColor`（WaterRenderer.cs:519-527）：
-    ///     absorption = -color.a * 32/5 * ln(color.rgb)
-    /// 即 color.a 是"密度"，color.rgb 是"透过水看到的颜色"。
-    /// 所以 alpha 越小越清澈；rgb 越接近白，各通道衰减越均衡（越不偏色）。
-    ///
-    /// ── scattering 为什么 R 要压得很低 ──
-    /// 体积光的颜色 = `scatteringAmount * 入射光`，而
-    /// `scatteringAmount = scattering / extinction`（VolumeLighting.hlsl:78）。
-    /// 上一版 scattering=(0.034,0.046,0.050) 让三通道比值接近 1，
-    /// 入射光一乘就趋近白 —— 实测水下画面均值 (118,131,139)，雾是白的。
-    /// 现取 (0.012,0.026,0.036) → scatteringAmount≈(0.20,0.63,0.80)，
-    /// 雾色明显偏青蓝，这才是湖水该有的水下观感。
-    /// </summary>
     private static void ApplyWaterColor(Material waterMat, Material volumeMat, Action<string> W)
     {
         var absorptionColor = new Color(0.62f, 0.86f, 0.92f, 0.016f);
@@ -533,31 +326,12 @@ public static class LakeCrestSetup
         Set(waterMat, "Water.mat");
         Set(volumeMat, "Water Volume.mat");
 
-        // 水下雾的密度倍率。`Underwater.hlsl:244-245` 把 absorption/scattering 乘上它，
-        // 所以它只影响**水下**观感，不改水面透明度。
-        // shader 里声明为 Range(0,1)（Underwater.shader:8），**只能调淡不能调浓**，
-        // 故取 1（沿用材质原值），靠 absorption 本身的青蓝偏色形成水下色偏。
         if (volumeMat != null && !Mathf.Approximately(volumeMat.GetFloat("_Crest_ExtinctionMultiplier"), 1f))
         {
             volumeMat.SetFloat("_Crest_ExtinctionMultiplier", 1f);
             EditorUtility.SetDirty(volumeMat);
         }
 
-        // ── 水下体积光的入射光权重 ──
-        // `UnderwaterShared.hlsl:288-303` 把这两个值传给 VolumeLighting 的
-        // ambientTerm / directTerm，缩放"环境光 / 阳光注入散射光"的量。
-        // 默认 1.0 → 水下雾亮度等于水面受光，观感是"白雾"（实测均值 R106 G126 B137）。
-        // 湖水只有上部透光，压到 0.35/0.4 才有"越深越暗"的观感。
-        //
-        // ⚠ **必须写在水面材质 Water.mat 上，不能写 Water Volume.mat**。
-        // `UnderwaterRenderer.Effect.cs:247` 每帧调
-        // `_VolumeMaterial.CopyMatchingPropertiesFromMaterial(_SurfaceMaterial)`，
-        // 把水面材质里的**同名属性**整体覆盖到水下材质上
-        // （由 `_CopyWaterMaterialParametersEachFrame: 1` 每帧执行，见场景 serialized 数据）。
-        // 所以只在 Volume 材质上设值会在下一帧被水面材质覆盖回 1.0，静默失效。
-        //
-        // 同时它不影响水面本身：水面走 `Fragment.hlsl` 自己的 VolumeLighting 调用，
-        // 那里的入射光项已被 `o_Emission *= 1-volumeOpacity` 主导，权重变化肉眼不可见。
         void SetScatteringWeights(Material m)
         {
             if (m == null) return;
@@ -574,9 +348,6 @@ public static class LakeCrestSetup
         W($"  写水色：_Crest_AbsorptionColor={absorptionColor}, density(a)={absorptionColor.a}");
     }
 
-    /// <summary>
-    /// 打印由当前材质参数推出的消光系数与 1/e 深度，作为"水有多透明"的可核查证据。
-    /// </summary>
     private static string DescribeOptics(Material waterMat)
     {
         var a = waterMat.GetVector("_Crest_Absorption");
@@ -595,7 +366,6 @@ public static class LakeCrestSetup
         return lines.ToString().TrimEnd();
     }
 
-    /// <summary>Clip 盒体的 Y 尺寸：只要覆盖水面上下即可（SDF 只判 XZ 有效范围由 transform 决定）。</summary>
     private static float DepthForClip(WaterRenderer water) => 200f;
 
     private static bool Verify(Action<string> W)
@@ -607,9 +377,6 @@ public static class LakeCrestSetup
 
         var water = root.GetComponent<WaterRenderer>();
         if (water == null) { W("  FAIL：节点上没有 WaterRenderer"); return false; }
-        // 注意：不能用 water.SeaLevel 校验。它读的是 internal Position，
-        // 而 Position 只在运行时 RunUpdate 里被赋值（WaterRenderer.cs:256），
-        // 编辑器批处理下恒为 0。水位要看 transform.position.y。
         float y = root.transform.position.y;
         W($"  WaterRenderer OK, transform.y={y:F1}（期望 {LakeCarve.WaterLevel:F1}）");
         if (Mathf.Abs(y - LakeCarve.WaterLevel) > 0.01f) ok = false;
@@ -621,7 +388,6 @@ public static class LakeCrestSetup
         W($"  Viewpoint = {(viewpoint != null ? viewpoint.name : "null")}（期望 Lake Viewpoint；Viewer 仍跟相机）");
         if (viewpoint == null) ok = false;
 
-        // Surface.MeshType 是 [SerializeReference] 内部字段，没有公开 API，走序列化读取。
         int meshType = CrestPerformanceMode.GetMeshType(water);
         W($"  Surface.MeshType = {meshType}（期望 1=Quad）");
         if (meshType != 1) ok = false;
@@ -644,14 +410,7 @@ public static class LakeCrestSetup
             if (body.Exclusion != WaterBodyExclusion.Include) ok = false;
         }
 
-        // Clip 必须配置成「默认全裁 + 输入加水」。
-        // 注意：不能校验 ClipLod.Enabled —— 它读的是 `_Enabled && _Valid`，
-        // 而 _Valid 只在运行时 Initialize()（需要 GPU）后为 true，
-        // 编辑期批处理访问必然 false（Lod.cs:720）。校验要落到可持久化的字段上。
         bool clipState = water.ClipLod.DefaultClippingState == DefaultClippingState.EverythingClipped;
-        // 水的颜色来源（Absorption/Scattering）必须在配置里显式开。
-        // 注意导出/写入 _Enabled 后，编辑期读 Enabled 仍会是 false（_Valid 未就绪），
-        // 所以这里只能打印提示，不能当判据。
         W($"  AbsorptionLod.Enabled(get)={water.AbsorptionLod.Enabled}, " +
           $"ScatteringLod.Enabled(get)={water.ScatteringLod.Enabled}, " +
           $"AlbedoLod.Enabled(get)={water.AlbedoLod.Enabled}（编辑期 _Valid 未就绪，仅供参考）");
@@ -672,12 +431,10 @@ public static class LakeCrestSetup
             }
         }
 
-        // 旧水必须已禁用
         var gaia = GameObject.Find("Gaia Water");
         W($"  旧 Gaia Water 激活状态 = {(gaia != null ? gaia.activeSelf : false)}（期望 false）");
         if (gaia != null && gaia.activeSelf) ok = false;
 
-        // URP 深度/不透明图：期望值随透明度模式变化。
         var urp = File.ReadAllText("Assets/Settings/UniversalRP.asset");
         bool depth = System.Text.RegularExpressions.Regex.IsMatch(urp, @"m_RequireDepthTexture:\s*1");
         bool opaque = System.Text.RegularExpressions.Regex.IsMatch(urp, @"m_RequireOpaqueTexture:\s*1");
@@ -686,7 +443,6 @@ public static class LakeCrestSetup
           $"期望 {(simpleTransparency ? "0/0" : "1/1")}）");
         if (simpleTransparency)
         {
-            // 例外：若工程里已有其他 Depth/Opaque 消费者，Apply 会保持 1，此时不应判 FAIL。
             if ((depth || opaque) && !CrestPerformanceMode.HasOtherDepthOrOpaqueConsumers(W))
                 ok = false;
         }

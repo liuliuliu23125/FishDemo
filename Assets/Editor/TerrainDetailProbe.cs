@@ -6,19 +6,6 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
-/// <summary>
-/// 诊断 Terrain Detail（细节物体）的实际配置。
-///
-/// 背景：用户观察到 PW_LawnGrass_CloverFlower 被单独绘制两次、用独立 shader，
-/// 怀疑它没被合批。需要确认：
-///   1. 每个 chunk 的 TerrainData 里到底登记了哪些 detail 原型；
-///   2. 每个原型是 Mesh 还是 Texture、用的什么 shader；
-///   3. detail 渲染是否开着（DetailObjectDistance > 0）；
-///   4. 与 BRG 草是否重叠（同一片地表被画两遍 = 双份几何）。
-///
-/// 用法：-executeMethod TerrainDetailProbe.Run
-/// 结果写 Logs/terrain-detail-probe.txt
-/// </summary>
 public static class TerrainDetailProbe
 {
     private const string Tag = "[DetailProbe]";
@@ -34,7 +21,6 @@ public static class TerrainDetailProbe
         var chunks = Object.FindObjectsOfType<SECTR_Chunk>().OrderBy(c => c.ScenePath).ToList();
         W($"主场景 chunk 数 = {chunks.Count}");
 
-        // 只查前 2 个 chunk 就够：同一个 Gaia 预设生成的 TerrainData，原型配置一致。
         int inspected = 0;
         foreach (var c in chunks)
         {
@@ -72,7 +58,6 @@ public static class TerrainDetailProbe
                     string shader = "(无材质)";
                     if (p.prototype != null)
                     {
-                        // prototype 是 GameObject，材质挂在它的 MeshRenderer 上。
                         var mr = p.prototype.GetComponent<MeshRenderer>();
                         if (mr != null && mr.sharedMaterial != null)
                         {
@@ -85,7 +70,6 @@ public static class TerrainDetailProbe
                        $"minH={p.minHeight:F2} maxH={p.maxHeight:F2} healthy={p.healthyColor} dry={p.dryColor}");
                 }
 
-                // 各层 detail 实例数（Layer 0 = 第一层）
                 for (int layer = 0; layer < td.detailPrototypes.Length; layer++)
                 {
                     try
@@ -106,7 +90,6 @@ public static class TerrainDetailProbe
             inspected++;
         }
 
-        // 主场景里的 Terrain（应无，地形都在 chunk 里）
         var worldTerrains = Object.FindObjectsOfType<Terrain>()
             .Where(t => t.gameObject.scene == scene).ToArray();
         W("");

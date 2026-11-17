@@ -4,11 +4,6 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
-/// <summary>
-/// 终验：确认"丰富效果"真的进入了 chunk 场景。
-/// 检查主场景构成、逐块 chunk 的地形高度/贴图层/树实例/细节密度，
-/// 以及流式加载的空间判定。
-/// </summary>
 public static class RichWorldVerify
 {
     private const string Tag = "[RichVerify]";
@@ -25,14 +20,12 @@ public static class RichWorldVerify
         var loader = Object.FindObjectOfType<SECTR_RegionLoader>();
         W($"主场景：Chunk={chunks.Length}, Sector={sectors.Length}, RegionLoader={(loader!=null)}, Terrain={Object.FindObjectsOfType<Terrain>().Length}");
 
-        // 重建 Build Settings（清掉旧批次死条目）
         var build = new System.Collections.Generic.List<EditorBuildSettingsScene> { new EditorBuildSettingsScene(WorldScene, true) };
         int miss = 0;
         foreach (var c in chunks) { if (System.IO.File.Exists(c.NodeName)) build.Add(new EditorBuildSettingsScene(c.NodeName, true)); else miss++; }
         EditorBuildSettings.scenes = build.ToArray();
         W($"Build Settings = {build.Count} 个场景，缺失 {miss}");
 
-        // 抽样 4 块 chunk 详细检查
         long totalTrees = 0; int sampleChecked = 0;
         int minLayers = int.MaxValue; float gMin = 1, gMax = 0;
         foreach (var c in chunks.OrderBy(x => x.ScenePath).Take(4))
@@ -62,10 +55,8 @@ public static class RichWorldVerify
             EditorSceneManager.CloseScene(cs, true);
         }
 
-        // 全量树统计（不打开场景，靠主场景的 spawned 容器不可行，改用抽样推算）
         W($"抽样 {sampleChecked} 块：合计树={totalTrees}, 最小贴图层={minLayers}, 高度范围=[{gMin:F3},{gMax:F3}] 跨 {(gMax-gMin)*700:F1}m");
 
-        // 流式判定
         var loadSize = loader.LoadSize;
         var ever = new System.Collections.Generic.HashSet<SECTR_Sector>();
         int maxAt = 0;

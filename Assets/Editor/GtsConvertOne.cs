@@ -9,25 +9,6 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using ProceduralWorlds.GTS;
 
-/// <summary>
-/// GTS 单 chunk 转换（供外部批处理逐块调用，一个 Unity 进程处理一块）。
-///
-/// ── 为什么必须一进程一块 ──
-/// GTS 的 CreateTextureArrays() → StartProfile() → GetGTSComponents() 会遍历
-/// 当前进程内**所有**场景的 GTSComponent。批处理连续 OpenScene(Single) 时，
-/// 上一轮场景卸载后组件虽已销毁，但 GTS 内部缓存（gtsLayers / 组件列表）仍持有引用，
-/// 触发 MissingReferenceException。实测在单进程内无论怎么刷新引用都躲不开。
-/// 用独立进程隔离是最稳的做法：每块转换完进程即退出，不留任何跨块状态。
-///
-/// ── 前置条件 ──
-/// Profile 与纹理数组由第一块（IsFirst=true）生成并落盘，后续块直接复用。
-/// 所以必须先跑 index=0 的块，再跑其余（或按顺序跑）。
-///
-/// 用法：
-///   Unity.exe -batchmode -projectPath <proj> -executeMethod GtsConvertOne.Run \
-///       -gtsChunk "World_SECTR Terrain_0_0-... Sector" -gtsFirst 1
-///   环境变量方式不可靠（Unity 会过滤），改用 -gtsChunk / -gtsFirst 自定义参数。
-/// </summary>
 public static class GtsConvertOne
 {
     private const string Tag = "[GTS-One]";
@@ -70,7 +51,6 @@ public static class GtsConvertOne
 
         try
         {
-            // 本进程只打开这一个场景，不跨块，故不会有跨场景引用问题
             var scene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
             var terrains = UnityEngine.Object.FindObjectsOfType<Terrain>();
             if (terrains.Length == 0) { W("无 Terrain"); Flush(1); return; }
@@ -98,13 +78,6 @@ public static class GtsConvertOne
             EditorUtility.SetDirty(profile);
             AssetDatabase.SaveAssets();
 
-            // 幂等：清本 chunk 旧产物
-            // 必须连已有的 GTS_Mesh 节点一起删（不只是 GTS_MeshTerrains）。
-            // 原因：GTSMesh 继承 GTSComponent，GTSProfile.GetGTSComponents() 会把它们全部找出来，
-            // 再对每个 component 的 gameObject 取 GetComponent<Terrain>()。
-            // 而 GtsApplyMeshToChunks 建的 GTS_Mesh/SubTile_xx 上没有 Terrain，
-            // 于是 ConvertToMesh 抛 MissingComponentException（实测：重转已挂过 mesh 的 chunk 直接 FAIL）。
-            // 先删节点，让本次转换从干净状态开始。
             foreach (var root in scene.GetRootGameObjects().ToList())
                 if (root.name.StartsWith("GTS_MeshTerrains"))
                     UnityEngine.Object.DestroyImmediate(root);
@@ -139,10 +112,6 @@ public static class GtsConvertOne
                 W($"纹理数组就绪 = {!profile.TextureArraysEmpty}");
             }
 
-            // ── 非首块必须显式回绑全局纹理数组 ──
-            // 每块都会生成一个新材质，但 CreateTextureArrays 只在首块跑一次（数组是所有 chunk 共享的）。
-            // 新材质不会自动继承 Profile 上的 albedo/normal array，必须手动 SetTexture，
-            // 否则 shader 采到空数组 → 走 FallbackError 或整片黑。
             if (!profile.TextureArraysEmpty && terrain.materialTemplate != null)
             {
                 var mat = terrain.materialTemplate;
@@ -200,7 +169,6 @@ public static class GtsConvertOne
         return m != null && m.GetTexture(prop) != null;
     }
 
-    /// <summary>从命令行读自定义参数。Unity 会忽略未知的 -xxx，但 args 里仍能取到。</summary>
     private static string GetArg(string name)
     {
         var args = Environment.GetCommandLineArgs();

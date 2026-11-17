@@ -6,26 +6,6 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
-/// <summary>
-/// 量化「树的同屏可见量」：给同一个相机机位，按各 Terrain 当前的
-/// treeDistance / treeBillboardDistance / treeMaximumFullLODCount，
-/// 算出真正会被提交的树有多少棵、其中多少走完整 LOD、多少走 billboard。
-///
-/// ── 为什么必须自己算，不能读现成统计 ──
-/// ChunkRenderStats 只报 treeInstanceCount（世界里有多少棵），
-/// 但"同屏开销"取决于距离剔除后的可见量。
-/// Terrain 的树裁剪在 native 层做，batchmode 下拿不到逐实例的可见列表，
-/// 所以这里按 Unity 的规则复算：
-///   1. 超出 treeDistance 的不提交；
-///   2. 最近的 treeMaximumFullLODCount 棵（全局、按距离排序）走完整 LOD；
-///   3. 其余在 treeBillboardDistance 内走完整 LOD，之外走末级 billboard。
-///
-/// 注意这是"模型推算"，不是引擎实测。它用来对比参数改动前后的相对变化，
-/// 绝对值仍需在真机 Frame Debugger 里核对。
-///
-/// 用法：-executeMethod TreeVisibleCount.Run
-/// 输出 Logs/tree-visible-count.txt
-/// </summary>
 public static class TreeVisibleCount
 {
     private const string Tag = "[TreeVis]";
@@ -59,22 +39,18 @@ public static class TreeVisibleCount
               $"maxFull={g.Key.treeMaximumFullLODCount} crossfade={g.Key.treeCrossFadeLength} → {g.Count()} 块");
         }
 
-        // 取几个有代表性的机位：世界中心、巡游路线上、某个树密集块中心
         var spots = new List<(string label, Vector3 pos)>();
         spots.Add(("世界中心 (0,地面,0)", Vector3.zero));
 
-        // 巡游路线 195°/1100m（草验收脚本用的同一位置）
         float th = 195f * Mathf.Deg2Rad;
         spots.Add(("巡游 195°/1100m", new Vector3(Mathf.Cos(th) * 1100f, 0f, Mathf.Sin(th) * 1100f)));
 
-        // 树最多的那一块中心
         var densest = terrains.OrderByDescending(t => t.terrainData.treeInstanceCount).First();
         spots.Add(($"树最密块 {densest.name}", densest.transform.position + densest.terrainData.size * 0.5f));
 
         W("");
         foreach (var (label, raw) in spots)
         {
-            // 贴地：用地形采样校正高度
             Vector3 pos = raw;
             var probe = terrains.FirstOrDefault(t =>
             {
@@ -97,8 +73,7 @@ public static class TreeVisibleCount
 
     private static void Report(Vector3 camPos, Terrain[] terrains, System.Action<string> W)
     {
-        // 收集所有在 treeDistance 内的树实例及其距离
-        var inRange = new List<float>();          // 每棵树到相机的距离
+        var inRange = new List<float>();
         int totalAll = 0;
 
         foreach (var t in terrains)
@@ -124,13 +99,12 @@ public static class TreeVisibleCount
         int visible = inRange.Count;
         float pct = totalAll > 0 ? visible * 100f / totalAll : 0f;
 
-        // maxFullLODCount 是全局的（Terrain 统一设置），取第一块的
         int maxFull = terrains.Length > 0 ? terrains[0].treeMaximumFullLODCount : 0;
         float billboardDist = terrains.Length > 0 ? terrains[0].treeBillboardDistance : 0f;
         float treeDist = terrains.Length > 0 ? terrains[0].treeDistance : 0f;
 
         inRange.Sort();
-        int fullByCount = Mathf.Min(maxFull, visible);           // 最近的 N 棵走完整 LOD
+        int fullByCount = Mathf.Min(maxFull, visible);
         int fullTotal = Mathf.Min(fullByCount, visible);
         int billboard = visible - fullTotal;
 

@@ -5,30 +5,10 @@ using System.Text;
 using UnityEditor;
 using UnityEngine;
 
-/// <summary>
-/// 查询/关闭平台的静态合批。
-///
-/// ── 为什么需要这个工具 ──
-/// AGENTS 的硬约束写着“静态合批已关闭”，但 ProjectSettings.asset 里
-/// `m_BuildTargetBatching` 是空列表（没有平台覆写）。按 Unity 默认行为，
-/// 静态合批是开启的；而 GTS 的 `SubTile_*` 带 BatchingStatic 标记，
-/// 构建时会把它们合成大 VBO，破坏 SRP Batcher 的按材质归并粒度。
-///
-/// 这个工具用 PlayerSettings API 写平台级覆写，和手改 YAML 相比不会写错枚举。
-///
-/// 用法：
-///   -executeMethod BatchingSetup.Report
-///   -executeMethod BatchingSetup.FixAndroid
-///   -executeMethod BatchingSetup.FixAll
-/// 输出 Logs/Gaia/batching.txt
-/// </summary>
 public static class BatchingSetup
 {
     private const string OutPath = "Logs/Gaia/batching.txt";
 
-    // Unity 2022.3 的 Get/SetBatchingForPlatform 是 internal（HDRP Wizard 也用反射），
-    // 直接调会 CS0117。这里走反射，签名与 HDRP Wizard 一致：
-    // GetBatchingForPlatform(BuildTarget, out int, out int) / SetBatchingForPlatform(BuildTarget, int, int)。
     private static readonly MethodInfo s_GetBatching =
         typeof(PlayerSettings).GetMethod("GetBatchingForPlatform", BindingFlags.Static | BindingFlags.NonPublic);
     private static readonly MethodInfo s_SetBatching =

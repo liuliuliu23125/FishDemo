@@ -8,33 +8,12 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
 
-/// <summary>
-/// chunk 渲染开销的静态统计（不进 Play Mode、不依赖 GPU）。
-///
-/// ── 为什么不用 Profiler 出数 ──
-/// batchmode 下没有可用的 GPU 与 Play 循环，Profiler/Frame Debugger 拿不到有效帧。
-/// 但"一帧要提交多少东西"这件事，绝大部分可以从场景数据静态算出来：
-///   - 每块地形在 8 层 splat 下要画几个 pass；
-///   - detail（草）实例总数 = 渲染密度 × 该层非零格数 × 距离内比例；
-///   - 树实例总数 = TreeInstance 数；
-///   - 普通 Renderer 数 = MeshRenderer 数量。
-/// 这些正是 draw call 与顶点量的**上界来源**，可作为回归对比基线。
-///
-/// ── 能证明什么、不能证明什么 ──
-/// 能：参数改动前后"提交量"的变化倍数（例如草实例从 570 万降到多少）。
-/// 不能：真实 GPU 毫秒数。那必须上 iQOO 16 实测，见 performance_budget.md。
-///
-/// 用法：
-///   Unity.exe -batchmode -projectPath <proj> -executeMethod ChunkRenderStats.Run
-///   结果写入 Logs/Gaia/chunk-render-stats.txt
-/// </summary>
 public static class ChunkRenderStats
 {
     private const string WorldScenePath = "Assets/Scenes/World.unity";
     private const string ResultPath = "Logs/Gaia/chunk-render-stats.txt";
     private const string Tag = "[ChunkStats]";
 
-    /// <summary>URP TerrainLit 单 pass 只吃 4 层 splat，超过要走 TerrainLitAdd 追加 pass。</summary>
     private const int LayersPerPass = 4;
 
     public static void Run()
@@ -77,8 +56,6 @@ public static class ChunkRenderStats
 
                 int passes = layers <= 0 ? 1 : Mathf.CeilToInt(layers / (float)LayersPerPass);
 
-                // detail 实例量：逐层把所有非零格的值累加。
-                // 这是"全密度、全距离"的总量，实际提交量还要乘距离剔除与 density。
                 long detailAll = 0;
                 for (int l = 0; l < (td.detailPrototypes?.Length ?? 0); l++)
                 {
@@ -86,8 +63,6 @@ public static class ChunkRenderStats
                     foreach (int v in layer) if (v > 0) detailAll += v;
                 }
 
-                // 渲染期实际密度 = Terrain.detailObjectDensity；距离剔除无法静态精确算，
-                // 这里用 "detailObjectDistance / 1024m(块边长) 的平方占比" 作粗估上界。
                 float areaRatio = Mathf.Clamp01((t.detailObjectDistance * t.detailObjectDistance) /
                                                 (512f * 512f));
                 long detailVisible = (long)(detailAll * t.detailObjectDensity * areaRatio);
@@ -114,14 +89,11 @@ public static class ChunkRenderStats
         W($"Terrain 数 = {terrainCount}，chunk 数 = {chunks.Count}");
         W($"splat 层数：平均 {totalLayers / Mathf.Max(1, terrainCount):F1}，最大 {maxLayers}");
 
-        // mesh 化后地形本体不再由 TerrainRenderer 绘制，pass 数意义变了：
-        // 只有 drawHeightmap 仍为 true 的 Terrain 才计入地表 pass。
         var meshRenderers = perChunk.Sum(p => p.mrs);
         W($"MeshRenderer（含 GTS mesh 子物体）= {meshRenderers}");
         W($"地形 pass 数（若仍走 Terrain 绘制）= {terrainCount * Mathf.CeilToInt(Mathf.Max(1, maxLayers) / (float)LayersPerPass)}");
         W($"  → 仅对 drawHeightmap=true 的 Terrain 成立；本工程已关闭高度图绘制，见 chunk 明细");
 
-        // 常驻按 RegionLoader 实测值：单点最多 4 块
         const int Resident = 4;
         W("");
         W($"常驻 chunk 假设 = {Resident}（RegionLoader 实测单点最多 4 块）");
@@ -130,7 +102,6 @@ public static class ChunkRenderStats
         W($"草实例（全密度全距离）= {totalDetailAll:N0}");
         W($"草实例（渲染密度+距离粗估）= {totalDetailVisible:N0}");
 
-        // GTS mesh 的三角总量：这是替代 TerrainRenderer 之后真正的几何负载
         long gtsTris = 0; int gtsMeshes = 0;
         string gtsRoot = "Assets/GTS User Data";
         if (Directory.Exists(gtsRoot))

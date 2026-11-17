@@ -6,24 +6,6 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
-/// <summary>
-/// 诊断树的渲染构成：为什么会被拆成很多批次。
-///
-/// 用户观察：树的 draw call 分成很多批次，且发现「很多树的 keyword 不一样」。
-/// 需要逐层查清：
-///   1. 地形上登记了哪些树原型（TreePrototype）、各多少实例；
-///   2. 每个树原型 prefab 里有几个 LOD、各自用什么材质与 shader；
-///   3. 每个材质的 shader keyword（shader_feature / multi_compile 的实际启用项）；
-///   4. 哪些 keyword 差异会导致无法合批。
-///
-/// 术语澄清（写进结果，便于后续查阅）：
-///   - 树的批次由 shader 变体（variant）决定，不是由 prefab 数量决定。
-///   - 同一 shader + 同一 keyword 组合 + 同批实例 → 1 个 draw call。
-///   - keyword 不同 = 不同 shader 变体 = 必须分开 draw call。
-///
-/// 用法：-executeMethod TreeRenderProbe.Run
-/// 结果写 Logs/tree-render-probe.txt
-/// </summary>
 public static class TreeRenderProbe
 {
     private const string Tag = "[TreeProbe]";
@@ -33,10 +15,6 @@ public static class TreeRenderProbe
     public static void Run()
     {
         var sb = new StringBuilder();
-        // 只把汇总打到 Console。逐原型的细节只写文件——
-        // 45 个原型 × 多级 LOD × 多材质会产生几千行日志，
-        // batchmode 下逐条写 Console 会触发 Unity 自身的日志缓冲崩溃
-        // （实测：EditorMonoConsole::LogToConsoleImplementation 处 RaiseException）。
         void W(string s) { sb.AppendLine(s); }
         void C(string s) { Debug.Log($"{Tag} {s}"); sb.AppendLine(s); }
 
@@ -44,12 +22,10 @@ public static class TreeRenderProbe
         var chunks = Object.FindObjectsOfType<SECTR_Chunk>().OrderBy(c => c.ScenePath).ToList();
         W($"主场景 chunk 数 = {chunks.Count}");
 
-        // 收集所有 chunk 的树原型，合并去重（同一 Gaia 预设，各 chunk 原型应一致）
-        var protoNames = new Dictionary<string, GameObject>();   // name -> prefab
+        var protoNames = new Dictionary<string, GameObject>();
         long totalTreeInstances = 0;
         int chunkInspected = 0;
 
-        // per-prototype 实例数（按名字聚合）
         var instCount = new Dictionary<string, long>();
 
         foreach (var c in chunks)
@@ -78,7 +54,6 @@ public static class TreeRenderProbe
                     if (!protoNames.ContainsKey(go.name)) protoNames[go.name] = go;
                 }
 
-                // 实例数：逐个取 TreeInstance
                 var insts = td.treeInstances;
                 totalTreeInstances += insts.Length;
                 foreach (var ti in insts)
@@ -104,12 +79,10 @@ public static class TreeRenderProbe
         foreach (var kv in instCount.OrderByDescending(x => x.Value))
             W($"  {kv.Key,-40} {kv.Value,10:N0}");
 
-        // ── 逐个原型拆 LOD / 材质 / shader / keyword ──
         W($"");
         W($"===== 各原型的 LOD、材质与 shader keyword =====");
 
-        // 按 shader 名 + keyword 集合 归类，看有多少种"渲染批次类型"
-        var variantGroups = new Dictionary<string, List<string>>();  // variantKey -> 原型名
+        var variantGroups = new Dictionary<string, List<string>>();
         var shaderSummary = new Dictionary<string, int>();
 
         foreach (var kv in protoNames.OrderBy(x => x.Key))
@@ -121,7 +94,6 @@ public static class TreeRenderProbe
             var lods = go.GetComponentsInChildren<LODGroup>(true);
             if (lods.Length == 0)
             {
-                // 无 LODGroup：整个 prefab 就是一个层级
                 W($"   无 LODGroup");
                 var renderers = go.GetComponentsInChildren<MeshRenderer>(true);
                 DumpRenderers(renderers, "   ", W, kv.Key, variantGroups, shaderSummary);
@@ -142,7 +114,6 @@ public static class TreeRenderProbe
             }
         }
 
-        // ── 批次类型汇总（这是回答"为什么批次多"的核心）──
         W($"");
         W($"===== 渲染批次类型汇总（shader + keyword 组合）=====");
         C($"不同 shader = {shaderSummary.Count} 个");
@@ -171,9 +142,6 @@ public static class TreeRenderProbe
         EditorApplication.Exit(0);
     }
 
-    /// <summary>
-    /// 输出一组 renderer 的材质 / shader / keyword 细节，并登记到批次分类表。
-    /// </summary>
     private static void DumpRenderers(
         Renderer[] renderers, string indent, System.Action<string> W,
         string protoKey,
@@ -193,12 +161,9 @@ public static class TreeRenderProbe
             var sh = m.shader;
             string shName = sh != null ? sh.name : "(shader null)";
 
-            // 材质上显式启用的 keyword
             var mKeywords = m.shaderKeywords ?? new string[0];
-            // shader 声明了哪些 keyword（用于判断"可切换项"）
             var shKeywords = sh != null ? sh.keywordSpace.keywordNames : new string[0];
 
-            // 只保留真正影响变体的：材质 enabled + shader 声明
             var active = mKeywords.Where(k => shKeywords.Contains(k)).OrderBy(k => k).ToArray();
 
             string variantKey = $"{shName} | {(active.Length == 0 ? "(无 keyword)" : string.Join(",", active))}";

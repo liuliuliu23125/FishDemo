@@ -6,26 +6,6 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
 
-/// <summary>
-/// 把 Android 图形 API 改为「仅 Vulkan」，并关闭 Automatic。
-///
-/// ── 为什么要改 ──
-/// BRG（BatchRendererGroup）的 shader 需要 `#pragma target 4.5` 且
-/// `#pragma exclude_renderers gles`（依据 URP 14 的 BRGPicking.shader:31-32）。
-/// 若 Android 仍可能 fallback 到 OpenGLES3，草在真机上会直接消失。
-///
-/// 现状（改前）：m_APIs = [Vulkan(21), OpenGLES3(11)]，m_Automatic = 1
-///               → Vulkan 优先但允许回落到 GLES3
-/// 目标（改后）：m_APIs = [Vulkan(21)]，m_Automatic = 0
-///
-/// ── 为什么用 PlayerSettings API 而不是改 YAML ──
-/// m_APIs 是序列化的 int[]，字节序与打包方式（4 字节 little-endian per element）
-/// 不适合手改；PlayerSettings.SetGraphicsAPIs 是官方入口，会同时维护
-/// Automatic 标志与平台元数据。
-///
-/// 用法：-executeMethod GraphicsApiSetup.SetAndroidVulkanOnly
-/// 结果写 Logs/Gaia/graphics-api.txt
-/// </summary>
 public static class GraphicsApiSetup
 {
     private const string Tag = "[GraphicsAPI]";
@@ -41,11 +21,9 @@ public static class GraphicsApiSetup
         bool beforeAuto = PlayerSettings.GetUseDefaultGraphicsAPIs(target);
         W($"改前：APIs = [{string.Join(", ", before)}]，Automatic = {beforeAuto}");
 
-        // 目标：只保留 Vulkan
         PlayerSettings.SetUseDefaultGraphicsAPIs(target, false);
         PlayerSettings.SetGraphicsAPIs(target, new[] { GraphicsDeviceType.Vulkan });
 
-        // 强制重新导入以让设置落盘
         AssetDatabase.SaveAssets();
 
         var after = PlayerSettings.GetGraphicsAPIs(target);
@@ -63,7 +41,6 @@ public static class GraphicsApiSetup
         EditorApplication.Exit(ok ? 0 : 2);
     }
 
-    /// <summary>只读检查，不改配置。</summary>
     public static void Report()
     {
         var sb = new StringBuilder();

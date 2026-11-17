@@ -5,19 +5,6 @@ using UnityEditor;
 using UnityEngine;
 using AmplifyImpostors;
 
-/// <summary>
-/// 烘一个云杉 impostor 样本，验证 Amplify Impostors 在本工程（2022.3 + URP 14.0.12）能跑通。
-///
-/// ── 为什么先烘样本，不直接铺到 46 万棵树上 ──
-/// 树的渲染由 TerrainRenderer 在 native 层提交，场景里没有带 LODGroup 的树对象，
-/// AmplifyImpostor 挂不上去（它是 MonoBehaviour，靠替换 LODGroup 的 renderer 工作）。
-/// 所以在设计接入方案前，必须先确认最基础的一环成立：
-/// 这个包的 URP14 烘焙链路在本工程能出图、shader 能编译、生成的 impostor 看得过去。
-/// 这一步不成立，后面的方案设计全是空谈。
-///
-/// 用法：-executeMethod TreeImpostorSampleBake.Run
-/// 输出 Logs/tree-impostor-sample.txt，及 Logs/impostor-sample.png（烘焙结果预览）
-/// </summary>
 public static class TreeImpostorSampleBake
 {
     private const string Tag = "[ImpostorSample]";
@@ -46,15 +33,11 @@ public static class TreeImpostorSampleBake
               string.Join(",", lods.Select(l => l.renderers.Length)));
         }
 
-        // 记录烘焙前资产快照，便于判断包生成了什么
         var before = new System.Collections.Generic.HashSet<string>(
             AssetDatabase.GetAllAssetPaths().Where(p => p.EndsWith(".asset") || p.EndsWith(".png")));
 
         W("");
         W("=== 准备：给 prefab 加 AmplifyImpostor 组件 ===");
-        // BakeImpostorsAtPaths 的 autoCreate 只影响 Data 是否允许为空，
-        // 但 IsReady 要求 ResolveImpostor(go) != null，即 prefab 上必须先有组件。
-        // 所以这里先补组件，再调烘焙。用 PrefabUtility 保持 prefab 结构正确。
         var root = PrefabUtility.LoadPrefabContents(PrefabPath);
         try
         {
@@ -89,7 +72,6 @@ public static class TreeImpostorSampleBake
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
 
-        // 烘焙产出了什么
         var after = AssetDatabase.GetAllAssetPaths().Where(p => p.EndsWith(".asset") || p.EndsWith(".png"));
         W("");
         W("=== 新增资产 ===");
@@ -98,7 +80,6 @@ public static class TreeImpostorSampleBake
             if (!before.Contains(p)) { W($"  {p}"); added++; }
         W($"新增 {added} 个");
 
-        // 校验 prefab 是否被加上了组件
         var imp = prefab.GetComponent<AmplifyImpostor>();
         W("");
         W($"prefab 上 AmplifyImpostor 组件 = {(imp != null ? "有" : "无")}");

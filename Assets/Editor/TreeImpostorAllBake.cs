@@ -6,28 +6,6 @@ using UnityEditor;
 using UnityEngine;
 using AmplifyImpostors;
 
-/// <summary>
-/// 把地形上实际在用的 4 个云杉原型批量烘 impostor，
-/// 并把 LOD 结构改成「LOD0 保留原 mesh，其余合并成一级 impostor」。
-///
-/// ── 为什么用 ReplaceAllExceptFirst ──
-/// 用户要求 LOD0 保留原 mesh（近景必须真几何），中远景换 impostor。
-/// 这个模式在 AmplifyImpostor.cs:1457 的实现是：
-///   1. 把 LOD1..N 的 renderer 全部 disabled；
-///   2. Array.Resize(ref lods, 2) —— 压成 2 级；
-///   3. 第 2 级（索引 1）放 impostor renderer，切换高度沿用原最远那一级的值。
-/// 结果：4 级 → 2 级，提交次数减少，且 LOD0 不受影响。
-///
-/// ── 为什么要先烘再改结构 ──
-/// 烘焙需要原始 LOD0 的完整几何作为取样源。
-/// 若先改结构，LOD1~3 已被禁用，烘焙会缺少中远景信息。
-///
-/// ── 幂等性 ──
-/// 已烘过的（有 ImpostorAsset 且组件已存在）会跳过烘焙，只校正 LOD 结构，
-/// 所以可以重复执行。
-///
-/// 用法：-executeMethod TreeImpostorAllBake.Run
-/// </summary>
 public static class TreeImpostorAllBake
 {
     private const string Tag = "[ImpostorAll]";
@@ -35,13 +13,12 @@ public static class TreeImpostorAllBake
     private const string PrefabDir =
         "Assets/Procedural Worlds/Packages - Install/Gaia Pro Assets and Biomes/Prefabs/Trees";
 
-    /// <summary>地形上实际在用的 4 个云杉原型（合计 464,810 / 464,843 实例）。</summary>
     private static readonly string[] Targets =
     {
-        "PW_Tree_Spruce_02",      // 201,031
-        "PW_Tree_Spruce_06",      // 131,574
-        "PW_Tree_Spruce_04",      //  86,458
-        "PW_Tree_Spruce_07_Hero", //  45,747
+        "PW_Tree_Spruce_02",
+        "PW_Tree_Spruce_06",
+        "PW_Tree_Spruce_04",
+        "PW_Tree_Spruce_07_Hero",
     };
 
     public static void Run()
@@ -67,7 +44,6 @@ public static class TreeImpostorAllBake
             W($"===== {name} =====");
             W($"  烘焙前：{lg.GetLODs().Length} 级");
 
-            // ── 第 1 步：确保有 AmplifyImpostor 组件并绑定 LODGroup ──
             var root = PrefabUtility.LoadPrefabContents(path);
             bool needSave = false;
             try
@@ -82,7 +58,6 @@ public static class TreeImpostorAllBake
                 }
                 if (comp.LodGroup == null) { comp.LodGroup = lgIn; needSave = true; }
 
-                // 关键：替换模式改成"保留 LOD0，其余合并成一级 impostor"
                 if (comp.m_lodReplacement != LODReplacement.ReplaceAllExceptFirst)
                 {
                     comp.m_lodReplacement = LODReplacement.ReplaceAllExceptFirst;
@@ -98,7 +73,6 @@ public static class TreeImpostorAllBake
             }
             AssetDatabase.Refresh();
 
-            // ── 第 2 步：烘焙（已烘过的跳过）──
             prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
             var ai = prefab.GetComponent<AmplifyImpostor>();
             bool alreadyBaked = ai != null && ai.Data != null;
@@ -127,14 +101,6 @@ public static class TreeImpostorAllBake
                 if (n > 0) baked++; else { failed++; continue; }
             }
 
-            // ── 第 3 步：确认/修正 LOD 结构 ──
-            // 已烘过的 prefab（Spruce_06）不会被重新烘焙，
-            // 而 m_lodReplacement 只在烘焙时被读取应用，所以它的结构还是原来的 4 级。
-            // 这里不调任何内部 API，直接按 ReplaceAllExceptFirst 的语义手改 LODGroup：
-            //   1. 关掉 LOD1..N 的所有 renderer；
-            //   2. 数组压成 2 级；
-            //   3. 第 2 级放已存在的 impostor renderer，切换高度沿用原最远那级。
-            // 手改比猜测包内 API 更可控，且逻辑与 AmplifyImpostor.cs:1457 的实现一致。
             prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
             var lgAfter = prefab.GetComponentInChildren<LODGroup>(true);
             if (lgAfter == null) { W("  改后找不到 LODGroup"); failed++; continue; }
@@ -148,7 +114,6 @@ public static class TreeImpostorAllBake
                     var lgIn = root2.GetComponentInChildren<LODGroup>(true);
                     var lodsIn = lgIn.GetLODs();
 
-                    // 找已烘好的 impostor renderer：父物体名通常是 "Impostor"
                     Renderer impostorRenderer = null;
                     foreach (var r in root2.GetComponentsInChildren<Renderer>(true))
                     {

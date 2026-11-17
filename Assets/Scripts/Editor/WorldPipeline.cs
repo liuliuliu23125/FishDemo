@@ -9,32 +9,8 @@ using static Gaia.GaiaConstants;
 
 namespace FishDemo.EditorTools
 {
-    /// <summary>
-    /// Gaia 大世界生成 + SECTR 流式分块的批处理流水线。
-    ///
-    /// ── 为什么用状态机而不是同步等待 ──
-    /// Gaia 的世界创建不是同步调用：GaiaSessionManager.StartCreateWorld 会把一个
-    /// IEnumerator 挂到 EditorApplication.update 上，靠编辑器主循环逐帧推进
-    /// （GaiaSessionManager.cs:4159-4165、860-925）。
-    /// 如果我们在 -executeMethod 里用 while 循环等待，就会占住主线程，
-    /// 主循环无法继续派发 update，协程永远不前进 —— 实测会死等。
-    /// 因此这里改用「入口立即返回 + update 回调驱动状态机」，让主循环自然运转。
-    ///
-    /// ── 为什么顺序是 地形 → 植被 → 水 → 切块 → 导出 ──
-    /// 1. 植被必须在切块前：SectorizeTerrain 会把原 TerrainData 的高度/Alpha/Detail/Tree
-    ///    按块复制到新 Terrain（SECTR_TerrainWindow.cs:230-330），并把 sector 范围内
-    ///    的子物体收进 sector。切块后再撒点，点会落在已被 SetActive(false) 的原始地形上。
-    /// 2. 水面必须在切块前且不进 chunk：海面是全局平面，分进每个 sector 会产生接缝。
-    /// 3. m_createInScene 必须 false：那是 Gaia 自己的 TerrainLoader 流式方案，
-    ///    与 SECTR 同时开启会造成双重加载。
-    ///
-    /// 用法：
-    ///   Unity.exe -batchmode -projectPath <proj> -executeMethod FishDemo.EditorTools.WorldPipeline.RunStage -stage all -logFile <log>
-    ///   注意：不要加 -quit，由脚本在完成时显式 EditorApplication.Exit(code)。
-    /// </summary>
     public static class WorldPipeline
     {
-        // ---------- 世界参数（已确认方案：3×3 tile，2×2 切块） ----------
         private const int TilesX = 3;
         private const int TilesZ = 3;
         private const int TileSize = 1024;
@@ -45,19 +21,11 @@ namespace FishDemo.EditorTools
         private const string WorldScenePath = "Assets/Scenes/World.unity";
         private const string Tag = "[WorldPipeline]";
 
-        /// <summary>
-        /// 世界几何中心。
-        ///
-        /// Gaia 以世界原点为中心铺 tile 网格，所以 3×3×1024m 的实际范围是
-        /// [-1536, +1536]，中心在 (0,0)，而不是 (1.5*tileSize)。
-        /// 相机、水面都必须按这个中心摆放，否则会偏出世界。
-        /// </summary>
         private static Vector3 WorldCenter => Vector3.zero;
 
 
         private static readonly TimeSpan StageTimeout = TimeSpan.FromMinutes(40);
 
-        // 状态机
         private enum Stage { Idle, WorldCreating, Spawning, Finalizing }
         private static Stage s_stage = Stage.Idle;
         private static DateTime s_stageDeadline;
@@ -69,9 +37,6 @@ namespace FishDemo.EditorTools
             BeginWorldCreation();
         }
 
-        /// <summary>
-        /// batchmode 入口。stage 参数保留以便将来分步执行。
-        /// </summary>
         public static void RunStage()
         {
             BeginWorldCreation();
@@ -104,7 +69,6 @@ namespace FishDemo.EditorTools
             var camGo = new GameObject("Main Camera");
             var cam = camGo.AddComponent<Camera>();
             cam.tag = "MainCamera";
-            // 相机放在世界南侧边缘上方，俯视中心，便于观察整体地形
             camGo.transform.position = WorldCenter + new Vector3(0f, TileHeight * 0.6f, -TileSize * 1.2f);
             camGo.transform.rotation = Quaternion.Euler(25f, 0f, 0f);
             camGo.AddComponent<AudioListener>();
@@ -131,7 +95,6 @@ namespace FishDemo.EditorTools
             settings.m_tileHeight = TileHeight;
             settings.m_seaLevel = SeaLevel;
 
-            // 关键：关掉 Gaia 自带 terrain 场景流式，改由 SECTR 负责
             settings.m_createInScene = false;
             settings.m_autoUnloadScenes = false;
             settings.m_applyFloatingPointFix = false;
@@ -170,9 +133,6 @@ namespace FishDemo.EditorTools
             s_worldCreated = true;
         }
 
-        /// <summary>
-        /// 每帧驱动状态机。此处只做轻量判断，绝不阻塞主线程。
-        /// </summary>
         private static void Tick()
         {
             try
@@ -193,8 +153,6 @@ namespace FishDemo.EditorTools
                         Log("世界创建回调已触发");
                         VerifyTerrains();
 
-                        // 关键：创建地形只是建了空白网格，高度恒为 0。
-                        // 必须显式应用 Gaia 印章才能得到真实起伏地貌。
                         Log("开始应用地貌印章（塑造起伏）…");
                         bool shaped = TerrainStamper.ApplyBiomeStamps();
                         if (!shaped)
@@ -203,8 +161,6 @@ namespace FishDemo.EditorTools
                         }
                         Log("地貌塑形完成");
 
-                        // 关键：Biome 撒点会灌入地表材质并撒树/草/石头。
-                        // 撒点是异步协程，进入 Spawning 阶段分帧等待。
                         Log("开始 Biome 撒点（地表材质 + 植被）…");
                         if (!BiomeSpawner.BeginSpawn())
                         {
@@ -217,7 +173,7 @@ namespace FishDemo.EditorTools
                     case Stage.Spawning:
                         if (!BiomeSpawner.TickBiomeSpawn())
                         {
-                            return;   // 还没撒完，继续等
+                            return;
                         }
                         Log("Biome 撒点完成");
                         SetupWater();
@@ -258,13 +214,6 @@ namespace FishDemo.EditorTools
             }
         }
 
-        /// <summary>
-        /// 水面留在主场景，不参与 SECTR 切块。
-        ///
-        /// 尺寸不写死：预制体内部网格的真实尺寸随版本可能变，
-        /// 所以实例化后在 scale=1 下量一次包围盒，再按世界需要反推缩放，
-        /// 保证水面刚好覆盖 3×3 tile 范围（含 5% 余量防边缘漏底）。
-        /// </summary>
         private static void SetupWater()
         {
             const string urpWaterPrefab = "Assets/Procedural Worlds/Packages - Install/Gaia Water/Water Prefabs/URP/Gaia Water.prefab";
@@ -278,7 +227,6 @@ namespace FishDemo.EditorTools
             var water = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
             water.name = "Gaia Water";
 
-            // 量原始尺寸（缩放 1 时的世界包围盒）
             Bounds bounds = MeasureBounds(water);
             float worldSize = TileSize * Mathf.Max(TilesX, TilesZ) * 1.05f;
             if (bounds.size.x > 0.0001f && bounds.size.z > 0.0001f)
@@ -297,7 +245,6 @@ namespace FishDemo.EditorTools
             Log($"已放置水面 y={SeaLevel}");
         }
 
-        /// <summary>递归合并所有 Renderer 的世界包围盒。</summary>
         private static Bounds MeasureBounds(GameObject root)
         {
             bool has = false;

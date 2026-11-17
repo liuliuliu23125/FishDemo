@@ -7,20 +7,6 @@ using Unity.Mathematics;
 using UnityEditor;
 using UnityEngine;
 
-/// <summary>
-/// 验证草的原生数据通路与旧的托管读取逐实例一致，且分块排序不丢不乱。
-///
-/// 能验（无需图形设备）：
-///   1. `GrassChunkFile.Read` 的 count / bounds 与 `GrassChunkData.Read` 相同；
-///   2. 32B 顺序布局 MemCpy 后，每个实例的位置/类型/缩放/朝向/法线一致；
-///   3. `SortIntoBlocks` 前后实例多重集不变（位置和 × 数量 的校验和一致）；
-///   4. 每个块内实例类型单一，块区间覆盖全部实例。
-///
-/// 不能验：BRG 的 AddBatch / 剔除（需要真实图形设备，见 GrassCloseupVerify）。
-///
-/// 用法：Unity.exe -batchmode -nographics -projectPath E:\FishDemo \
-///   -executeMethod GrassNativeDataVerify.Run -logFile Logs/Grass/native-data.log
-/// </summary>
 public static class GrassNativeDataVerify
 {
     private const string Tag = "[GrassNative]";
@@ -39,7 +25,6 @@ public static class GrassNativeDataVerify
             if (files.Length == 0)
                 throw new InvalidOperationException("没有草烘焙数据");
 
-            // 抽第一块与最后一块：覆盖湖区清草前后两种分布。
             int[] picks = { 0, files.Length - 1 };
             foreach (int idx in picks)
             {
@@ -79,7 +64,6 @@ public static class GrassNativeDataVerify
                               (managed.Bounds.max - nativeBounds.max).sqrMagnitude < 1e-6f;
             ok &= Assert(sameBounds, $"{name}: bounds 一致", W);
 
-            // 逐实例比对所有字段（32B MemCpy 的正确性）。
             int mismatch = 0;
             for (int i = 0; i < native.Length; i++)
             {
@@ -95,7 +79,6 @@ public static class GrassNativeDataVerify
             }
             ok &= Assert(mismatch == 0, $"{name}: 实例字段一致（不一致 {mismatch}）", W);
 
-            // 排序前保存校验和（逐个 float 求和，位置排序不变性）。
             double sx = 0, sy = 0, sz = 0;
             long typeHist = 0;
             for (int i = 0; i < native.Length; i++)
@@ -140,7 +123,6 @@ public static class GrassNativeDataVerify
                 ok &= Assert(covered == native.Length && typePure,
                     $"{name}: 块表覆盖 {covered:N0}/{native.Length:N0}，块内类型单一/连续", W);
 
-                // 类型段必须连续：ComputeTypeRanges 依赖这个前提。
                 bool typeRuns = true;
                 for (int i = 1; i < native.Length; i++)
                 {

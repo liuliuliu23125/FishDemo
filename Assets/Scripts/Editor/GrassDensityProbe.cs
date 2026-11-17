@@ -5,24 +5,11 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
-/// <summary>
-/// 只统计、不写盘：给定若干候选采样率，报告各自的实例总数，
-/// 用于把烘焙量校准到目标值（而不是靠 0.035→0.0175 的线性直觉）。
-///
-/// 为什么需要：实际保留量 = Σ round(n×rate) + 稀疏格保底（30% 概率补 1 个）。
-/// 保底项与 rate 无关，所以 rate 减半时总量降幅**超过**一半
-/// （实测 0.035→12.65M，0.0175→4.35M，即降 65.6% 而非 50%）。
-/// 要落到「减一半」必须按真实分布反算，不能等比缩放。
-///
-/// 用法：-executeMethod GrassDensityProbe.Run
-/// 输出：Logs/Grass/density-probe.txt
-/// </summary>
 public static class GrassDensityProbe
 {
     private const string Tag = "[GrassDensityProbe]";
     private const string ResultPath = "Logs/Grass/density-probe.txt";
 
-    /// <summary>与 GrassBaker 保持一致。</summary>
     private const float SparseKeepChance = 0.30f;
     private const float MaxSlopeTan = 1.0f;
     private const float MinHeight = 60f + 2f;
@@ -72,7 +59,6 @@ public static class GrassDensityProbe
             totalArea += (long)(tSize.x * tSize.z);
 
             float cellW = tSize.x / dw, cellH = tSize.z / dh;
-            // 确定性种子必须与 GrassBaker.BakeSeed 一致，否则保底抽样的命中格不同
             var rng = new System.Random(BakeSeed(terrain.name));
 
             int layerCount = Mathf.Min(protos.Length, 7);
@@ -89,8 +75,6 @@ public static class GrassDensityProbe
                         int n = detail[y, x];
                         if (n <= 0) continue;
 
-                        // 坡度/高度过滤与烘焙一致：先算该格候选点是否会被剔除。
-                        // 这里为了速度只在“该格至少会被任一 rate 保留”时才做过滤。
                         bool anyKeep = false;
                         for (int r = 0; r < CandidateRates.Length; r++)
                         {
@@ -98,15 +82,12 @@ public static class GrassDensityProbe
                         }
                         if (!anyKeep)
                         {
-                            // 全靠保底：用同一个 rng 序列推进，保持与烘焙的随机流一致
                             bool keepFloor = rng.NextDouble() < SparseKeepChance;
                             for (int r = 0; r < CandidateRates.Length; r++)
                                 if (keepFloor) { totals[r]++; perType[r][layer]++; }
                             continue;
                         }
 
-                        // 有确定保留量的格：仍需消耗同样的随机数（烘焙里 take 个位置用 take 次）
-                        // 为简化，这里不做位置抖动，只按几何位置判一次坡度/高度。
                         float u = (x + 0.5f) / dw;
                         float v = (y + 0.5f) / dh;
                         float wy = tPos.y + td.GetInterpolatedHeight(u, v);
@@ -129,7 +110,7 @@ public static class GrassDensityProbe
                         for (int r = 0; r < CandidateRates.Length; r++)
                         {
                             int take = Mathf.RoundToInt(n * CandidateRates[r]);
-                            if (take <= 0) continue;   // 有确定保留量时不再走保底（与烘焙一致：take>0 就不进保底分支）
+                            if (take <= 0) continue;
                             totals[r] += take;
                             perType[r][layer] += take;
                         }

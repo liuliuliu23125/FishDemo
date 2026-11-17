@@ -6,12 +6,6 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
-/// <summary>
-/// 最终完整性整理 + 全面验证。
-/// 1. 用主场景里 36 个活跃 chunk 重建 Build Settings，去掉指向已删旧批次的死条目；
-/// 2. 逐项核验：主场景构成 / chunk 高度起伏 / 贴图层 / 流式空间判定 / 场景可加载。
-/// 全部通过才返回 exit 0。
-/// </summary>
 public static class FinalIntegrity
 {
     private const string Tag = "[FinalIntegrity]";
@@ -28,7 +22,6 @@ public static class FinalIntegrity
         var loader = Object.FindObjectOfType<SECTR_RegionLoader>();
         W($"主场景：Chunk={chunks.Count}, Sector={sectors.Length}, RegionLoader={(loader != null)}, Terrain={Object.FindObjectsOfType<Terrain>().Length}");
 
-        // ---- 1. 重建 Build Settings ----
         var newBuild = new List<EditorBuildSettingsScene> { new EditorBuildSettingsScene(WorldScene, true) };
         int missingScene = 0;
         foreach (var c in chunks)
@@ -40,7 +33,6 @@ public static class FinalIntegrity
         EditorBuildSettings.scenes = newBuild.ToArray();
         W($"Build Settings 重建为 {newBuild.Count} 个场景（含主场景），缺失 {missingScene}");
 
-        // ---- 2. chunk 高度起伏核验（全 36 块）----
         int flat = 0; float globalMin = 1f, globalMax = 0f;
         foreach (var c in chunks)
         {
@@ -63,7 +55,6 @@ public static class FinalIntegrity
         }
         W($"高度起伏：全局 [{globalMin:F3},{globalMax:F3}] 跨 {(globalMax - globalMin) * 700f:F1}m，平坦/空 chunk 数={flat}");
 
-        // ---- 3. 流式空间判定 ----
         var loadSize = loader.LoadSize;
         var ever = new HashSet<SECTR_Sector>();
         int maxAt = 0;

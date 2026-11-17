@@ -8,16 +8,6 @@ using FishDemo.Rendering;
 
 namespace FishDemo.EditorTools
 {
-    /// <summary>
-    /// 用「主相机 + World 场景」渲染一帧并回读，确认摆进场景的草真的可见。
-    ///
-    /// 与 GrassM1Verify 的区别：
-    ///   GrassM1Verify 用合成相机 + 临时节点，验证 BRG 链路本身；
-    ///   本脚本用场景里真实存在的 GrassBRG (M1) 节点和 Main Camera，验证「摆进场景后能看到」。
-    ///   两者不能互相替代——前者证明 API 对，后者证明场景配置对（图层/锚点/贴地/尺度）。
-    ///
-    /// 用法：-executeMethod FishDemo.EditorTools.GrassSceneVerify.Run
-    /// </summary>
     public static class GrassSceneVerify
     {
         private const string Tag = "[GrassSceneVerify]";
@@ -32,8 +22,6 @@ namespace FishDemo.EditorTools
 
             var scene = EditorSceneManager.OpenScene(WorldScenePath, OpenSceneMode.Single);
 
-            // 草在 World.unity，但地表高度靠运行时 SampleHeight，所以必须把 chunk 也加载进来，
-            // 否则 BuildInstances 会回落到锚点高度，草会飘在空中。
             int opened = 0;
             foreach (var s in EditorBuildSettings.scenes)
             {
@@ -51,9 +39,6 @@ namespace FishDemo.EditorTools
             if (mgr == null) { W("场景里找不到 GrassBRGManager"); Flush(sb); return; }
             W($"找到 GrassBRGManager，锚点 = {mgr.transform.position}");
 
-            // ── 关键：把 BRG 草改成洋红色 ──
-            // 地形自带 detail 草也是绿色，用绿色统计无法区分「BRG 画出来了」和
-            // 「本来就是地形草」。洋红在地形配色里不存在，只要出现就是 BRG 画的。
             var mat = mgr.CurrentMaterial;
             if (mat == null) { W("BRG 材质为空，初始化可能失败"); Flush(sb); return; }
             var originalColor = mat.HasProperty("_BaseColor") ? mat.GetColor("_BaseColor") : Color.white;
@@ -67,12 +52,10 @@ namespace FishDemo.EditorTools
             bool pass = false;
             try
             {
-                // ── 视角 1：主相机原视角（验证「进游戏能看到」）──
                 int magentaMain = RenderAndCount(cam, rt, size, out Color32[] pxMain, out int nonBlackMain);
                 SavePng(pxMain, size, "Logs/Grass/scene-camera-view.png");
                 W($"[主相机] 非背景 {nonBlackMain} ({nonBlackMain / (float)(size * size):P2})，洋红像素 {magentaMain}");
 
-                // ── 视角 2：诊断相机，贴近草方阵俯视（验证几何真的在那）──
                 var diagCam = CreateDiagCamera(mgr.transform.position);
                 int magentaDiag = RenderAndCount(diagCam, rt, size, out Color32[] pxDiag, out int nonBlackDiag);
                 SavePng(pxDiag, size, "Logs/Grass/scene-camera-diag.png");
@@ -81,8 +64,6 @@ namespace FishDemo.EditorTools
 
                 W($"BRG 可见实例（最近一次剔除）= {mgr.LastVisibleCount}");
 
-                // 判定口径：主相机或诊断视角任一看到洋红即算画出。
-                // 主相机看不到不算失败——草可能太小/被地形遮挡，那是布点问题不是链路问题。
                 pass = magentaMain > 0 || magentaDiag > 0;
                 if (magentaMain == 0 && magentaDiag > 0)
                     W("注意：主相机视角看不到 BRG 草（诊断俯视能看到），布点需调整。");
@@ -91,7 +72,7 @@ namespace FishDemo.EditorTools
             }
             finally
             {
-                mat.SetColor("_BaseColor", originalColor); // 还原，避免污染场景资产
+                mat.SetColor("_BaseColor", originalColor);
                 rt.Release();
                 Object.DestroyImmediate(rt);
                 Flush(sb);
@@ -101,10 +82,6 @@ namespace FishDemo.EditorTools
                 EditorApplication.Exit(pass ? 0 : 2);
         }
 
-        /// <summary>
-        /// 渲染一帧并统计洋红像素（R 高、G 低、B 高）。
-        /// 洋红在地形配色里不存在，所以只要出现就是 BRG 草画的，不会被地形草污染。
-        /// </summary>
         private static int RenderAndCount(Camera cam, RenderTexture rt, int size,
             out Color32[] pixels, out int nonBlack)
         {
@@ -158,7 +135,6 @@ namespace FishDemo.EditorTools
             cam.fieldOfView = 60f;
             cam.nearClipPlane = 0.3f;
             cam.farClipPlane = 1000f;
-            // 从草方阵斜上方看下去，保证整个方阵入画。
             cam.transform.position = grassCenter + new Vector3(0f, 45f, -45f);
             cam.transform.LookAt(grassCenter);
             cam.cullingMask = ~0;

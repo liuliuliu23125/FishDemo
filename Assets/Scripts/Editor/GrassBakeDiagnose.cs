@@ -6,14 +6,6 @@ using UnityEngine;
 
 namespace FishDemo.EditorTools
 {
-    /// <summary>
-    /// 只读诊断：核查地形高度分布，验证烘焙时的高度/坡度过滤是否该生效。
-    ///
-    /// 为什么要查：烘焙报告显示「高度剔除 0」——如果地形确实都在海平面以上，
-    /// 那是正常的；如果过滤逻辑没生效，就是 bug。必须用数据判断，不能猜。
-    ///
-    /// 用法：-executeMethod FishDemo.EditorTools.GrassBakeDiagnose.Run
-    /// </summary>
     public static class GrassBakeDiagnose
     {
         private const string Tag = "[BakeDiag]";
@@ -49,11 +41,10 @@ namespace FishDemo.EditorTools
             W($"heightmap 分辨率 = {td.heightmapResolution}");
             W("");
 
-            // 采样高度分布（每 8 格取一次，共 64x64 点）
             W("高度分布采样（世界坐标 Y）：");
             float minH = float.MaxValue, maxH = float.MinValue;
             long below62 = 0, total = 0;
-            float[] buckets = new float[8]; // 0-100,100-200,...700
+            float[] buckets = new float[8];
             int res = td.heightmapResolution;
             int step = Mathf.Max(1, res / 64);
             for (int y = 0; y < res; y += step)

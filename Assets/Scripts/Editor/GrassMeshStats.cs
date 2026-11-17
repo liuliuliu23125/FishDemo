@@ -5,16 +5,6 @@ using UnityEngine;
 
 namespace FishDemo.EditorTools
 {
-    /// <summary>
-    /// 只读统计：草 detail 原型 mesh 的顶点/三角形规模。
-    ///
-    /// 为什么需要：BRG vs GPU Instancing 的选择取决于「每实例顶点数 × 可见实例数」，
-    /// 而这取决于 detailPrototypes 实际引用的是哪个 FBX、它的顶点数是多少。
-    /// 这些数字在文档里没有，必须从资产里量出来。
-    ///
-    /// 用法：-executeMethod FishDemo.EditorTools.GrassMeshStats.Run
-    /// 结果写 Logs/Grass/mesh-stats.txt
-    /// </summary>
     public static class GrassMeshStats
     {
         private const string Tag = "[GrassMesh]";
@@ -46,8 +36,6 @@ namespace FishDemo.EditorTools
 
                 int verts = mesh.vertexCount;
                 int tris = mesh.triangles.Length / 3;
-                // 顶点流的真实带宽成本：position+normal+tangent+uv ≈ 3+3+4+2 = 12 个 float
-                // 这里按常见 URP 顶点格式估：pos(12)+normal(12)+tangent(16)+uv(8) = 48B/顶点
                 long bytes = (long)verts * 48 + (long)tris * 3 * 2;
                 W($"{mesh.name,-40} {verts,8} {tris,8} {bytes,14:N0}");
 

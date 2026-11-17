@@ -8,31 +8,6 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-/// <summary>
-/// 在现有 chunk 场景里叠加 GTS mesh，并关闭 Terrain 的高度图绘制。
-///
-/// ── 为什么改现有场景而不是新建 ──
-/// SECTR 的 chunk 场景里有一套必须保持完整的接线：
-///   SECTR_Chunk（ScenePath/NodeName）+ SECTR_Sector（TotalBounds）+ SECTR_Portal + SECTR_Member。
-/// 重建场景意味着要手工复原这整套结构，一旦 bounds 或 portal 对不上，
-/// 流式加载会静默失效（RegionLoader 靠 TotalBounds 求交，错了不报错）。
-/// 所以在原场景上做增量修改，风险最低、可回滚。
-///
-/// ── 具体改动 ──
-/// 1. 在 Terrain 下新增 GTS_Mesh 子对象，挂 4 个 subTile（MeshFilter + MeshRenderer + GTS 材质）
-/// 2. Terrain.drawHeightmap = false（视觉改由 mesh 承担）
-/// 3. Terrain.drawTreesAndFoliage 保持 true（树/草仍由 Terrain 渲染，本次不动）
-/// 4. TerrainCollider 保留（物理不变）
-///
-/// 这样：地形表面 = mesh 绘制，树草 = Terrain 绘制，碰撞 = TerrainCollider。
-/// 三者解耦，任一部分可单独回退。
-///
-/// 用法：
-///   Unity.exe -batchmode -projectPath <proj> -executeMethod GtsApplyMeshToChunks.RunOne \
-///       -gtsChunk "World_SECTR ... Sector"
-///   Unity.exe ... -executeMethod GtsApplyMeshToChunks.RunAll
-///   结果写 Logs/Gaia/gts-apply/<chunk>.txt 或 Logs/Gaia/gts-apply-all.txt
-/// </summary>
 public static class GtsApplyMeshToChunks
 {
     private const string Tag = "[GTS-Apply]";
@@ -41,7 +16,6 @@ public static class GtsApplyMeshToChunks
     private const string GtsUserDataRoot = "Assets/GTS User Data";
     private const string LogDir = "Logs/Gaia/gts-apply";
 
-    /// <summary>mesh 容器节点名。重复执行时先删同名节点，保证幂等。</summary>
     private const string MeshNodeName = "GTS_Mesh";
 
     public static void RunOne()
@@ -112,14 +86,11 @@ public static class GtsApplyMeshToChunks
             var terrain = terrains[0];
             W($"Terrain={terrain.name} pos={terrain.transform.position}");
 
-            // 幂等：删掉旧的 mesh 节点
             var old = terrain.transform.Find(MeshNodeName);
             if (old != null) UnityEngine.Object.DestroyImmediate(old.gameObject);
 
             var meshRoot = new GameObject(MeshNodeName);
             meshRoot.transform.SetParent(terrain.transform, false);
-            // Terrain 的世界坐标是地块左上角，mesh 顶点是相对地形的局部坐标（GTS BuildUnityMesh 起点 0），
-            // 所以 mesh 节点放在 Terrain 本地原点即可对齐。
             meshRoot.transform.localPosition = Vector3.zero;
 
             int created = 0;
@@ -135,14 +106,10 @@ public static class GtsApplyMeshToChunks
                 mr.sharedMaterial = material;
                 mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
                 mr.receiveShadows = true;
-                // 不要标 static：静态合批会在构建期把 subTile 合成大 VBO，
-                // 破坏 SRP Batcher 的按材质归并粒度。静态合批本身由 BatchingSetup 关闭，
-                // 这里双重保证，避免重跑流水线后又把标记加回来。
                 go.isStatic = false;
                 created++;
             }
 
-            // 关掉 Terrain 自身的高度图绘制，视觉交给 mesh
             terrain.drawHeightmap = false;
             W($"  已创建 mesh 子物体={created}, drawHeightmap=false, drawTreesAndFoliage={terrain.drawTreesAndFoliage}");
 
@@ -150,7 +117,6 @@ public static class GtsApplyMeshToChunks
             EditorSceneManager.SaveScene(scene);
             AssetDatabase.SaveAssets();
 
-            // 校验：场景里应有 N 个 MeshRenderer 指向 GTS 材质，且 Terrain 不再画高度图
             var renderers = UnityEngine.Object.FindObjectsOfType<MeshRenderer>()
                 .Count(r => r.sharedMaterial == material);
             W($"  校验：GTS 材质 MeshRenderer={renderers}, drawHeightmap={terrain.drawHeightmap}");

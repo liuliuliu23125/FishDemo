@@ -7,26 +7,12 @@ using UnityEngine;
 
 namespace FishDemo.EditorTools
 {
-    /// <summary>
-    /// 只读统计：草的真实几何预算（顶点/三角形）。
-    ///
-    /// 为什么必须量这个：BRG vs GPU Instancing 争论的其实是「提交与剔除」，
-    /// 而顶点带宽只取决于「可见实例数 × 每实例顶点数」，两种方案完全一样。
-    /// 所以真正决定可行性的分母是「每实例加权平均三角形数」——文档里从来没有这个数。
-    ///
-    /// 做法：对 1 个 chunk 逐 detail 层取 GetDetailLayer 的实例总数，
-    /// 按 detailPrototypes[i] 对应的 mesh 三角形数加权，得到每实例平均三角形数。
-    ///
-    /// 用法：-executeMethod FishDemo.EditorTools.GrassBudgetProbe.Run
-    /// 结果写 Logs/Grass/grass-budget.txt
-    /// </summary>
     public static class GrassBudgetProbe
     {
         private const string Tag = "[GrassBudget]";
         private const string ResultPath = "Logs/Grass/grass-budget.txt";
         private const string WorldScenePath = "Assets/Scenes/World.unity";
 
-        /// <summary>performance_budget.md §2 的三角形预算。</summary>
         private const long TriangleBudgetPerFrame = 1_500_000;
 
         [MenuItem("FishDemo/Rendering/④ 统计草几何预算", false, 103)]
@@ -37,7 +23,6 @@ namespace FishDemo.EditorTools
 
             EditorSceneManager.OpenScene(WorldScenePath, OpenSceneMode.Single);
 
-            // 只加载第一个 chunk 做样本（地形细节分布各块相近）。
             string chunkPath = null;
             foreach (var s in EditorBuildSettings.scenes)
             {
@@ -88,8 +73,6 @@ namespace FishDemo.EditorTools
                 long count = 0;
                 foreach (int v in layer) if (v > 0) count += v;
 
-                // DetailPrototype.prototype 是 GameObject（只有 usePrototypeMesh=true 时才有效）；
-                // 贴图型 detail 走 prototypeTexture，没有 mesh 几何。
                 var proto = protos[l];
                 Mesh mesh = null;
                 if (proto.usePrototypeMesh && proto.prototype != null)
@@ -119,7 +102,6 @@ namespace FishDemo.EditorTools
                 W($"**每实例加权平均三角形数**         = {avgTris:F1}");
                 W($"→ 每实例平均顶点数约               = {avgTris * 1.5:F0}（按三角:顶点≈1:1.5 估）");
 
-                // 按 36 chunk 外推
                 W("");
                 W("── 按 36 chunk 外推 ──");
                 W($"100% 全量实例 = {totalInstances * 36:N0}");
@@ -127,7 +109,6 @@ namespace FishDemo.EditorTools
                 W($"10% 采样实例   = {totalInstances * 36 * 0.10:N0}");
                 W($"10% 采样三角形 = {totalTriangles * 36 * 0.10:N0}");
 
-                // 预算倒推
                 W("");
                 W("── 按 1.5M 三角形/帧预算倒推 ──");
                 double maxInstancesPerFrame = TriangleBudgetPerFrame / avgTris;

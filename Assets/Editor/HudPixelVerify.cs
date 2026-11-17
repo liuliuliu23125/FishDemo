@@ -7,32 +7,6 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
-/// <summary>
-/// HUD **像素级**可见性验收：真的渲染一帧 Game 视图、抓屏、在左上角区域数非天空像素。
-///
-/// ── 为什么之前的验收不够 ──
-/// 只验 `ComputeHudWidth` 的算术（宽度不出屏）是不够的。
-/// 但"看不见"有两种可能，算术 PASS 一个都排除不了：
-///   ① OnGUI 根本没执行（`_applied=false` / 组件禁用 / 对象失活）；
-///   ② 执行了但画到了别处，或黑底透明度太低看不出来。
-/// 而且既有验收截图走 `cam.Render()` → RenderTexture，**OnGUI 属于屏幕空间，
-/// 不会进那张 RT**——所以历史上没有任何一张截图包含过 HUD。
-///
-/// ── 本脚本怎么拿到真证据 ──
-/// 1. 读 `AtmosphereController` 的 OnGUI 探针计数，确认它到底跑没跑、rect 是多少；
-/// 2. 把 Game 视图切到窄分辨率（模拟"区域太窄"），保证走的是夹取分支；
-/// 3. `ScreenCapture.CaptureScreenshot` 抓真实后缓冲（OnGUI 已合成），
-///    在 HUD rect 覆盖的区域内统计与背景色差异明显的像素比例。
-///
-/// 判据：
-///   A. OnGUI 执行次数 > 0（画了）；
-///   B. HUD rect 完全落在屏幕内（没出屏）；
-///   C. 截图左上角区域有足够比例的"非背景"像素（真的看得见）；
-///   D. 在 480 宽与 1920 宽下都成立（窄视图不退化）。
-///
-/// 用法：-executeMethod HudPixelVerify.Run（**不能用 -nographics**，抓屏需要真实设备）
-/// 输出 Logs/Atmosphere/hud-pixel.txt 与两张 png
-/// </summary>
 [InitializeOnLoad]
 public static class HudPixelVerify
 {
@@ -107,7 +81,6 @@ public static class HudPixelVerify
         private float _waitUntil;
         private bool _finished;
 
-        // 两个尺寸：480 是"区域太窄"的复现，1920 是对照。
         private static readonly Vector2Int[] Sizes =
         {
             new Vector2Int(480, 270),
@@ -124,7 +97,6 @@ public static class HudPixelVerify
             _sb = sb; _ctrl = ctrl;
             gameObject.hideFlags = HideFlags.DontSave;
 
-            // 抢占相机 transform 的脚本会让我们抓到的画面与 HUD 位置对不上。
             foreach (var r in UnityEngine.Object.FindObjectsOfType<LakeCameraRig>()) r.enabled = false;
             foreach (var o in UnityEngine.Object.FindObjectsOfType<LakeOrbitCamera>()) o.Paused = true;
             foreach (var m in UnityEngine.Object.FindObjectsOfType<Pegasus.PegasusManager>()) m.enabled = false;
@@ -141,8 +113,6 @@ public static class HudPixelVerify
             {
                 case 0:
                 {
-                    // Play Mode 下 SetResolution 只在 standalone 生效；
-                    // 编辑器 Game 视图尺寸由 GameView 控制，这里至少保证宽度分支被走到。
                     var s = Sizes[_sizeIndex];
                     _sb.AppendLine($"—— 目标尺寸 {s.x}x{s.y} ——");
                     _sb.AppendLine($"Screen 当前 = {Screen.width}x{Screen.height}");
@@ -153,7 +123,6 @@ public static class HudPixelVerify
                                    $"因 _showHud=false 跳过 {AtmosphereController.HudSkipDisabledCount}");
                     _okDrawn[_sizeIndex] = before > 0;
 
-                    // 等几帧让 OnGUI 在本次尺寸下重算 rect。
                     _waitUntil = Time.realtimeSinceStartup + 0.5f;
                     _step = 1;
                     return;
@@ -187,7 +156,6 @@ public static class HudPixelVerify
                     string path = $"{OutDir}/hud-{Screen.width}x{Screen.height}.png";
                     float ratio = MeasureHudPixels(path, out string detail);
                     _ratios[_sizeIndex] = ratio;
-                    // HUD 背景是 55% 黑 + 文字，左上角区域应有相当比例被压暗/点亮。
                     _okPixels[_sizeIndex] = ratio >= 0.15f;
                     _sb.AppendLine($"左上角区域与背景差异像素比例 = {ratio:P1}（要求 ≥ 15%）: " +
                                    $"{(_okPixels[_sizeIndex] ? "PASS" : "FAIL")}");
@@ -201,10 +169,6 @@ public static class HudPixelVerify
             }
         }
 
-        /// <summary>
-        /// 在 HUD 覆盖区域内统计与"仅天空"参考色差异明显的像素。
-        /// 参考色取同高度的最右列（HUD 只占左侧，右侧是纯天空/场景）。
-        /// </summary>
         private float MeasureHudPixels(string path, out string detail)
         {
             detail = string.Empty;
@@ -226,7 +190,6 @@ public static class HudPixelVerify
             int w = tex.width, h = tex.height;
             var rect = AtmosphereController.HudLastRect;
 
-            // 像素坐标原点在左下；GUI 原点在左上。
             int x0 = Mathf.Clamp(Mathf.RoundToInt(rect.x), 0, w - 1);
             int x1 = Mathf.Clamp(Mathf.RoundToInt(rect.xMax), x0 + 1, w);
             int yTop = Mathf.Clamp(Mathf.RoundToInt(rect.y), 0, h - 1);
@@ -234,7 +197,6 @@ public static class HudPixelVerify
             int py0 = Mathf.Clamp(h - yBot, 0, h - 1);
             int py1 = Mathf.Clamp(h - yTop, py0 + 1, h);
 
-            // 参考色：同一竖直区间的最右侧一列（HUD 之外）。
             var refPixels = tex.GetPixels(w - 4, py0, 4, py1 - py0);
             float rr = 0, rg = 0, rb = 0;
             for (int i = 0; i < refPixels.Length; i++)

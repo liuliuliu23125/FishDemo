@@ -8,17 +8,6 @@ using UnityEngine;
 using FishDemo.Gameplay;
 using FishDemo.Rendering;
 
-/// <summary>
-/// World 场景的流式集成验收（不需要截图）：
-///   1. Play Mode 下 `GrassBRGManager` 进入流式模式，而不是启动时读全部 36 块；
-///   2. `SectrGrassStreamer` 能从 SECTR 的加载状态驱动草驻留；
-///   3. 驻留量受 SECTR 范围与 24 块上限约束，明显小于全量 429 万。
-///
-/// 依赖 SECTR 在 Play Mode 里自动加载相机附近的 chunk（与 LakeOrbitVerify 同一前提）。
-///
-/// 用法：Unity.exe -batchmode -projectPath E:\FishDemo \
-///   -executeMethod GrassWorldStreamingVerify.Run -logFile Logs/Grass/world-streaming.log
-/// </summary>
 [InitializeOnLoad]
 public static class GrassWorldStreamingVerify
 {
@@ -68,7 +57,6 @@ public static class GrassWorldStreamingVerify
                 _started = true;
                 _start = Time.unscaledTime;
                 _mgr = FindObjectOfType<GrassBRGManager>();
-                // 巡游 manager 会抢相机，影响 SECTR loader 的落点。
                 foreach (var m in FindObjectsOfType<Pegasus.PegasusManager>())
                     m.enabled = false;
                 W($"管理器={(_mgr != null ? _mgr.name : "null")}");
@@ -88,7 +76,6 @@ public static class GrassWorldStreamingVerify
             bool streamMode = _mgr.IsStreaming;
             bool hasData = _mgr.StreamingChunkCount > 0 && _mgr.InstanceCount > 0;
             bool bounded = _mgr.StreamingChunkCount <= SectrGrassStreamer.MaxResidentChunks;
-            // 全量是 429 万；这里要求明显更低，证明没有在启动时一次读全。
             bool notFull = _mgr.InstanceCount < 4_000_000;
 
             W($"流式模式={streamMode}，驻留 chunk={_mgr.StreamingChunkCount}，" +

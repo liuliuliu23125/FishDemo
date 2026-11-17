@@ -5,44 +5,17 @@ using UnityEngine;
 using Gaia;
 using static Gaia.GaiaConstants;
 
-/// <summary>
-/// 给已创建的地形应用 Gaia 地貌印章，产出真实起伏。
-///
-/// ── 为什么之前地形是平的 ──
-/// CreateOrUpdateWorld 只做"创建地形网格"，不会自动应用任何 Stamp。
-/// 高度塑造必须显式调用 GaiaSessionManager.Stamp。实测不调用时所有 TerrainData
-/// 高度恒为 0（起伏=0），切块后自然是平的。
-///
-/// ── 为什么用多个印章叠加 ──
-/// 单一印章覆盖不了 3km 世界，会显得单调。这里按世界坐标铺设多张官方印章
-/// （Hills / Mountains / Valleys / Plains 混合），让不同区域有不同地貌。
-/// Stamper 的 m_y/m_x/m_z 是绝对世界坐标，m_width/m_height 是覆盖尺寸（米）。
-/// </summary>
 public static class TerrainStamper
 {
     private const string StampRoot = "Assets/Procedural Worlds/Packages - Install/Stamps";
     private const string Tag = "[TerrainStamper]";
 
-    // 世界范围 [-1536,+1536]，共 3072m。
-    // 用 3×3 张 1400m 的印章平铺，重叠约 20% 保证无缝。
     private const int GridN = 3;
     private const float StampSize = 1400f;
     private const float WorldHalf = 1536f;
 
-    /// <summary>
-    /// 目标起伏幅度（米）。
-    ///
-    /// Stamper 的 m_height 不是米，而是 0..50 的垂直缩放系数，
-    /// 换算关系见 StamperSettings.GetStampScaleByMeter：
-    ///     scaleY = 50 * 米数 / terrainData.size.y
-    /// 早期误把 m_height 当成米直接填 260（远超 50 上限），
-    /// 纹理被极度压扁，实测起伏只有 0.0085。这里改为按米数反算。
-    /// </summary>
     private const float TargetReliefMeters = 700f;
 
-    /// <summary>
-    /// 在一张已存在的 Terrain 上叠加若干印章做一次快速验证。
-    /// </summary>
     public static void TestOneTerrain()
     {
         EditorSceneManager.OpenScene("Assets/Scenes/World.unity", OpenSceneMode.Single);
@@ -51,22 +24,16 @@ public static class TerrainStamper
         EditorApplication.Exit(0);
     }
 
-    /// <summary>
-    /// 对场景中所有激活的 Terrain 应用地貌印章。供 WorldPipeline 在世界创建后调用。
-    /// 注意：此时地形尚未切块，场景内应是 9 块原始 Terrain。
-    /// </summary>
     public static bool ApplyBiomeStamps()
     {
         var terrains = Object.FindObjectsOfType<Terrain>();
         Debug.Log($"{Tag} 待塑形 Terrain 数 = {terrains.Length}");
         if (terrains.Length == 0) return false;
 
-        // 先记录初始高度，判断是否真的塑形成功
         var t0 = terrains[0].terrainData;
         float before = SampleRelief(t0);
         Debug.Log($"{Tag} 塑形前地形起伏 = {before:F4}");
 
-        // 挑选地貌印章：中心山脉 + 周围丘陵 + 谷地，形成层次
         var stamps = new[]
         {
             "Mountains/4k Mountain 1.exr",
@@ -106,7 +73,6 @@ public static class TerrainStamper
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
 
-        // 校验：抽样所有地形，确认起伏已产生（同时给出米数）
         float maxRelief = 0f;
         float terrainH = 700f;
         foreach (var t in Object.FindObjectsOfType<Terrain>())
@@ -131,16 +97,11 @@ public static class TerrainStamper
 
         var settings = ScriptableObject.CreateInstance<StamperSettings>();
         settings.m_operation = FeatureOperation.RaiseHeight;
-        // m_y 是印章基准高度（地形世界 Y），取地形基部
         settings.m_y = 0;
         settings.m_x = worldX;
         settings.m_z = worldZ;
         settings.m_width = StampSize;
 
-        // 关键：m_height 是 0..50 的缩放系数，不是米。
-        // 用 GetStampScaleByMeter 的逆运算把目标米数换算成系数：
-        //     scaleY = 50 * meters / terrainHeight
-        // 这里以场景首个地形的 size.y 作为基准（所有 tile 高度一致）。
         Terrain anyTerrain = Object.FindObjectOfType<Terrain>();
         float terrainHeight = anyTerrain != null ? anyTerrain.terrainData.size.y : 700f;
         float scaleY = Mathf.Clamp(50f * TargetReliefMeters / terrainHeight, 0.0001f, 50f);
@@ -162,7 +123,6 @@ public static class TerrainStamper
         GaiaSessionManager.Stamp(settings, true);
     }
 
-    /// <summary>抽样计算一个 TerrainData 的高度起伏（max-min）。</summary>
     private static float SampleRelief(TerrainData td)
     {
         if (td == null) return 0f;

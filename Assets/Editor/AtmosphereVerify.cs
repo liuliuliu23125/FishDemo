@@ -11,27 +11,6 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 
-/// <summary>
-/// 大气系统验收：证明昼夜 / 天气 / 体积雾 / 体积光真的在运行时生效。
-///
-/// ── 为什么必须进 Play Mode ──
-/// Enviro 的太阳位置、天空盒、体积雾 pass、天气混合全在 Update 与 URP render pass 里，
-/// 编辑期静态检查只能证明"组件挂了"，不能证明"画面变了"。
-///
-/// ── 判据分两层 ──
-/// 1. **状态断言**（硬）：EnviroManager 存在、只有一盏启用的方向光、depth texture=1、
-///    EnviroURPRenderFeature 已挂、体积雾 volumetrics=true 且 Low 档、体积云关闭、
-///    全局反射关闭、时间/天气按预期改变、`_EnviroVolumetricFogTex` 非空（证明体积雾 pass 跑过）。
-/// 2. **像素统计**（半硬）：五张玩家视角截图（正午/日落/午夜/雾天/雨天）。
-///    只断言"正午天空比午夜亮""画面不是纯黑/纯色"，具体亮度数值写文件供人工复核。
-///
-/// ── 机位 ──
-/// 玩家视角：湖心以南 140m、水面上方 8m、朝湖心平视。日落/日出额外把镜头转向太阳，
-/// 让光柱进入画面（体积光只有在看太阳方向时明显）。
-///
-/// 用法：-executeMethod AtmosphereVerify.Run
-/// 输出 Logs/Atmosphere/atmosphere-verify.txt + atmosphere-*.png
-/// </summary>
 [InitializeOnLoad]
 public static class AtmosphereVerify
 {
@@ -59,10 +38,6 @@ public static class AtmosphereVerify
             ChunkLoadScope.LoadRelevant(ChunkLoadScope.Area.FromLake(), W);
             EditorSceneManager.SetActiveScene(EditorSceneManager.GetSceneByPath(WorldScenePath));
 
-            // 必须在进入 Play Mode **之前**禁用草 BRG。
-            // 它会在场景加载的 OnEnable 里读取 36 份 .bytes（约 917MB）并建 429 万实例；
-            // 等到 Play Mode 后再禁用，构建已经做完，首帧还会触发 CullJob 的 Burst 编译，
-            // 实测会把验证拖住数分钟。这里改掉的对象状态不会保存到场景文件。
             foreach (var g in UnityEngine.Object.FindObjectsOfType<FishDemo.Rendering.GrassBRGManager>())
             {
                 g.gameObject.SetActive(false);
@@ -171,7 +146,6 @@ public static class AtmosphereVerify
             _sb = sb; _ctrl = ctrl; _manager = manager; _cam = cam;
             gameObject.hideFlags = HideFlags.DontSave;
 
-            // 关掉所有会写相机 transform 的演示脚本，否则机位会被每帧覆盖。
             foreach (var c in UnityEngine.Object.FindObjectsOfType<FishDemo.Gameplay.PegasusTourController>())
             {
                 c.enabled = false;
@@ -188,7 +162,6 @@ public static class AtmosphereVerify
                 _sb.AppendLine($"已禁用相机 rig：{c.name}");
             }
 
-            // 草 BRG 有 1265 万实例，验收不需要它；不禁用会把构建时间拖到不可接受。
             foreach (var g in UnityEngine.Object.FindObjectsOfType<FishDemo.Rendering.GrassBRGManager>())
             {
                 g.gameObject.SetActive(false);
@@ -207,7 +180,6 @@ public static class AtmosphereVerify
             {
                 if (!_ctrl.IsApplied)
                 {
-                    // 防止模块没加载时无限等待；日志里的 Missing 项就是原因。
                     if (_frame > 900)
                     {
                         _sb.AppendLine($"FAIL：等了 {_frame} 帧 AtmosphereController 仍未应用");
@@ -261,8 +233,6 @@ public static class AtmosphereVerify
 
             _shotWait++;
 
-            // batch Play Mode 的帧间隔远小于实时（实测 18 帧只有 ~15 颗粒子），
-            // 雨天必须等粒子系统真正积累起来，否则截图里没有雨丝。
             if (shot.name == "rain")
             {
                 var rain = FindEffectParticleSystem("Rain");
@@ -280,7 +250,6 @@ public static class AtmosphereVerify
 
         private void Shoot((string name, string time, string weather, bool lookAtSun) shot)
         {
-            // 天气混合、太阳方向都在 Update 里算；等够帧后再摆机位/截图。
             PoseCamera(shot.name, shot.lookAtSun);
 
             const int W = 1280, H = 720;
@@ -288,7 +257,6 @@ public static class AtmosphereVerify
             var prev = _cam.targetTexture;
             _cam.targetTexture = rt;
 
-            // Enviro 的天空/雾每帧更新；Crest 的水面仿真也需要几帧。多渲几次保证 RT 稳定。
             for (int i = 0; i < 12; i++) _cam.Render();
 
             RenderTexture.active = rt;
@@ -357,7 +325,6 @@ public static class AtmosphereVerify
             _sb.AppendLine($"  天气目标：{(_manager.Weather.targetWeatherType != null ? _manager.Weather.targetWeatherType.name : "null")}（期望 {shot.weather}）");
             _sb.AppendLine($"  fogDensity={result.FogDensity:F3}，wetnessTarget={result.WetnessTarget:F2}，体积雾纹理={(result.FogTexture ? "有" : "无")}");
 
-            // 雨/雪是粒子系统，状态对（wetnessTarget=1）不代表屏幕上真的有雨丝。
             if (_manager.Effects != null && _manager.Effects.Settings != null)
             {
                 foreach (var e in _manager.Effects.Settings.effectTypes)
@@ -380,9 +347,6 @@ public static class AtmosphereVerify
         private void PoseCamera(string shotName, bool lookAtSun)
         {
             var center = new Vector3(LakeCarve.Center.x, LakeCarve.WaterLevel, LakeCarve.Center.y);
-            // lowsun 机位：湖心正北 150m（距北岸约 40m），低机位看太阳与北岸树林。
-            // 体积光 pass 在这个机位下启用低太阳散射；本场景湖岸是草坡/稀疏树线，
-            // 光柱不会像密林那样明显，见 Docs/atmosphere.md §0.6。
             Vector3 stand = shotName == "lowsun"
                 ? new Vector3(center.x, LakeCarve.WaterLevel + 2f, center.z + 150f)
                 : new Vector3(center.x, LakeCarve.WaterLevel + 8f, center.z - 140f);
@@ -394,7 +358,6 @@ public static class AtmosphereVerify
             Vector3 dir = center - stand;
             if (lookAtSun && _manager.Objects.directionalLight != null)
             {
-                // 看太阳方向，让体积光（树影光柱）进入画面；稍微压低一点保留湖面。
                 Vector3 sunDir = -_manager.Objects.directionalLight.transform.forward;
                 Vector3 flat = new Vector3(sunDir.x, 0f, sunDir.z);
                 if (flat.sqrMagnitude > 0.001f)
@@ -477,8 +440,6 @@ public static class AtmosphereVerify
             bool reflOff = !_manager.Reflections.Settings.globalReflections;
             bool ambientThrottle = !_manager.Lighting.Settings.ambientUpdateEveryFrame &&
                                    _manager.Lighting.Settings.ambientUpdateIntervall >= 0.4f;
-            // RenderFeature 只对 manager.Camera / Cameras 列表里的相机入队；
-            // 相机 rig 切换后不同步这里，新相机就没有天空/雾 pass。
             bool enviroCamera = EnviroHelper.CanRenderOnCamera(_cam);
 
             var noon = _results.FirstOrDefault(r => r.Name == "noon");
@@ -551,8 +512,6 @@ public static class AtmosphereVerify
     {
         Directory.CreateDirectory(OutDir);
         File.WriteAllText(ResultPath, sb.ToString());
-        // 不先 isPlaying=false：退出 Play Mode 会触发域重载 + 全量资产重导入。
-        // 由 QuitAfter 在同一进程内 Exit。
         if (!EditorApplication.isPlaying) EditorApplication.Exit(exitCode);
     }
 }

@@ -6,31 +6,6 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
-/// <summary>
-/// Pegasus 巡游的运行时验收：证明「接入真的生效」，而不是只看场景里有没有节点。
-///
-/// 检查 5 件事：
-///   1. Pegasus 是否自动启动，且相机被它驱动（位置随时间变化）；
-///   2. 相机是否沿着环形路线走（半径接近设定值）；
-///   3. SECTR 是否真的随相机移动加载/卸载 chunk（本次接入的核心目的）；
-///   4. 相机高度是否落在烘焙的离地区间内（证明高度烘焙有效，没有掉进地里）；
-///   5. F 键切手动 / 切回自动是否可用。
-///
-/// 为什么必须进 Play Mode：SECTR 的加载是 SceneManager.LoadSceneAsync，编辑期不跑；
-/// Pegasus 的驱动在 LateUpdate。静态检查无法覆盖这两点。
-///
-/// ── 跨域重载的处理（关键，实测踩过两次）──
-/// 设置 EditorApplication.isPlaying = true 会触发**域重载**（日志可见
-/// "Reloading assemblies for play mode"），进程内的静态字段和
-/// EditorApplication.update 订阅全部被清空。所以：
-///   * 用 SessionState 存「待执行」标记，它能在域重载后存活；
-///   * 用 [InitializeOnLoad] 在每次域重载后重新注册轮询，
-///     发现标记且已进入播放态时，才创建采样驱动。
-///
-/// 用法：
-///   Unity.exe -batchmode -projectPath <proj> -executeMethod PegasusTourVerify.Run -logFile <log>
-/// 结果写 Logs/pegasus-tour-verify.txt
-/// </summary>
 [InitializeOnLoad]
 public static class PegasusTourVerify
 {
@@ -38,17 +13,10 @@ public static class PegasusTourVerify
     private const string WorldScenePath = "Assets/Scenes/World.unity";
     private const string ResultPath = "Logs/pegasus-tour-verify.txt";
 
-    /// <summary>SessionState 键：Run() 置位，域重载后由轮询消费。</summary>
     private const string PendingKey = "FishDemo.PegasusVerify.Pending";
 
-    /// <summary>
-    /// 观测时长（秒）。
-    /// 阶段 1（0~60%）让 Pegasus 真实驱动；阶段 2（60% 之后）全圈扫描，
-    /// 需要 96 步 × 12 帧 ≈ 19 秒（60fps），所以总时长给到 60 秒。
-    /// </summary>
     private const float ObserveSeconds = 60f;
 
-    /// <summary>静态构造在每次域重载后执行，包括进入 Play Mode 的那一次。</summary>
     static PegasusTourVerify()
     {
         EditorApplication.update += Poll;
@@ -72,14 +40,12 @@ public static class PegasusTourVerify
         W($"Manager 高度校验={manager.m_heightCheckType}（None 表示已用烘焙高度），" +
           $"自动启动={manager.m_autoStartAtRuntime}");
 
-        // 记录前置信息供域重载后复用（域重载会清掉局部变量）。
         SessionState.SetString(PendingKey + ".Pre", sb.ToString());
         SessionState.SetBool(PendingKey, true);
 
         EditorApplication.isPlaying = true;
     }
 
-    /// <summary>轮询：域重载后标记仍在，且已进入播放态时启动采样。</summary>
     private static void Poll()
     {
         if (!SessionState.GetBool(PendingKey, false))
@@ -87,14 +53,12 @@ public static class PegasusTourVerify
         if (!EditorApplication.isPlaying)
             return;
 
-        // 立刻清除标记，避免重复创建。
         SessionState.SetBool(PendingKey, false);
         EditorApplication.update -= Poll;
 
         var sb = new StringBuilder(SessionState.GetString(PendingKey + ".Pre", string.Empty));
         void W(string s) { Debug.Log($"{Tag} {s}"); sb.AppendLine(s); }
 
-        // 重新取引用：进 Play Mode 重载了场景，之前的对象引用已失效。
         var manager = Object.FindObjectOfType<Pegasus.PegasusManager>();
         var camera = FindTourCamera(manager);
 
@@ -113,11 +77,6 @@ public static class PegasusTourVerify
         driver.Begin(W, sb, camera, manager);
     }
 
-    /// <summary>
-    /// 优先用 PegasusManager 的 target 作为巡游相机。
-    /// 当前场景的 LakeCameraRig 默认切到环湖轨道相机，并把 MainCamera tag 搬走；
-    /// 继续按 tag 找会拿到轨道相机，测到的就不是 Pegasus 巡游。
-    /// </summary>
     private static Camera FindTourCamera(Pegasus.PegasusManager manager)
     {
         if (manager != null && manager.m_target != null)
@@ -131,10 +90,6 @@ public static class PegasusTourVerify
             .FirstOrDefault(c => c.CompareTag("MainCamera")) ?? Object.FindObjectOfType<Camera>();
     }
 
-    /// <summary>
-    /// 停掉 LakeCameraRig / 轨道相机，恢复巡游相机的 Camera 与 SECTR loader。
-    /// 否则 rig 会在 Start 里禁用巡游相机和它的 loader，导致整个测试 0 chunk。
-    /// </summary>
     private static void PrepareTourCamera(Camera camera)
     {
         if (camera == null)
@@ -168,10 +123,6 @@ public static class PegasusTourVerify
             loader.enabled = true;
     }
 
-    /// <summary>
-    /// 轮询驱动。做成 MonoBehaviour 是为了拿 Update 回调；
-    /// DontSave 保证不污染场景、不被保存进 World.unity。
-    /// </summary>
     private sealed class VerifyDriver : MonoBehaviour
     {
         private System.Action<string> _w;
@@ -193,14 +144,8 @@ public static class PegasusTourVerify
         private bool _sweepDone;
         private int _sweepStep;
 
-        /// <summary>全圈扫描步数。整圈 6.92km，取 96 步 → 每步约 72m，远小于 512m 的 chunk 尺寸。</summary>
         private const int SweepSteps = 96;
 
-        /// <summary>
-        /// 扫描时每步停留的**秒数**。不能用帧数：batchmode 帧率可达数百 fps，
-        /// 12 帧可能只有 30ms，而 SECTR 补丁后 9 个 chunk 的激活需要约 0.7s。
-        /// 0.8s 覆盖“加载 + 逐块激活”后仍留一点余量。
-        /// </summary>
         private const float SweepDwellSeconds = 0.8f;
 
         private float _sweepDwellUntil;
@@ -215,7 +160,6 @@ public static class PegasusTourVerify
             Pegasus.PegasusManager manager)
         {
             _w = w; _sb = sb; _camera = camera; _manager = manager;
-            // chunk 组件都在主场景里，数量固定；缓存起来避免每帧 FindObjectsOfType。
             _chunks = Object.FindObjectsOfType<SECTR_Chunk>();
             gameObject.hideFlags = HideFlags.DontSave;
         }
@@ -225,7 +169,6 @@ public static class PegasusTourVerify
             if (_finished)
                 return;
 
-            // 第一帧只记录起点：此时 Pegasus 的 Start 刚跑完。
             if (_t0 < 0f)
             {
                 _t0 = Time.time;
@@ -241,8 +184,6 @@ public static class PegasusTourVerify
             _movedDistance += Vector3.Distance(pos, _lastPos);
             _lastPos = pos;
 
-            // 半径 / 高度只在阶段 1（Pegasus 真实驱动期）统计。
-            // 阶段 2 由本驱动直接摆相机，统计进去会把两个口径混在一起。
             if (!_sweeping)
             {
                 float radius = new Vector2(pos.x, pos.z).magnitude;
@@ -263,8 +204,6 @@ public static class PegasusTourVerify
                 TestManualToggle();
             }
 
-            // 阶段2 按 wall-clock 每步 0.8s，96 步约 77s；不能到 60s 就强行结束，
-            // 否则只扫到前 30 步，触达数会被误判成很低。
             if (elapsed >= ObserveSeconds && (!_sweeping || _sweepDone))
             {
                 _finished = true;
@@ -272,18 +211,10 @@ public static class PegasusTourVerify
                 return;
             }
 
-            // ── 阶段 2：全圈流式扫描 ──
-            //
-            // 为什么不在阶段 1 就扫：MoveTargetTo 会直接写 m_target.transform，
-            // 而 Pegasus 的 LateUpdate 同时在用 Vector3.Slerp 把相机往它自己算的位置拉。
-            // 两者互相打架，相机会飞出世界（实测 Y 冲到 1346m、半径掉到 247m）。
-            // 所以先 StopFlythrough 让 Pegasus 彻底停手，再由本驱动独占相机。
             if (elapsed > ObserveSeconds * 0.6f && !_sweeping)
             {
                 _sweeping = true;
                 _manager.StopFlythrough();
-                // StopFlythrough 仍可能在 LateUpdate 把相机拉回最后目标；
-                // 全圈扫描要独占相机，直接禁用 Manager，避免每帧覆盖驱动器的位置。
                 _manager.enabled = false;
                 _w($"阶段2：已停用 Pegasus，开始全圈扫描（{SweepSteps} 步）");
             }
@@ -292,11 +223,6 @@ public static class PegasusTourVerify
             {
                 if (_sweepStep < SweepSteps)
                 {
-                    // 每步停足 wall-clock 时间再前进。
-                    //
-                    // 为什么不能按帧停：batchmode 帧率可达数百 fps，12 帧可能只有 30ms，
-                    // 而补丁后 9 个 chunk 要按 50ms 间隔发起加载，激活再错开（约 0.5s+）。
-                    // 按帧停会把“还没激活”误判成“没加载”。
                     if (Time.unscaledTime < _sweepDwellUntil)
                         return;
 
@@ -316,7 +242,6 @@ public static class PegasusTourVerify
             }
         }
 
-        /// <summary>统计当前已加载的 chunk，并累积「整个观测期触达过」的集合。</summary>
         private int CountLoaded()
         {
             int loaded = 0;
@@ -342,7 +267,6 @@ public static class PegasusTourVerify
                 return;
             }
 
-            // 反射调私有方法，避免为了测试给运行时脚本加公共 API。
             const System.Reflection.BindingFlags Flags =
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
             var enterManual = typeof(FishDemo.Gameplay.PegasusTourController).GetMethod("EnterManualMode", Flags);
@@ -376,11 +300,8 @@ public static class PegasusTourVerify
 
             bool driven = _movedDistance > 100f;
             bool onRoute = _minRadius > 1000f && _maxRadius < 1200f;
-            // 流式判定：整圈扫下来触达的 chunk 必须明显多于同时驻留数。
-            // 驻留上限由 RegionLoader.LoadSize=768 决定；实测最多 9 块（512m chunk），
-            // 采样点位置只命中 4 块不代表运行时上限。
             bool streaming = _loadedSeen.Count > _maxLoadedChunks + 4;
-            bool heightOk = _minY > 200f && _maxY < 500f;   // 贴地 3~8m：地面 280~350 + 8
+            bool heightOk = _minY > 200f && _maxY < 500f;
             bool toggleOk = _manualEntered && _autoRestored;
 
             _w("");

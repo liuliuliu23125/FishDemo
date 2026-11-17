@@ -8,29 +8,6 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
-/// <summary>
-/// 昼夜控制的运行时验收：证明「时刻可以被设置、平移、暂停，并且真的驱动太阳」。
-///
-/// ── 为什么要单独一个脚本 ──
-/// `AtmosphereVerify` 验的是「大气系统整体生效」（截图 + 模块状态），它用
-/// `SetTimeOfDay(hour, pause)` 直接摆时刻，但不检查：
-///   - HUD 用的 `ShiftTimeByHours` / `ToggleTimeRunning` / `CycleTimeScale` 是否工作；
-///   - 时刻改动后**主光方向与强度真的跟着变**（而不只是字段被写进去）。
-/// 这三件事是玩家实际操作路径，必须单独断言。
-///
-/// ── 判据 ──
-/// 1. 设 06:00 / 12:00 / 18:00 / 00:00，每次读回的小时数误差 < 0.02h（≈1 分钟）。
-/// 2. 每次的主光（Enviro 的 Sun/Moon Directional Light）**朝向不同**：
-///    两两之间夹角 > 20°；且正午亮度 > 午夜亮度。
-/// 3. `ShiftTimeByHours(+3)` 后小时数前进 3（跨午夜用 Repeat 处理）。
-/// 4. `ToggleTimeRunning` 第一次从暂停恢复（simulate=True）、第二次进入暂停；
-///    恢复期间等 30 帧小时数确实推进（证明不是只改字段）。
-/// 5. `CycleTimeScale` 改到下一个档位，`cycleLengthInMinutes` 跟着变。
-/// 6. HUD 开启时 `OnGUI` 不抛异常（用一个开关切换并渲染若干帧）。
-///
-/// 用法：-executeMethod AtmosphereTimeVerify.Run
-/// 输出 Logs/Atmosphere/atmosphere-time.txt
-/// </summary>
 [InitializeOnLoad]
 public static class AtmosphereTimeVerify
 {
@@ -55,9 +32,6 @@ public static class AtmosphereTimeVerify
             Directory.CreateDirectory(OutDir);
             EditorSceneManager.OpenScene(WorldScenePath, OpenSceneMode.Single);
 
-            // 必须在进 Play Mode **之前**禁用草 BRG：它会在场景加载的 OnEnable 里读
-            // 36 份 .bytes 并建 429 万实例，之后才禁用等于白做，Play Mode 首帧会卡住。
-            // 这里改的对象状态不会保存到场景文件。
             foreach (var g in UnityEngine.Object.FindObjectsOfType<FishDemo.Rendering.GrassBRGManager>())
             {
                 g.gameObject.SetActive(false);
@@ -117,7 +91,6 @@ public static class AtmosphereTimeVerify
         private int _lastLoggedStep = -1;
         private bool _finished;
 
-        // 采样结果
         private readonly float[] _hours = new float[4];
         private readonly Quaternion[] _lightRot = new Quaternion[4];
         private readonly float[] _lightIntensity = new float[4];
@@ -134,7 +107,6 @@ public static class AtmosphereTimeVerify
             _sb = sb; _ctrl = ctrl; _manager = manager;
             gameObject.hideFlags = HideFlags.DontSave;
 
-            // 关掉会写相机 transform 的演示脚本，避免 HUD/相机切换干扰。
             foreach (var c in UnityEngine.Object.FindObjectsOfType<PegasusTourController>()) c.enabled = false;
             foreach (var r in UnityEngine.Object.FindObjectsOfType<LakeCameraRig>()) r.enabled = false;
             var orbit = UnityEngine.Object.FindObjectsOfType<LakeOrbitCamera>().FirstOrDefault();
@@ -161,14 +133,12 @@ public static class AtmosphereTimeVerify
             if (_finished) return;
             if (!_ctrl.IsApplied)
             {
-                // 每 60 帧打一次，判断是「没应用」还是「卡住」。
                 if (_frame % 60 == 1)
                     Debug.Log($"{Tag} 等待 IsApplied（frame {_frame}，ctrl.enabled={_ctrl.enabled}，" +
                               $"manager={( _manager != null )}）");
                 return;
             }
 
-            // 每步之间留几帧，让 TimeModule.UpdateModule 把太阳位置算出来。
             if (_waitFrames > 0) { _waitFrames--; return; }
 
             if (_frame % 20 == 0 || _step != _lastLoggedStep)
@@ -179,9 +149,6 @@ public static class AtmosphereTimeVerify
 
             switch (_step)
             {
-                // ── 四个时刻：每次「设 → 等 6 帧 → 采样」──
-                // 必须逐次采样。早先版本把四次设置都跑完再统一采样，
-                // 读到的全是最后一个时刻的主光朝向（判据失效）。
                 case 0: SetAndWait(0, 6); return;
                 case 1: SampleLight(0); return;
                 case 2: SetAndWait(1, 6); return;
@@ -192,7 +159,6 @@ public static class AtmosphereTimeVerify
                 case 7: SampleLight(3); return;
                 case 8: AnalyzeTimeSet(); _step++; return;
 
-                // ── 平移 ──
                 case 9:
                 {
                     _ctrl.SetTimeOfDay(10f, pauseTime: true);
@@ -221,18 +187,12 @@ public static class AtmosphereTimeVerify
                     return;
                 }
 
-                // ── 暂停 / 恢复 ──
                 case 12:
                 {
-                    // 上一步 SetTimeOfDay(10, pauseTime:true) 已把 simulate 置 false，
-                    // 所以这里第一次 toggle 的结果是 **true**（恢复流逝），不是暂停。
-                    // 判据据此写：第一次 → true，第二次 → false，最后再恢复 true。
                     bool running1 = _ctrl.ToggleTimeRunning();
                     _pausedHourBefore = _ctrl.CurrentHour;
                     _sb.AppendLine($"ToggleTimeRunning #1 → simulate={running1}（期望 True，从暂停恢复）");
                     _toggleFirst = running1;
-                    // batchmode 下帧间隔极小（实测 30 帧只推进 0.0003h ≈ 1 秒游戏时间），
-                    // 等 180 帧让推进量足够可判读。
                     _waitFrames = 180;
                     _step++;
                     return;
@@ -241,14 +201,11 @@ public static class AtmosphereTimeVerify
                 {
                     float now = _ctrl.CurrentHour;
                     float delta = Mathf.Abs(Mathf.DeltaAngle(now * 15f, _pausedHourBefore * 15f)) / 15f;
-                    // 判据是「严格递增且大于浮点噪声」，不是某个绝对阈值：
-                    // 推进速度由 cycleLengthInMinutes 与真实帧间隔共同决定，batchmode 下很小。
                     _timeAdvanced = delta > 1e-4f;
                     _sb.AppendLine($"恢复流逝后 180 帧：{_pausedHourBefore:F5}h → {now:F5}h" +
                                    $"（推进 {delta:F5}h ≈ {delta * 3600f:F1} 游戏秒，要求 > 0.0001h）: " +
                                    $"{(_timeAdvanced ? "PASS" : "FAIL")}");
 
-                    // 再切一次 → 暂停，并确认暂停期间不动。
                     bool running2 = _ctrl.ToggleTimeRunning();
                     _toggleBackOk = !running2;
                     _sb.AppendLine($"ToggleTimeRunning #2 → simulate={running2}（期望 False，进入暂停）: {(running2 ? "FAIL" : "PASS")}");
@@ -257,7 +214,6 @@ public static class AtmosphereTimeVerify
                 }
                 case 14:
                 {
-                    // 恢复流逝，避免验收结束时场景停在暂停态。
                     _ctrl.ToggleTimeRunning();
                     _cycleBefore = _manager.Time.Settings.cycleLengthInMinutes;
                     _ctrl.CycleTimeScale();
@@ -277,7 +233,6 @@ public static class AtmosphereTimeVerify
             }
         }
 
-        /// <summary>设置第 i 个目标时刻并等待若干帧（等 TimeModule 重算太阳位置）。</summary>
         private void SetAndWait(int i, int wait)
         {
             _ctrl.SetTimeOfDay(Targets[i], pauseTime: true);
@@ -285,7 +240,6 @@ public static class AtmosphereTimeVerify
             _step++;
         }
 
-        /// <summary>采样第 i 个时刻：读回小时数 + 主光朝向/强度。</summary>
         private void SampleLight(int i)
         {
             _hours[i] = _ctrl.CurrentHour;
@@ -311,7 +265,7 @@ public static class AtmosphereTimeVerify
             for (int i = 0; i < Targets.Length; i++)
             {
                 float d = Mathf.Abs(Mathf.DeltaAngle(_hours[i] * 15f, Targets[i] * 15f));
-                bool ok = d < 0.02f * 15f;   // 0.02h ≈ 1.2 分钟
+                bool ok = d < 0.02f * 15f;
                 hourOk &= ok;
                 _sb.AppendLine($"  {TargetLabels[i]}: 读回 {_hours[i]:F3}h" +
                                $"（误差 {d / 15f:F4}h）{(ok ? "" : " ← FAIL")}" +
@@ -319,11 +273,6 @@ public static class AtmosphereTimeVerify
             }
             _c_hour = hourOk;
 
-            // 主光朝向：不能要求「四个时刻两两都不同」——
-            // Enviro 在太阳落到地平线下后切换成**月亮**做主光，18:00 与 00:00
-            // 可能都是月亮且方向接近（实测最小夹角 16.8°）。正确的断言是：
-            //   - 至少有一对方向相差很大（> 60°），证明主光确实随时间转动；
-            //   - 方向明显不同（> 5°）的簇数 >= 3，证明不是一直卡在同一方向。
             var dirs = new Vector3[Targets.Length];
             for (int i = 0; i < Targets.Length; i++)
                 dirs[i] = _lightRot[i] * Vector3.forward;

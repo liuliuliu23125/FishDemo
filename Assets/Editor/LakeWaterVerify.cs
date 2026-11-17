@@ -8,37 +8,6 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using WaveHarmonic.Crest;
 
-/// <summary>
-/// 水体表现验收：证明「水面变透明了」和「相机下水后有内容」。
-///
-/// ── 判据怎么来的（第一性原理）──
-/// 这不是「看起来顺眼」的主观判断，三条都用可量化的像素证据：
-///
-/// 1. **水面透明**：在水浅处（岸边内侧），从水面上方俯视。
-///    水不透明时，水面区域是一片近似纯色的蓝（像素高度集中）；
-///    透明时能看到水底地形纹理与明暗起伏（像素离散度显著上升）。
-///    判据：水面区域内 **亮度标准差** ≥ 阈值，且**颜色种类**足够多。
-///    对照组：把同一区域在「水面以下」的像素拿掉后剩下的地形像素，
-///    两者离散度应接近（说明水面没把地形糊掉）。
-///
-/// 2. **水下有内容**：相机下沉到水位以下 5m。
-///    - 判据 a：画面整体色调变青绿（G/B 通道均值显著高于 R）——
-///      这是体积吸收（`extinction` 每米衰减 R 最快）造成的，是水下效果的**直接证据**。
-///    - 判据 b：画面不是一片纯色（颜色种类 > 阈值），说明地形/水面仍在渲染。
-///    - 判据 c：与「水上同机位」的截图相比，亮度必须显著下降（水下环境光衰减）。
-///
-/// 3. **开关正确**：水上（相机离水面 > 2m）时 `UnderwaterRenderer.ShouldRender`
-///    应返回 false —— 见 `UnderwaterRenderer.cs:299-307`，那是引擎自带的行为。
-///    这里用「水上截图不得呈水下色调」间接验证了它没在水上乱开。
-///
-/// ── 环境（batchmode 必须补偿的两件事）──
-/// ① `RenderSettings.ambientMode = Flat`：场景未烘 GI，Skybox 模式的环境探针全黑，
-///    会把所有背光面渲成近黑，与水无关。
-/// ② 每个 `GTSMesh.Refresh()`：splat 混合的全局数组由它注入，不刷新地面全黑。
-///
-/// 用法：-executeMethod LakeWaterVerify.Run
-/// 输出 Logs/Lake/lake-water.txt + lake-water-*.png
-/// </summary>
 [InitializeOnLoad]
 public static class LakeWaterVerify
 {
@@ -48,17 +17,6 @@ public static class LakeWaterVerify
     private const string ResultPath = OutDir + "/lake-water.txt";
     private const string PendingKey = "FishDemo.LakeWater.Pending";
 
-    /// <summary>
-    /// 每张截图前的预热帧数。
-    ///
-    /// 为什么不再是 40：那段注释的前提是「Crest 的 Absorption/Scattering 仿真逐帧推进，
-    /// 首帧只有几何没有颜色」。但工程已切到 **SimpleTransparency**（`CREST_SIMPLE_TRANSPARENCY=1`），
-    /// 该模式下 shader 不再采样任何仿真纹理（`Fragment.hlsl:490-500` 改用 waterDepth 估算），
-    /// 也没有 opaque/depth copy pass（实测 URP pass 队列只剩 WaterSurfaceRenderPass）。
-    /// 所以只需让水面 chunk 的可见性与材质参数就绪，8 帧足够。
-    ///
-    /// 若将来关掉 SimpleTransparency，这里要调回 40。
-    /// </summary>
     private const int WarmupFrames = 8;
 
     static LakeWaterVerify()
@@ -74,10 +32,6 @@ public static class LakeWaterVerify
         Directory.CreateDirectory(OutDir);
         EditorSceneManager.OpenScene(WorldScenePath, OpenSceneMode.Single);
 
-        // 预加载全部 chunk：SECTR 是异步流式，脚本瞬移相机后加载结果不确定
-        // （同机位两次运行拿到的 chunk 完全不同），几何必须一定齐全。
-        // 只加载与湖相关的 chunk（36 → 8 左右），验证机位固定看湖，
-        // 不需要全世界。详见 ChunkLoadScope 的类注释。
         ChunkLoadScope.LoadRelevant(ChunkLoadScope.Area.FromLake(), W);
         EditorSceneManager.SetActiveScene(EditorSceneManager.GetSceneByPath(WorldScenePath));
 
@@ -123,8 +77,6 @@ public static class LakeWaterVerify
             _sb = sb; _water = water;
             gameObject.hideFlags = HideFlags.DontSave;
 
-            // 关掉巡游控制器与相机 rig：它们每帧改相机位姿，会把验收机位覆盖掉
-            // （这是历史上「验了十几轮都看不到湖」的真正原因）。
             foreach (var t in UnityEngine.Object.FindObjectsOfType<FishDemo.Gameplay.PegasusTourController>())
             {
                 t.enabled = false;
@@ -135,26 +87,18 @@ public static class LakeWaterVerify
                 r.enabled = false;
                 _sb.AppendLine($"已禁用相机 rig：{r.name}");
             }
-            // 关掉 Pegasus 本身，否则它的 LateUpdate 仍会写相机
             foreach (var m in UnityEngine.Object.FindObjectsOfType<Pegasus.PegasusManager>())
             {
                 m.PauseFlythrough();
                 m.enabled = false;
                 _sb.AppendLine($"已暂停并禁用 PegasusManager：{m.name}");
             }
-            // 草 BRG 重建百万实例会把这一轮拖到跑不完
             foreach (var g in UnityEngine.Object.FindObjectsOfType<FishDemo.Rendering.GrassBRGManager>())
             {
                 g.gameObject.SetActive(false);
                 _sb.AppendLine($"禁用草 BRG：{g.name}");
             }
 
-            // ── 隔离大气系统（2026-11-15）──
-            // Enviro 会改主光/环境光；在 9:00 暖色光下，Crest 水下吸收的绝对色比
-            // 从 1.10 掉到 0.86（[2] 的阈值 1.05 是旧光照下标定的）。本测试只验
-            // Crest 的水下效果，先把 Enviro 关掉、恢复旧主光与默认天空盒，
-            // 保持判据稳定。大气 + 水下的组合观感由 AtmosphereVerify 与真机复核覆盖
-            // （见 Docs/atmosphere.md §0.6）。
             int enviroOff = 0;
             foreach (var em in UnityEngine.Object.FindObjectsOfType<Enviro.EnviroManager>())
             {
@@ -188,7 +132,6 @@ public static class LakeWaterVerify
         {
             _frame++;
 
-            // 先把相机挪到湖边，触发 SECTR 加载这一带的 chunk。
             if (!_ready)
             {
                 var c = new Vector3(LakeCarve.Center.x, 0f, LakeCarve.Center.y);
@@ -206,7 +149,6 @@ public static class LakeWaterVerify
                 return;
             }
 
-            // 多等一会儿让水面 chunk / 深度数据就绪。
             if (_frame < _readyFrame + 60) return;
 
             int refreshed = 0;
@@ -222,7 +164,6 @@ public static class LakeWaterVerify
 
         private static Camera FindVerifyCamera()
         {
-            // 优先用轨道相机（不依赖 Pegasus），其次 MainCamera。
             var orbit = UnityEngine.Object.FindObjectsOfType<FishDemo.Gameplay.LakeOrbitCamera>()
                 .Select(c => c.GetComponent<Camera>()).FirstOrDefault(c => c != null);
             if (orbit != null) { orbit.enabled = true; return orbit; }
@@ -269,30 +210,15 @@ public static class LakeWaterVerify
             _sb.AppendLine("");
             _sb.AppendLine($"水位 = {wl}, 湖心 = ({cx},{cz}), 半径 = {R}");
 
-            // ── 机位 A：浅水区上方俯视（验证水面透明）──
-            // 相机悬在**水面上方**、湖内 r = R-55 = 135m 处，高度 wl+6、俯角约 30°。
-            // 为什么悬在水面上而不是站在岸上：湖区植被只清到 r = R+8（LakeVegetationClear），
-            // 站岸上会正好落在树里，近处树干会挡住画面（上一轮实测画面中间一条黑线就是它）。
-            // 该处碗底深度 ≈ 30*(1-(135/190)^2) ≈ 15m；再往外 20m 就只有 ~9m，
-            // 配合新的 1/e 深度 16~24m，能看到碗底的水下地形。
             var standA = new Vector3(cx, wl + 6f, cz + (R - 55f));
             var lookA = new Vector3(cx, wl - 10f, cz + (R - 105f));
             PlaceCam(cam, standA, lookA);
             var a = Capture(cam, "shallow-above", WarmupFrames);
 
-            // ── 机位 B：与 A **同一 XZ 与朝向**，只把相机沉到水下 5m ──
-            // 这样 A/B 的差异只剩"水上 / 水下"。
-            // y = wl-5 时水面在相机上方 5m，UnderwaterRenderer 的
-            // `_ViewerWaterHeight > 2f` 早退条件不成立（UnderwaterRenderer.cs:299-307），
-            // 水下效果必然开启。
             var standB = new Vector3(standA.x, wl - 5f, standA.z);
             PlaceCam(cam, standB, lookA);
             var b = Capture(cam, "underwater", WarmupFrames);
 
-            // ── 机位 B0：同机位，但**关掉水下效果**作为对照组 ──
-            // 这是"水下效果真的生效"最直接的证据：同一台相机、同一朝向、
-            // 同一个水面，只差 `UnderwaterRenderer.Enabled`。
-            // 若两者画面几乎一样 → 水下效果没跑（比任何色调阈值都可靠）。
             var underwater = _water.Underwater;
             bool uwWasEnabled = underwater.Enabled;
             underwater.Enabled = false;
@@ -300,13 +226,10 @@ public static class LakeWaterVerify
             underwater.Enabled = uwWasEnabled;
             _sb.AppendLine($"水下效果对照组：Enabled {uwWasEnabled} → false → {uwWasEnabled}");
 
-            // ── 机位 C：轨道相机的真实机位（验证玩家看到的画面）──
-            // 直接用 LakeOrbitCamera 的参数复现：半径 300m、水位 +26m、俯角 12°。
             var standC = new Vector3(cx, wl + 26f, cz + 300f);
             PlaceCam(cam, standC, new Vector3(cx, wl, cz));
             var c = Capture(cam, "orbit-view", WarmupFrames);
 
-            // ── 统计 ──
             var statsA = Analyze(a);
             var statsB = Analyze(b);
             var statsB0 = Analyze(b0);
@@ -323,41 +246,26 @@ public static class LakeWaterVerify
             _sb.AppendLine($"C 轨道机位   : 亮度均值 {statsC.MeanLuma:F1}, 标准差 {statsC.StdLuma:F1}, 色种 {statsC.Distinct}, " +
                            $"均值RGB ({statsC.MeanR:F0},{statsC.MeanG:F0},{statsC.MeanB:F0})");
 
-            // 水下色调比 = (G+B)/2 / R。吸收让 R 衰减最快，所以水下该值显著大于 1。
-            // 只取**画面上半部**：那里水体散射占比高，下半部透过水能看到黄绿地形会稀释色调。
-            // 但绝对值受"这一帧里地形占多少"影响很大（湖只有 16m 深，碗底占屏幕大半），
-            // 所以判定不用绝对值，改用「同机位开/关水下效果」的**差值**（见 [2]）。
             float tintB = (statsB.UpperMeanG + statsB.UpperMeanB) * 0.5f / Mathf.Max(1f, statsB.UpperMeanR);
             float tintB0 = (statsB0.UpperMeanG + statsB0.UpperMeanB) * 0.5f / Mathf.Max(1f, statsB0.UpperMeanR);
             float tintC = (statsC.UpperMeanG + statsC.UpperMeanB) * 0.5f / Mathf.Max(1f, statsC.UpperMeanR);
             _sb.AppendLine($"水下调色比 (G+B)/2/R : B开={tintB:F2}, B关={tintB0:F2}, C={tintC:F2}（取画面上半部）");
 
-            // ── 判定 ──
             _sb.AppendLine("");
             _sb.AppendLine("===== 水体表现验收 =====");
 
-            // [1] 水面透明：浅水画面必须"有细节"，不能是一块纯色板。
-            //     透明水面能看到水底地形纹理 → 亮度标准差高、色种多。
             bool c1 = statsA.StdLuma >= 18f && statsA.Distinct > 2000;
             _sb.AppendLine($"[1] 水面透明（浅水见底）: {(c1 ? "PASS" : "FAIL")} " +
                            $"(标准差 {statsA.StdLuma:F1} ≥ 18, 色种 {statsA.Distinct} > 2000)");
 
-            // [2] 水下呈吸收色调（R 衰减快于 G/B）。
-            //     判据用**开/关差值**而不是绝对值：绝对值取决于画面里地形占多少，
-            //     湖只有 16m 深，碗底本就占屏幕大半，会把比值压到 1 附近。
-            //     差值只反映"水下效果把色偏改了多少"，与构图无关。
             bool c2 = (tintB - tintB0) >= 0.10f && tintB >= 1.05f;
             _sb.AppendLine($"[2] 水下呈吸收色调     : {(c2 ? "PASS" : "FAIL")} " +
                            $"(开/关差 {tintB - tintB0:F3} ≥ 0.10, 绝对值 {tintB:F2} ≥ 1.05)");
 
-            // [3] 水下有内容：不是一片纯色（地形/水面仍在画），且不至于全黑。
             bool c3 = statsB.Distinct > 800 && statsB.MeanLuma >= 6f;
             _sb.AppendLine($"[3] 水下画面有内容     : {(c3 ? "PASS" : "FAIL")} " +
                            $"(色种 {statsB.Distinct} > 800, 亮度 {statsB.MeanLuma:F1} ≥ 6)");
 
-            // [4] 水下效果真的生效：同机位「开 vs 关」必须明显不同。
-            //     这是最可靠的判据 —— 不依赖任何色调阈值，只要求"开关造成可观测差异"。
-            //     用亮度差 + 颜色分布差异两个维度同时判断，避免仅某一项偶然接近。
             float lumaDelta = Mathf.Abs(statsB.MeanLuma - statsB0.MeanLuma);
             float tintOn = (statsB.UpperMeanG + statsB.UpperMeanB) * 0.5f / Mathf.Max(1f, statsB.UpperMeanR);
             float tintOff = (statsB0.UpperMeanG + statsB0.UpperMeanB) * 0.5f / Mathf.Max(1f, statsB0.UpperMeanR);
@@ -366,11 +274,9 @@ public static class LakeWaterVerify
             _sb.AppendLine($"[4] 水下效果确实生效   : {(c4 ? "PASS" : "FAIL")} " +
                            $"(亮度差 {lumaDelta:F1} ≥ 10 或 调色比差 {tintDelta:F3} ≥ 0.10)");
 
-            // [5] 水上不得呈水下色调：验证 UnderwaterRenderer 的 >2m 自动关闭生效。
             bool c5 = tintC < 1.15f;
             _sb.AppendLine($"[5] 水上未误开水下效果 : {(c5 ? "PASS" : "FAIL")} (比值 {tintC:F2} < 1.15)");
 
-            // [6] 水面有内容（不是一块完美平板）——色种数够即可。
             bool c6 = statsC.Distinct > 1500;
             _sb.AppendLine($"[6] 水面有内容         : {(c6 ? "PASS" : "FAIL")} (色种 {statsC.Distinct} > 1500)");
 
@@ -394,7 +300,6 @@ public static class LakeWaterVerify
             var prev = cam.targetTexture;
             cam.targetTexture = rt;
 
-            // Crest 的仿真逐帧推进，首帧只有几何没有颜色；多渲几十帧让数据稳定。
             var swc = System.Diagnostics.Stopwatch.StartNew();
             for (int i = 0; i < frames; i++) cam.Render();
             long renderMs = swc.ElapsedMilliseconds;
@@ -421,22 +326,15 @@ public static class LakeWaterVerify
         private struct Stats
         {
             public float MeanLuma, StdLuma, MeanR, MeanG, MeanB;
-            // 画面上半部（去掉顶部天空带后的前 40% 高度）的三个通道均值。
-            // 水下往上看主要是水体散射，地形占比低，能真实反映水色。
             public float UpperMeanR, UpperMeanG, UpperMeanB;
             public int Distinct;
         }
 
-        /// <summary>
-        /// 统计整幅图。刻意**不做水体色过滤**：
-        /// 透明水面的判据是「画面有细节」，按颜色筛掉反而会人为降低离散度。
-        /// 只跳过天空/纯背景（顶部 15% 且极亮），避免天空拉高均值。
-        /// </summary>
         private static Stats Analyze(Shot shot)
         {
             var px = shot.Px;
             int W = shot.W, H = shot.H;
-            int yStart = (int)(H * 0.15f);   // 跳过顶部天空
+            int yStart = (int)(H * 0.15f);
             int yEnd = H - yStart;
             int upperEnd = yStart + (int)((yEnd - yStart) * 0.40f);
 
@@ -489,11 +387,6 @@ public static class LakeWaterVerify
         private void Finish(bool pass)
         {
             File.WriteAllText(ResultPath, _sb.ToString());
-            // 不先 `isPlaying = false`：退出 Play Mode 会触发域重载 + 全量资产重导入
-            // （实测 Editor.log 里 `StopAssetImportingV2(ForceSynchronousImport | ForceDomainReload)`
-            // 耗时 20s，还要把 10 个 __Backupscenes 落盘 ~10s）。
-            // 本进程紧接着就 Exit，Play Mode 状态不会被保留到下次运行，
-            // 所以直接退出最省时间。WaitThenExit 给渲染/写盘留几帧余量。
             gameObject.AddComponent<QuitAfter>().Init();
         }
     }

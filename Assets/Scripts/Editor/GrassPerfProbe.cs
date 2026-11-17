@@ -10,15 +10,6 @@ using Debug = UnityEngine.Debug;
 
 namespace FishDemo.EditorTools
 {
-    /// <summary>
-    /// 多 chunk 性能探针：实测剔除耗时、提交三角形/顶点、内存占用。
-    ///
-    /// 为什么必须测：M2.1 修完密度后单 chunk 只有 15.7 万顶点，
-    /// 但全量 36 chunk（1265 万实例）的剔除是 3800 万次视锥测试/帧，
-    /// 移动端能否成立完全取决于这个数字。不能靠估算。
-    ///
-    /// 用法：-executeMethod FishDemo.EditorTools.GrassPerfProbe.Run
-    /// </summary>
     public static class GrassPerfProbe
     {
         private const string Tag = "[GrassPerf]";
@@ -80,7 +71,6 @@ namespace FishDemo.EditorTools
                 cam.farClipPlane = 3000f;
                 cam.cullingMask = ~0;
 
-                // 站到世界中心附近的地表
                 Vector3 center = new Vector3(0f, 0f, 0f);
                 Vector3 ground = center;
                 float best = float.MaxValue;
@@ -105,11 +95,9 @@ namespace FishDemo.EditorTools
 
                 var request = new RenderPipeline.StandardRequest { destination = rt };
 
-                // 预热（首次剔除 Job 可能未完成 + shader 变体首次编译）
                 RenderPipeline.SubmitRenderRequest(cam, request);
                 RenderPipeline.SubmitRenderRequest(cam, request);
 
-                // 连续 10 帧计时
                 const int frames = 10;
                 var sw = Stopwatch.StartNew();
                 for (int i = 0; i < frames; i++)

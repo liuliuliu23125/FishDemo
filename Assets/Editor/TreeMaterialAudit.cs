@@ -6,18 +6,6 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
-/// <summary>
-/// 树渲染问题的运行时审计：把「terrain 上真的在用哪些树原型」→「每个材质槽的
-/// shader / 贴图 / keyword」这条链路逐环打印出来，用来定位「树发白/发粉」这类
-/// 静态分析看不准的问题（贴图空引用、材质引用丢失、shader 变体缺失都会表现成发白）。
-///
-/// 为什么必须运行时跑：静态 YAML 能看出 _MainTex 是 fileID: 0，但看不出
-/// Unity 在导入后是否用 FBX 内嵌材质补上了（externalObjects 映射），也看不出
-/// TerrainRenderer 实际提交的是哪个 LOD 的哪个材质槽。
-///
-/// 用法：-executeMethod TreeMaterialAudit.Run
-/// 结果写 Logs/tree-material-audit.txt
-/// </summary>
 public static class TreeMaterialAudit
 {
     private const string Tag = "[TreeAudit]";
@@ -35,7 +23,6 @@ public static class TreeMaterialAudit
         var chunks = Object.FindObjectsOfType<SECTR_Chunk>().OrderBy(c => c.NodeName).ToList();
         W($"主场景 chunk 数 = {chunks.Count}");
 
-        // 聚合：原型名 -> (实例数, prefab)
         var instCount = new Dictionary<string, int>();
         var protoPrefab = new Dictionary<string, GameObject>();
 
@@ -68,7 +55,6 @@ public static class TreeMaterialAudit
         }
         W($"附加加载 chunk = {opened}，不同原型 = {instCount.Count}，实例总数 = {instCount.Values.Sum()}");
 
-        // 逐原型：LOD -> renderer -> 材质槽 -> shader/贴图
         var problems = new List<string>();
         var shaderSet = new HashSet<string>();
         var variantSet = new HashSet<string>();
@@ -152,7 +138,6 @@ public static class TreeMaterialAudit
                 string shName = sh != null ? sh.name : "(null shader)";
                 shaderSet.Add(shName);
 
-                // 贴图：albedo 空 = 渲染成白色，乘光照后即"发白/发粉"
                 var tex = m.HasProperty("_MainTex") ? m.GetTexture("_MainTex") : null;
                 bool texNull = tex == null;
                 if (texNull) { nullTex++; problems.Add($"{m.name}: _MainTex 为空（会渲染成白色）"); }
