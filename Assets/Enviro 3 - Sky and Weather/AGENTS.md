@@ -34,6 +34,8 @@ renderPassEvent = RenderPassEvent.AfterRenderingTransparents;
 - 标记 `[FishDemo 2026-11-15]`；**升级 Enviro 会丢，必须重打**。
 - Unity 6 的 RenderGraph 分支（`EnviroURPRenderFeature` 内 `#if UNITY_6000_0_OR_NEWER`）使用 `BeforeRenderingTransparents -1`；本工程是 2022.3，走的是非 RenderGraph 分支，不受该差异影响。
 
+平面反射相机不靠改 `EnviroHelper.CanRenderOnCamera` 排除：`EnviroURPRenderFeature` 只挂在 `UniversalRenderer`（index 0），反射相机走无 Feature 的 `ReflectionRenderer`（index 1），`AddRenderPasses` 根本不会被调用。不要用 `cameraType == Reflection` 一刀切，Enviro 自己的全局反射探针相机（`EnviroReflectionProbe.renderCam`）也是该类型，且配置里 `globalReflections: 1`。
+
 ## 4. 接入硬约束
 
 `ENVIRO_URP` 缺了会让 `EnviroURPRenderFeature` 整个类型被 `#if` 掉，天空/雾/云静默失效；必须手动定义（Android / Standalone 已有）。

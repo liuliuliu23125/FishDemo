@@ -48,12 +48,13 @@ Pegasus 没有 asmdef、编在 `Assembly-CSharp`。asmdef 程序集引用不到�
 | `Gameplay/AtmosphereController.cs` | 大气运行时配置：质量档、时间流速、天气轮换、草风桥接、水下雾开关、**夜景曝光/冷色补偿**（克隆 Volume profile，+1.8EV）、**Bloom 质量**（`B` 循环 Half/6 → Half/3 → Quarter/3）；**左上角 HUD（自上而下：键盘操作提示标题 → 昼夜/天气/流速 → 火把数 → 按键说明 → Bloom 质量独立一行）**；热键 `1-5` 天气 / `T` 暂停时间 / `[` `]` ±1 小时 / `\` 切流速 / `B` Bloom。宽度由 `ComputeHudWidth` 夹取，逐行测量（`MeasureBlock`） |
 | `Gameplay/TorchLight.cs` | 单支火把：点光强度/颜色闪烁、火焰核心 `_EmissionColor`、火焰/火星粒子淡入淡出；`Bind` 由 `LightingSetup` 调用 |
 | `Gameplay/TorchRingController.cs` | 12 支火把的选择器：按 `Camera.main` 距离取最近 N 支（12% 滞回），硬上限 6，`L` 循环 0/1/2/4/6；`ApplyImmediate()` 供验证脚本跳过淡入 |
+| `Gameplay/PlanarReflectionController.cs` | 平面反射视锥门控：`WaterBody` AABB ∩ `WaterRenderer.Viewer` 视锥（10m padding），不可见 0.5s 后关，水下关；把反射相机登记给 `GrassBRGManager.ReflectionCamera` 以跳过草的 BRG 剔除；`Bind` 由 `PlanarReflectionSetup` 调用 |
 | `Gameplay/SectrChunkCache.cs` | SECTR chunk 的 TTL + LRU 保留；接管 RegionLoader 的引用，切相机/边界回走时复用，淘汰才真正卸载 |
 | `Gameplay/SectrStreamingRuntime.cs` | 流式运行时宿主：驱动缓存 Tick；等 `UnloadSceneAsync` 完成后按冷却做异步 `UnloadUnusedAssets`；低内存清草驻留 + buffer 池 + chunk 缓存 |
 | `Gameplay/SectrGrassStreamer.cs` | 草数据跟随 SECTR chunk：`IsLoaded` 才读该 chunk 的 `.bytes`，卸载即释放；每次最多加/卸一个，驻留数硬上限 24。`BeforeSceneLoad` 里调 `GrassBRGManager.RequestStreaming()` |
 | `Gameplay/LakesideCrowdBehaviour.cs` | 湖边人群 Baker + Spawn 系统（Entities + GPU ECS Animation Baker）；200 人、4 种 prefab、4× 缩放 |
 
-四条容易踩的：
+五条容易踩的：
 1. **切相机必须同步四样东西**：`WaterRenderer.Viewer`（水面 clipmap 以它为中心）、
    当前相机的 `SECTR_RegionLoader`（按自身 transform 加载 chunk）、`Camera.main` tag、
    以及 `EnviroManager.Camera`（Enviro 的 RenderFeature 只对 manager.Camera/Cameras 生效）。
@@ -65,6 +66,8 @@ Pegasus 没有 asmdef、编在 `Assembly-CSharp`。asmdef 程序集引用不到�
 4. **火把不需要相机切换钩子**：`TorchRingController` 每 0.5s 重新取 `Camera.main`（rig 改 tag），
    自己按距离选最近 N 盏；新增"跟相机走"的逻辑时不要再往 `LakeCameraRig.Apply()` 里塞火把状态。
    `AtmosphereController` 的夜景曝光改的是 Volume 的运行时克隆 profile，不改共享资产。
+5. **平面反射开关同理**：`PlanarReflectionController` 每帧读 `WaterRenderer.Viewer` 做视锥测试，
+   自行切 `Reflections.Enabled`；不要在 `LakeCameraRig.Apply()` 里加反射状态，也不要每帧重建反射贴图。
 
 验收：`LakeOrbitVerify.Run`（可 `-nographics`，9 项断言）。
 

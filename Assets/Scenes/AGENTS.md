@@ -58,11 +58,11 @@ World_SECTR Terrain_0_0-20261109 - 162007 0-1-0 Sector.unity
 | `Main Camera` | 挂 `SECTR_RegionLoader`（加载中心）；Pegasus 巡游也用它作 target；`m_ClearFlags=1`（Skybox） |
 | `Lake Orbit Camera` | 环湖轨道相机 + `LakeCameraRig`（C 切相机 / F 飞行），见 [water](../../Docs/water.md) §5 |
 | ~~`Gaia Water`~~ | **当前场景已无此节点**（YAML 里没有任何名字含 `Water` 的 GameObject）；水面由 `Crest Lake` 提供 |
-| **`Crest Lake`** | Crest 水面 + `WaterBody` + `ClipLodInput`（湖盆裁剪）。位置 `(192,264,96)` |
+| **`Crest Lake`** | Crest 水面 + `WaterBody` + `ClipLodInput`（湖盆裁剪）+ `PlanarReflectionController`（Above / 512×256 / 视锥门控）。位置 `(192,264,96)` |
 | `Terrain_x_x` ×9 | 只有 Sector×4 + Portal×4，**无 Terrain 组件**（地形在 chunk 里） |
 | `Gaia Terrains` / `Gaia Runtime` / `Gaia Tools` | Gaia 运行时容器 |
 | `Alpine Meadow-*` ×10 | 撒点器，挂着空转的 Gaia `TerrainLoader` |
-| **`GrassBRG (M1)`** | 挂 `GrassBRGManager`（`FishDemo.Rendering`）。锚点 `(0, 329.6, -1151.8)`，`_grassDataDir=Assets/Scenes/World/GrassData`，`_instanceCount=4292694`（烘焙总数 4,350,225，湖区清草后减少） |
+| **`GrassBRG (M1)`** | 挂 `GrassBRGManager`（`FishDemo.Rendering`）。锚点 `(0, 329.6, -1151.8)`，`_grassDataDir=Assets/Scenes/World/GrassData`，`_instanceCount=4292694`（烘焙总数 4,350,225，湖区清草后减少）。草在 **layer 6**，反射相机不画、也不跑剔除 Job |
 | **`Pegasus Tour`** | 挂 `PegasusManager`（16 个 POI 是它的子对象，不入根列表）+ `PegasusTourController` |
 | **`Enviro 3`** | Enviro 3.3.2b 运行时根：`EnviroManager` + Sun/Moon 方向光 + Effects/Audio/粒子层级。**预制体实例化后由 Enviro 在编辑器 OnEnable 里自行 Unpack**，场景里是普通层级，不要再按 prefab override 处理 |
 | **`Atmosphere`** | 挂 `AtmosphereController`（`FishDemo.Gameplay`）：质量档、时间流速、天气轮换、草风桥接、HUD、夜景曝光 |

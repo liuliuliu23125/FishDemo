@@ -44,9 +44,11 @@
 
 `Runtime/Scripts/Data/DepthLod.cs` 的 `TerrainDepthInput` 增加了 `TryGetIncludeArea()` Terrain 过滤，使湖外 Terrain 不再回烘 Depth。**升级 Crest 必须重打**；源码无 `[FishDemo]` 标记，按 `TryGetIncludeArea` 定位。启用条件、边界与收益见 [Data §5](Runtime/Scripts/Data/AGENTS.md)。
 
+`Runtime/Scripts/Surface/WaterReflections.cs`：新增 `_ResolutionY` / `ResolutionY`，反射贴图支持非方形（工程用 512×256）；`ComputeHorizonPositionAndNormal` 的 NDC offset 从 float 改为 `Vector2`；新增 `_CaptureDepth` / `CaptureDepth`，关闭时反射相机不请求深度、不执行 CopyDepth。**升级 Crest 必须重打**；按 `ResolutionY` / `CaptureDepth` 与 `[FishDemo]` 标记定位，回归 `PlanarReflectionVerify`。
+
 ### 4.2 工程改过的资产
 
-- `Runtime/Materials/Water.mat` / `Water Volume.mat`：水色、透明、水下参数，以及运行时写入的 keyword（`_CREST_CUSTOM_MESH`、`d_Crest_NoMaskColor`）。
+- `Runtime/Materials/Water.mat` / `Water Volume.mat`：水色、透明、水下参数、`_Crest_PlanarReflectionsEnabled=1`，以及运行时写入的 keyword（`_CREST_CUSTOM_MESH`、`d_Crest_NoMaskColor`）。
 - `Runtime/Shaders/Library/Settings/Settings.Crest.*.hlsl`：`CREST_SIMPLE_TRANSPARENCY (1)`。
 - 权威设置是 `ProjectSettings/Packages/com.waveharmonic.crest/Settings.asset`（工程外，不在 Assets 下）。
 

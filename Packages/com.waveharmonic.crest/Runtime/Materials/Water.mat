@@ -78,6 +78,7 @@ Material:
     - _BUILTIN_ZWrite: 1
     - _Crest_AmbientTerm: 0.35
     - _Crest_DirectTerm: 0.4
+    - _Crest_PlanarReflectionsEnabled: 1
     - _Crest_TransparencyMinimumAlpha: 0.12
     - _CullMode: 0
     - _CullModeForward: 0

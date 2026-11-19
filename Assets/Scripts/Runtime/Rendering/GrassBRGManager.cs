@@ -174,6 +174,8 @@ namespace FishDemo.Rendering
         private static long s_pooledBufferBytes;
 
         private const int kLodCount = 3;
+        private const int GrassLayer = 6;
+        private const float k_ReflectionCameraPositionToleranceSqr = 1e-4f;
 
         private const int kDetailTypeCount = 7;
 
@@ -251,6 +253,17 @@ namespace FishDemo.Rendering
         private bool _ready;
         private JobHandle _lastCullHandle;
         private int _lastVisibleCount;
+
+        public static Camera ReflectionCamera;
+
+        private static bool IsReflectionCamera(Vector3 cameraPosition)
+        {
+            var camera = ReflectionCamera;
+            if (camera == null)
+                return false;
+
+            return (camera.transform.position - cameraPosition).sqrMagnitude < k_ReflectionCameraPositionToleranceSqr;
+        }
 
         private void OnEnable()
         {
@@ -1700,7 +1713,8 @@ namespace FishDemo.Rendering
             output->instanceSortingPositions = null;
             output->instanceSortingPositionFloatCount = 0;
 
-            if (!_ready || cullingContext.viewType != BatchCullingViewType.Camera)
+            if (!_ready || cullingContext.viewType != BatchCullingViewType.Camera ||
+                IsReflectionCamera(cullingContext.lodParameters.cameraPosition))
             {
                 output->visibleInstanceCount = 0;
                 output->visibleInstances = null;
@@ -1778,7 +1792,7 @@ namespace FishDemo.Rendering
                     drawCommandsCount = (uint)kLodCount,
                     filterSettings = new BatchFilterSettings
                     {
-                        layer = 0,
+                        layer = GrassLayer,
                         renderingLayerMask = 1u,
                         shadowCastingMode = ShadowCastingMode.Off,
                         receiveShadows = false,

@@ -197,9 +197,6 @@ public static class LakeCrestSetup
             W("模块：AnimatedWaves/Foam/Depth/Level/Clip = ON；" +
               "Absorption/Scattering/Albedo/DynamicWaves/Flow/Shadow = OFF（水色用材质恒定值）");
 
-            water.Reflections.Enabled = false;
-            W("平面反射 = OFF");
-
             water.Underwater.Enabled = true;
 
             water.ClipLod.DefaultClippingState = DefaultClippingState.EverythingClipped;
@@ -226,6 +223,8 @@ public static class LakeCrestSetup
             body.Precise = true;
             body.Affects = WaterBodyAffects.Volume | WaterBodyAffects.Physics;
             W($"WaterBody: AABB 半边长 = {ext}m，Exclusion=Include，Affects=Volume|Physics");
+
+            PlanarReflectionSetup.Configure(water, W);
 
             var shapeGo = new GameObject("Lake Waves");
             shapeGo.transform.SetParent(root.transform, false);
@@ -409,6 +408,18 @@ public static class LakeCrestSetup
             W($"  WaterBody: Exclusion={body.Exclusion} Affects={body.Affects}");
             if (body.Exclusion != WaterBodyExclusion.Include) ok = false;
         }
+
+        var reflections = water.Reflections;
+        W($"  平面反射: Enabled={reflections.Enabled}, Side={reflections.ReflectionSide}, " +
+          $"Layers={reflections.Layers.value}, Resolution={reflections.Resolution}x{reflections.ResolutionY}, " +
+          $"RendererIndex={reflections.RendererIndex}, CaptureDepth={reflections.CaptureDepth}");
+        if (!reflections.Enabled ||
+            reflections.ReflectionSide != WaterReflectionSide.Above ||
+            reflections.Layers.value != 1 ||
+            reflections.Resolution != 512 ||
+            reflections.ResolutionY != 256 ||
+            reflections.RendererIndex != 1 ||
+            reflections.CaptureDepth) ok = false;
 
         bool clipState = water.ClipLod.DefaultClippingState == DefaultClippingState.EverythingClipped;
         W($"  AbsorptionLod.Enabled(get)={water.AbsorptionLod.Enabled}, " +

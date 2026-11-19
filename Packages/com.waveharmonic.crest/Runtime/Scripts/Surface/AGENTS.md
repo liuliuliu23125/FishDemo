@@ -47,7 +47,7 @@
 
 ## 5. 反射
 
-`WaterReflections` 是平面反射模块；反射相机被 `ShouldRender` 排除。项目关闭的原因见 [water §1](../../../../../Docs/water.md)。
+`WaterReflections` 是平面反射模块；反射相机被 `ShouldRender` 排除。项目当前配置见 [water §6.3](../../../../../Docs/water.md)。
 
 ## 6. 排查顺序
 

@@ -29,8 +29,8 @@
 
 | 项 | 说明 |
 |---|---|
-| Crest 反射可见性跳过 | Crest 只有基于相机高度的 `SkipAbove`/`SkipBelow`（`WaterReflections.cs:240`），**没有视锥判断**。需自研补 `GeometryUtility.TestPlanesAABB`。**当前湖的平面反射是关闭的**（`Reflections.Enabled = false`），所以这条不阻塞 demo |
-| Crest 源码补丁 | `DepthLod.TerrainDepthInput` 已加“只烘湖区 Include WaterBody AABB 内 Terrain”的过滤。升级 Crest 时必须重打，否则每个 active Terrain 都会每帧 dispatch 一次 |
+| Crest 源码补丁 | `DepthLod.TerrainDepthInput` 已加“只烘湖区 Include WaterBody AABB 内 Terrain”的过滤；`WaterReflections` 已加非方形反射贴图（512×256，`ResolutionY`）与 `CaptureDepth`（关闭反射相机深度拷贝）。升级 Crest 时必须重打，否则深度会多 dispatch、反射会退回方形并重新请求 CopyDepth |
+| URP 反射相机补丁 | `UniversalRenderPipeline.RenderSingleCameraInternal` 已改为对 `CameraType.Reflection` 也读取 `UniversalAdditionalCameraData`。升级 URP 必须重打，否则反射相机忽略 RendererIndex/CaptureDepth/renderShadows/post，退回 CopyDepth + FinalBlit |
 | SECTR 流式补丁 | `SECTR_Chunk.cs` / `SECTR_RegionLoader.cs` 已改（激活节流、加载/卸载限流、缓存接管）。升级/重装 SECTR 会覆盖，原始副本在 `Tools/sectr-patches/`；见 [terrain_streaming](terrain_streaming.md) §12 |
 | YooAsset 启动入口 | `YooAssetInitializer.InitializeAsync()` 目前**无任何调用方**，资源层尚未接线 |
 | 模拟构建产物 | 菜单 `YooAsset/FishDemo/执行模拟构建并注入路径` 未实际执行过 |

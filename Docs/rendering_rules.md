@@ -18,6 +18,32 @@
 
 Crest 的 `CopyTargetsRenderPass` 受 `[Conditional(k_Refraction)]` 与 `WriteToColor/DepthTexture` 控制；SimpleTransparency 下 Crest 自身是 0/0。当前管线里的 1 次 CopyDepth 是 Enviro 的成本。
 
+**「两套深度」不是重复计算**：
+
+| 数据 | 生产者 | 坐标 / 用途 | 消费者 |
+|---|---|---|---|
+| `_CameraDepthTexture`（屏幕视深度） | URP `CopyDepthPass`，每相机每帧 1 次全屏 copy | 屏幕 uv → 相机视深度；回答「沿这条射线走多远终止」 | Enviro 雾 / 体积雾 / 体积云 |
+| Crest `DepthLod`（世界高度场） | `DepthTexture.compute` 读 Terrain heightmap；128²×5、R16F，约 160 KiB；不是屏幕深度 | 世界 XZ → 湖床高度，水深 = 水位 − 床高 | Crest 水面 / 水下 / 水深查询 |
+
+- 两者不可互推：屏幕深度只在可见画面内，含所有不透明物且依赖相机；高度场覆盖全湖、相机无关，但不含遮挡与视距。
+- `d_Crest_SimpleTransparency` 下 Crest 调用 `ConfigureInput(None)`，既不产生也不读取 `_CameraDepthTexture`；主画面全屏深度只有 Enviro 的 1 次，Crest 的 compute 不是第二份拷贝。
+- 时序上 CopyDepth 固定在 `AfterRenderingTransparents - 1`（499），水面（transparent，450）画完才可用，不能改成水读屏幕深度；也不要反过来用高度场替代 Enviro 深度。
+
+**平面反射相机**：Crest 每帧最多 1 次 512×256 渲染（Above only），`cullingMask=Default`。工程给反射相机单独用 `Assets/Settings/ReflectionRenderer.asset`（renderer index 1）：**无 Renderer Feature + `IntermediateTextureMode=Auto`**，因此直接渲染到目标 RT，**没有 intermediate color，也没有 FinalBlit**。`CaptureDepth=false`，反射相机不请求 `_CameraDepthTexture`，**没有反射相机的 CopyDepth**；`Reflection.hlsl` 的漏光抑制不生效（斜裁剪已挡住水下几何）。
+
+> **URP 必须打补丁**：`UniversalRenderPipeline.RenderSingleCameraInternal` 默认只对 `CameraType.Game` 读取 `UniversalAdditionalCameraData`；反射相机是 `CameraType.Reflection`，不打补丁时 RendererIndex / requiresDepth / renderShadows / post 全部被忽略，退回默认 renderer，必然出现 CopyDepth + FinalBlit。补丁见 [URP AGENTS](../Packages/com.unity.render-pipelines.universal/AGENTS.md) §3。
+
+打完补丁后的反射 pass 队列（2026-11-19 实测）：
+
+```text
+MainLightShadowCasterPass DrawObjectsPass DrawSkyboxPass DrawObjectsPass InvokeOnRenderObjectCallbackPass
+```
+
+- `MainLightShadowCasterPass` 是 URP 的空 shadowmap 绑定（`stripShadowsOffVariants=true`），没有 shadow caster 绘制；保留它避免 shader 采样到主相机的错误阴影。
+- 没有 `CopyDepthPass`，没有 `FinalBlitPass`；`createColor=false`、`createDepth=false`、`activeColor=CameraTarget`。
+
+`PlanarReflectionController` 用视锥 ∩ `WaterBody` AABB 控制开关；水面看不到时 0 成本。反射相机走无 Feature 的 `ReflectionRenderer`（index 1），Enviro 不参与；不要用 `CanRenderOnCamera` 排除 `CameraType.Reflection`（Enviro 全局反射探针也是该类型）。草在 layer 6，`PlanarReflectionController` 把反射相机登记到 `GrassBRGManager.ReflectionCamera`，BRG 剔除回调按相机位置（1cm 容差）比对后跳过（不要用 begin/end 计数：Crest 走 `RenderSingleCamera`，事件不配对）。
+
 **CopyDepth 能否优化（结论：当前保留 1 次）**。URP 14 的路径是 `requiresDepthCopyPass = !requiresDepthPrepass && requiresDepthTexture`（`UniversalRenderer.cs:860-861`），然后入队一次 `CopyDepthPass`（`:1151-1154`）；该 pass 用全屏 `Blitter.BlitTexture` 写深度（`CopyDepthPass.cs:184`）。本工程 MSAA=1、Vulkan 支持 depth copy，所以 `CanCopyDepth` 为真（`:1622-1635`），不会自动走 prepass。
 
 > **`CrestRenderProbe` 的 0/0 不能当反证**：它在 `beginCameraRendering` 抓队列，早于 URP `renderer.Setup()`；URP 内部的 CopyDepthPass 是 Setup 里入队的，工具看不到。要确认 URP 的 copy，用 Frame Debugger。
@@ -90,13 +116,13 @@ SRP Batcher 三条实战结论：合批单位是 CBUFFER 布局而不是材质�
 - **环湖火把**：`Lakeside Torches` 共 12 支，同时点亮 **≤ 6** 盏（`TorchRingController.HardLightLimit`），默认 1 盏，`L` 循环 0/1/2/4/6；按到 `Camera.main` 的距离选最近 N 盏（12% 滞回）。点光 `intensity=120 / range=48m / shadows=None`，其余靠 emissive + Bloom。
 - **不做昼夜门控**：火把按手动数量点亮，白天/阴天也可以开；只有夜景曝光跟 `Enviro.isNight`。
 - 当前 Forward，per-object light limit = 4；6 盏是预算上限，单物体仍最多叠加 4 盏。URP 14.0.12 已实现 Forward+，但工程未启用（切换前必须回归，见 [gpu_ecs_animation_baker](gpu_ecs_animation_baker.md) §1.2）。
-- 点光不投影；Enviro 体积雾只采样主光；Crest 水面平面反射关闭 → 火把没有地面阴影、光柱或水面倒影。
+- 点光不投影；Enviro 体积雾只采样主光。Crest 平面反射已开（Default 层），火把/树会进入水面倒影，但点光没有地面阴影或体积光柱。
 
 ## 5. 禁止
 
 - ❌ 假设 RenderGraph / 内置水体 / 内置体积雾存在。Forward+ 在 URP 14.0.12 已有，但工程未启用；不要在未回归前依赖它。
 - ❌ 加第二个天空盒；无消费者时打开 `m_RequireOpaqueTexture` / `m_RequireDepthTexture`；新增全屏 Blit 链或 ping-pong。
-- ❌ 每帧无条件开水面反射相机；叠第二套后处理。
+- ❌ 每帧无条件开水面反射相机（必须由 `PlanarReflectionController` 门控）；叠第二套后处理。
 - ❌ 用 Terrain detail 做大规模草；用 `drawTreesAndFoliage=false` 关草（原因与替代见 [Grass/AGENTS.md](../Assets/Editor/Grass/AGENTS.md) §2）。
 - ❌ 在 `Update` 里逐对象设材质属性；用 MPB 传 per-object 数据；Gameplay 层直接写 `CommandBuffer`；用 `Resources.Load` 做流式加载。
 

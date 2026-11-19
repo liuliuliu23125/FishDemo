@@ -3,7 +3,7 @@
 > Crest 5.10.0（`Packages/com.waveharmonic.crest`），Unity 2022.3.62f2 + URP 14。
 > 本文只记录当前配置、施工链路、踩坑与验收；历史逐包选型分析已删除。
 > 包内机制与补丁清单见 [crest_internals](crest_internals.md) 与 [Crest 包规约](../Packages/com.waveharmonic.crest/AGENTS.md)。
-> 选型结论：Crest 原生支持 2022.3；因**没有反射视锥剔除**，湖的平面反射保持关闭。
+> 选型结论：Crest 原生支持 2022.3。平面反射已开启，但外面包了一层**视锥门控**（`PlanarReflectionController`），只反射 Default 层。
 
 ## 1. 当前配置
 
@@ -15,7 +15,7 @@
 | LOD / 分辨率 | `LodLevels=5`；Depth/Foam/Clip/AnimatedWaves/Level=128；Gerstner=96；Depth SDF 关 |
 | 模块 ON | AnimatedWaves / Foam / Depth / Level / Clip |
 | 模块 OFF | DynamicWaves / Flow / Shadow / Albedo / Absorption / Scattering |
-| 平面反射 | **OFF**（最贵且无视锥剔除） |
+| 平面反射 | **ON**：Above only / 512×256 / Default 层；相机看不到湖时 `PlanarReflectionController` 关闭；草在 layer 6 不反射 |
 | Depth Terrain | 仅与湖区 AABB 相交的 Terrain（补丁；细节见 [Data §5](../Packages/com.waveharmonic.crest/Runtime/Scripts/Data/AGENTS.md)） |
 | 管线 depth/opaque | depth=1（Enviro）、opaque=0；消费者见 [rendering_rules](rendering_rules.md) §1.2 |
 
@@ -101,7 +101,8 @@ SimpleTransparency 的 `o_Alpha` 公式与非 Simple 模式的行为见 [Shaders
 | 原始（Chunks + 非 SimpleTransparency） | 4 | 1 | 1 | 49 | ~49 |
 | + SimpleTransparency | 1 | 0 | 0 | 49 | ~49 |
 | **+ SimpleTransparency + Quad** | **1** | **0** | **0** | **0** | **1** |
-| + Enviro 大气（当前） | 1 | 0 | **1（Enviro）** | 0 | 1 |
+| + Enviro 大气 | 1 | 0 | **1（Enviro）** | 0 | 1 |
+| **+ 平面反射（当前）** | 1 | 0 | **0**（`CaptureDepth=false`） | 0 | 1 + 反射场景（无 final blit） |
 
 > 表的 pass/copy 列来自 `CrestRenderProbe`，**只统计 Crest/自定义 feature 在 `beginCameraRendering` 时已入队的 pass**。URP 在 `renderer.Setup()` 里入队的 CopyDepthPass 不在其中；当前 Enviro 的 1 次 CopyDepth 要由 Frame Debugger 或 URP 源码路径确认。
 >
@@ -130,16 +131,40 @@ SimpleTransparency 的 `o_Alpha` 公式与非 Simple 模式的行为见 [Shaders
 
 **`CrestPerformanceMode.Restore`** 会回退 Chunks + 非 SimpleTransparency + URP Depth/Opaque 开启 + minAlpha 0.95。**接了大气候不要直接跑**：Enviro 仍需要 depth=1，还原后重跑 `AtmosphereSetup.Apply`，确认 depth=1、opaque=0。
 
+### 6.3 平面反射（当前）
+
+| 项 | 值 |
+|---|---|
+| 模式 / 层 | Above only；`cullingMask=Default`（水面=4、草=6、UI、TransparentFX 都不反射） |
+| 贴图 | **512×256**；`WaterReflections.ResolutionY` 是工程补丁，0 表示沿用方形 `Resolution` |
+| 管线 | `Assets/Settings/ReflectionRenderer.asset`（`m_RendererFeatures=[]`、`m_IntermediateTextureMode=0`/Auto）作为 URP 的 **renderer index 1**；反射相机直接渲染到 512×256 RT，**无 intermediate color / final blit**。依赖 URP 补丁 `RenderSingleCameraInternal` 对 `CameraType.Reflection` 读取 UACD |
+| 深度 | `CaptureDepth=false`：反射相机 `requiresDepthTexture=false`，不跑 CopyDepth；`_Crest_ReflectionDepthTexture` 保持清零，`Reflection.hlsl` 的漏光抑制不生效（斜裁剪已挡住水下几何） |
+| 开关 | `PlanarReflectionController` 用相机视锥 ∩ `WaterBody` AABB；10m padding，不可见 0.5s 后关；水下关 |
+| Enviro | 反射相机走无 Feature 的 ReflectionRenderer（index 1），Enviro 的 `AddRenderPasses` 不会被调用；**不要**用 `EnviroHelper.CanRenderOnCamera` 排除 `CameraType.Reflection`（会误伤 Enviro 自己的全局反射探针）。该隔离依赖 URP 补丁；补丁丢失时反射相机退回 renderer 0，Enviro 会重新参与且 `PlanarReflectionVerify` FAIL |
+| 草 | `GrassBRGManager` 的 BRG layer 改为 6；`PlanarReflectionController` 把反射相机登记到 `GrassBRGManager.ReflectionCamera`，剔除回调按相机位置比对（1cm 容差）后跳过，避免白跑 4.29M 实例的 cull job；容差不能放大到米级，主相机贴近水面时会被误判 |
+| 材质 | `Water.mat` 的 `_Crest_PlanarReflectionsEnabled=1`；Intensity/Roughness/Distortion 用默认 1 |
+| 其他 | `Sky=true`、`DisableShadows=true`、`DisablePixelLights=true`、`Overscan=1.25`、`RenderOnlySingleCamera=true`、每帧刷新；`renderShadows=false` 后仅剩 URP 的空 shadowmap 绑定 pass（无 shadow caster 绘制） |
+| 仍未排除 | 200 人 VAT 人群在 Default 层，会进入反射；要排除需给 SubScene prefab 加独立层并重烘（当前未做） |
+
+**Crest 源码补丁**：反射贴图从方形改为可非方形（`_ResolutionY` + `ResolutionY`，`ComputeHorizonPositionAndNormal` 的 NDC offset 改 `Vector2`）；新增 `_CaptureDepth` / `CaptureDepth` 关闭反射相机深度拷贝。不要额外暴露 `RefreshInterval`（`_RefreshPerFrames` 默认即 1）。升级 Crest 必须重打；回归 `PlanarReflectionVerify`。
+
+**URP 源码补丁**：`Runtime/UniversalRenderPipeline.cs` 的 `RenderSingleCameraInternal` 对 `CameraType.Reflection` 也读取 `UniversalAdditionalCameraData`。不打补丁时反射相机看不到 RendererIndex/CaptureDepth/renderShadows/post，会退回默认 renderer（CopyDepth + FinalBlit）。升级 URP 必须重打，见 [URP AGENTS](../Packages/com.unity.render-pipelines.universal/AGENTS.md) §3。
+
+补丁后的反射 pass 队列（2026-11-19 实测）：`MainLightShadowCasterPass DrawObjectsPass DrawSkyboxPass DrawObjectsPass InvokeOnRenderObjectCallbackPass`；无 `CopyDepthPass`、无 `FinalBlitPass`。
+
 ## 7. 验收
 
 | 脚本 | 判什么 | 条件 |
 |---|---|---|
 | `LakeWaterVerify.Run` | 浅水见底、水下吸收色调、水下有内容、开关对照、水上不误开 | 需真实图形设备 |
 | `LakeOrbitVerify.Run` | 轨道半径/地形跟随不穿模/朝向 + Crest/SECTR/tag 跟随 + 切换 | 可 `-nographics` |
-| `LakeRenderVerify.Run` | 水位、水面 chunk、水体色、画面内容 | 需真实图形设备 |
+| `LakeRenderVerify.Run` | 水位、水面 chunk、水体色、画面内容 | 需真实图形设备；Quad 下「水面 chunk」一项预期 FAIL，只看水体色 |
+| `PlanarReflectionVerify.Run` | 反射相机 512×256、反射开/关像素差、相机停用后自动关反射 | 需真实图形设备 |
+| `PlanarReflectionSetup.Report` | 反射配置 / 层 / controller / 材质属性只读校验 | 可 `-nographics` |
 | `LakeCrestSetup.Retune` | 只重写水色，打印 1/e 深度 | 调参入口 |
 
 2026-11-13：`lake-water.txt` 6/6 PASS，`lake-orbit.txt` 9/9 PASS。2026-11-17 起 `LakeOrbitVerify` 预加载湖区 9 个 chunk 跑完整圈（120 帧固定步长 1s），验证地形跟随不穿模。
+2026-11-19：`PlanarReflectionSetup.Report` PASS；`PlanarReflectionVerify` PASS（反射相机 512×256、`requiresDepth=false`、`renderShadows=false`、`requiresColor=false`、`post=false`、renderer index 1、pass 队列无 CopyDepth/FinalBlit、开/关像素差 70.7%、相机停用 1s 后 `DisableCount=1`）；`GrassMultiChunkVerify` PASS（layer 6 下 36 个 chunk 都能渲染）。同日删除 Enviro `CanRenderOnCamera` 补丁后复跑，`Report` 与 `PlanarReflectionVerify` 仍 PASS（`rendererIndex1=True`，Enviro 隔离由 renderer index 1 承担）。
 
 **验收三个坑**：
 - batchmode 下 `Time.deltaTime` 不推进：用 `LakeOrbitCamera.OverrideDeltaTime` 注入固定步长。
@@ -160,7 +185,7 @@ SimpleTransparency 的 `o_Alpha` 公式与非 Simple 模式的行为见 [Shaders
 
 ## 9. 遗留
 
-- [ ] iQOO 16 实测帧率；Reflections / Underwater 取舍在真机定。
+- [ ] iQOO 16 实测帧率；平面反射的显存/带宽与 Underwater 取舍在真机定。
 - [ ] 钓鱼玩法需要 CPU 波高查询时，开 `com.waveharmonic.crest.cpu-queries`。
 - [ ] Crest shader 变体未审计（Shader Control 待接入）。
 - [ ] 水下体积光权重（见 §4）是 batchmode 定参，真机 HDR/色调映射下复核。

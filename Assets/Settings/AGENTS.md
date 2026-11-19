@@ -7,7 +7,8 @@
 | 资产 | 作用 | 关键当前值（代码事实） |
 |---|---|---|
 | `UniversalRP.asset` | 全局管线设置 | `m_RequireDepthTexture=1`、`m_RequireOpaqueTexture=0`、`m_UseSRPBatcher=1`、`m_MSAA=1`、`m_SupportsHDR=1`、主光阴影 2048、附加光 per-object 4、`m_ShadowDistance=50`、软阴影关、**`m_ColorGradingMode=1`（HDR grading）**、LUT 32。URP/core 已 embedded 到 `Packages/`，见 [URP AGENTS](../../Packages/com.unity.render-pipelines.universal/AGENTS.md) |
-| `UniversalRenderer.asset` | Forward Renderer + Feature | `m_RenderingMode=0`（Forward）、`m_DepthPrimingMode=0`、`m_IntermediateTextureMode=1`；子资产 `Enviro Render Feature`（`m_Active=1`） |
+| `UniversalRenderer.asset` | Forward Renderer + Feature（主相机，index 0） | `m_RenderingMode=0`（Forward）、`m_DepthPrimingMode=0`、`m_IntermediateTextureMode=1`；子资产 `Enviro Render Feature`（`m_Active=1`） |
+| `ReflectionRenderer.asset` | 平面反射相机专用 Renderer（index 1） | **无 Renderer Feature**、`m_IntermediateTextureMode=0`（Auto）→ 直接写反射 RT，无 intermediate/FinalBlit；Forward；`CaptureDepth=false` 时无 CopyDepth |
 | `PostProcess/FishDemo Global Volume.asset` | 唯一后处理 Profile（全局 Volume `Post Processing`） | ACES、Color Adjustments（0.35EV / 对比 10 / 饱和 -8）、S 曲线、橙红 Hue vs Hue/Sat（GOT 近似）、SMH、Bloom 0.4（Half/6 默认，`B` 循环 Half/6 → Half/3 → Quarter/3）、Vignette 0.22、Film Grain 0.12；无 DOF |
 | `Lighting/*.mat` | 火把材质（Wood / Metal / Flame Core / Particles） | 由 `LightingSetup` 生成，不手改；Flame Core 用 HDR `_EmissionColor` |
 | `Enviro Mobile Quality.asset` | Enviro 移动端质量档 | 体积云关、Fog `Simple + volumetrics + qualities 0 + steps 32`、Flat clouds 开（shadow steps 4）、Aurora 关、粒子发射率 0.5 |
@@ -20,6 +21,7 @@
 4. **不叠第二套后处理**：唯一全局 Volume 是 `Post Processing`，唯一 Profile 是 `PostProcess/FishDemo Global Volume.asset`；规则见 [postprocess](../../Docs/postprocess.md) §0。
 5. **`Enviro Mobile Quality.asset` 是移动端质量档唯一来源**：不要在 `World.unity` 的 `AtmosphereController` 里再覆盖一份。改质量档后跑 `AtmosphereVerify` 验收。
 6. **HDR grading 是 ACES 的配套选择**：`m_ColorGradingMode=1` 让曲线在 LogC/ACEScc 中保留暗部；改回 LDR 前必须重跑 `LightingVerify` + 夜景截图，否则午夜会被 ACES 压黑。低画质档先关 Bloom（当前无 DOF）。
+7. **反射相机依赖 URP 补丁**：`UniversalRenderPipeline.RenderSingleCameraInternal` 必须对 `CameraType.Reflection` 读取 `UniversalAdditionalCameraData`（见 [URP AGENTS](../../Packages/com.unity.render-pipelines.universal/AGENTS.md) §3）。不重打时 `ReflectionRenderer.asset` / `CaptureDepth=false` / `renderShadows=false` 全部失效，反射会退回默认 renderer 并出现 CopyDepth + FinalBlit。
 
 ## 3. 相关文档
 

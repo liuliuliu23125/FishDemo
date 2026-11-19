@@ -13,7 +13,7 @@
 | Terrain → Mesh | GTS 已落地：144 个 subTile，`saveResolution=Half` | 加 LOD 链、走 YooAsset | 同 + [gts_srp_batcher](gts_srp_batcher.md) |
 | 地表合批 | SRP Batcher 已生效；纹理数组 ASTC_8x8 | 维持 | [gts_srp_batcher](gts_srp_batcher.md) |
 | 大世界流式 | SECTR 承担全部 chunk 加载；已打节流/限流/缓存补丁 | SECTR 降为区域级 | [terrain_streaming](terrain_streaming.md) §12 |
-| 水体 | Crest 5.10.0；中心湖已出水面（SimpleTransparency + Quad） | 真机验反射/水下 | [water](water.md) §1–§6 |
+| 水体 | Crest 5.10.0；中心湖已出水面（SimpleTransparency + Quad）；平面反射 Above / 512×256 / Default 层，视锥门控 | 真机验反射耗时/水下 | [water](water.md) §1–§6 |
 | 昼夜/天气 | Enviro 3.3.2b 已接入（昼夜/天气/雾/体积光）；体积云关；夜景曝光补偿 | 真机验性能/水下 | [atmosphere](atmosphere.md) §0 |
 | 后处理 | 已启用：全局 Volume + ACES / HDR grading / Bloom / 调色（无 DOF） | 真机验 GPU 耗时 | [postprocess](postprocess.md) |
 | 灯光 | 12 支环湖火把，默认 1 盏，`L` 循环 0/1/2/4/6，硬上限 6；无附加光阴影 | 真机验光照成本 | [rendering_rules](rendering_rules.md) §4 |

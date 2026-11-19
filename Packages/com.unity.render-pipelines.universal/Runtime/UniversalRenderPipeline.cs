@@ -552,7 +552,9 @@ namespace UnityEngine.Rendering.Universal
         internal static void RenderSingleCameraInternal(ScriptableRenderContext context, Camera camera)
         {
             UniversalAdditionalCameraData additionalCameraData = null;
-            if (IsGameCamera(camera))
+            // [FishDemo] 反射相机也要读取 UACD（renderer index / depth / shadows / post），
+            // 否则 Crest 的平面反射会退回默认 renderer，带出 CopyDepth + FinalBlit。
+            if (IsGameCamera(camera) || camera.cameraType == CameraType.Reflection)
                 camera.gameObject.TryGetComponent(out additionalCameraData);
 
             RenderSingleCameraInternal(context, camera, ref additionalCameraData);

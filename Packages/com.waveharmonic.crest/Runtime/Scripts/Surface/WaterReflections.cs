@@ -65,6 +65,14 @@ namespace WaveHarmonic.Crest
         [@Delayed, SerializeField]
         int _Resolution = 256;
 
+        // [FishDemo] 非方形反射纹理：0 = 沿用 _Resolution。工程用 512x256。
+        [Tooltip("Height of the reflection texture. 0 uses Resolution (square).")]
+        [SerializeField]
+        int _ResolutionY;
+
+        int ReflectionWidth => Mathf.Max(1, _Resolution);
+        int ReflectionHeight => _ResolutionY > 0 ? _ResolutionY : ReflectionWidth;
+
         [Tooltip("Overscan amount to capture off-screen content.\n\nRenders the reflections at a larger viewport size to capture off-screen content when the surface reflects off-screen. This avoids a category of artifacts - especially when looking down. This can be expensive, as the value is a multiplier to the capture size.\n\nThis feature is disabled when using physical cameras.")]
         [@Range(1, 2)]
         [@GenerateAPI]
@@ -99,6 +107,12 @@ namespace WaveHarmonic.Crest
         [@GenerateAPI]
         [@DecoratedField, SerializeField]
         bool _Stencil = false;
+
+        // [FishDemo] 关闭后不复制反射相机深度（省 1 次 512x256 CopyDepth），
+        // Reflection.hlsl 的漏光抑制退化为不生效。
+        [Tooltip("Whether to copy the reflection camera depth for reflection leak mitigation.")]
+        [SerializeField]
+        bool _CaptureDepth = true;
 
         [@Space(10)]
 
@@ -361,7 +375,9 @@ namespace WaveHarmonic.Crest
             if (camera == ReflectionCamera)
             {
                 // Appears to be the only reasonable way to get camera depth separately for SRPs.
-                _CameraDepthTexture = Shader.GetGlobalTexture(Crest.ShaderIDs.Unity.s_CameraDepthTexture);
+                _CameraDepthTexture = _CaptureDepth
+                    ? Shader.GetGlobalTexture(Crest.ShaderIDs.Unity.s_CameraDepthTexture)
+                    : null;
             }
         }
 
@@ -547,7 +563,7 @@ namespace WaveHarmonic.Crest
 
                 CopyTargets(colorTarget, depthTarget, 0);
 
-                _ReflectionPositionNormal[0] = ComputeHorizonPositionAndNormal(_CameraReflections, _Water.SeaLevel, 0.5f / _Resolution, false);
+                _ReflectionPositionNormal[0] = ComputeHorizonPositionAndNormal(_CameraReflections, _Water.SeaLevel, new Vector2(0.5f / ReflectionWidth, 0.5f / ReflectionHeight), false);
 
                 _CameraReflections.ResetProjectionMatrix();
             }
@@ -568,7 +584,7 @@ namespace WaveHarmonic.Crest
 
                 CopyTargets(colorTarget, depthTarget, 1);
 
-                _ReflectionPositionNormal[1] = ComputeHorizonPositionAndNormal(_CameraReflections, _Water.SeaLevel, -0.05f, true);
+                _ReflectionPositionNormal[1] = ComputeHorizonPositionAndNormal(_CameraReflections, _Water.SeaLevel, new Vector2(-0.05f, -0.05f), true);
 
                 _CameraReflections.ResetProjectionMatrix();
             }
@@ -668,7 +684,7 @@ namespace WaveHarmonic.Crest
         {
             if (RequireTemporaryTargets)
             {
-                Graphics.CopyTexture(color, 0, 0, 0, 0, _Resolution, _Resolution, _ColorTexture, slice, 0, 0, 0);
+                Graphics.CopyTexture(color, 0, 0, 0, 0, ReflectionWidth, ReflectionHeight, _ColorTexture, slice, 0, 0, 0);
             }
 
             if (!RenderPipelineHelper.IsLegacy)
@@ -687,9 +703,9 @@ namespace WaveHarmonic.Crest
                 RecreateDepth(depth);
             }
 
-            if (depth != null && depth.width >= _Resolution)
+            if (depth != null && depth.width >= ReflectionWidth && depth.height >= ReflectionHeight)
             {
-                Graphics.CopyTexture(depth, 0, 0, 0, 0, _Resolution, _Resolution, _DepthTexture, slice, 0, 0, 0);
+                Graphics.CopyTexture(depth, 0, 0, 0, 0, ReflectionWidth, ReflectionHeight, _DepthTexture, slice, 0, 0, 0);
             }
         }
 
@@ -794,8 +810,9 @@ namespace WaveHarmonic.Crest
             }
 
             _DepthTexture.name = "_Crest_ReflectionDepth";
-            _DepthTexture.width = _DepthTexture.height = _Resolution;
-            _DepthTexture.isPowerOfTwo = true;
+            _DepthTexture.width = ReflectionWidth;
+            _DepthTexture.height = ReflectionHeight;
+            _DepthTexture.isPowerOfTwo = Mathf.IsPowerOfTwo(ReflectionWidth) && Mathf.IsPowerOfTwo(ReflectionHeight);
             _DepthTexture.useMipMap = false;
             _DepthTexture.autoGenerateMips = false;
             _DepthTexture.filterMode = FilterMode.Point;
@@ -812,7 +829,7 @@ namespace WaveHarmonic.Crest
             var depthFormat = Rendering.GetDefaultDepthFormat(_Stencil || RenderPipelineHelper.IsUniversal);
 
             // Reflection render texture
-            if (!_ColorTexture || _ColorTexture.width != _Resolution || _ColorTexture.graphicsFormat != colorFormat || _ColorTexture.depthStencilFormat != depthFormat)
+            if (!_ColorTexture || _ColorTexture.width != ReflectionWidth || _ColorTexture.height != ReflectionHeight || _ColorTexture.graphicsFormat != colorFormat || _ColorTexture.depthStencilFormat != depthFormat)
             {
                 if (_ColorTexture)
                 {
@@ -820,7 +837,7 @@ namespace WaveHarmonic.Crest
                     Helpers.Destroy(ref _DepthTexture);
                 }
 
-                var descriptor = new RenderTextureDescriptor(_Resolution, _Resolution)
+                var descriptor = new RenderTextureDescriptor(ReflectionWidth, ReflectionHeight)
                 {
                     dimension = TextureDimension.Tex2DArray,
                     volumeDepth = 2,
@@ -833,7 +850,7 @@ namespace WaveHarmonic.Crest
                 {
                     name = "_Crest_ReflectionColor",
                     graphicsFormat = colorFormat,
-                    isPowerOfTwo = true,
+                    isPowerOfTwo = Mathf.IsPowerOfTwo(ReflectionWidth) && Mathf.IsPowerOfTwo(ReflectionHeight),
 #if !d_Crest_DisablePlanarReflectionApplySmoothness
                     useMipMap = true,
 #endif
@@ -846,7 +863,7 @@ namespace WaveHarmonic.Crest
                 {
                     name = "_Crest_ReflectionDepth",
                     graphicsFormat = UnityEngine.Experimental.Rendering.GraphicsFormat.None,
-                    isPowerOfTwo = true,
+                    isPowerOfTwo = Mathf.IsPowerOfTwo(ReflectionWidth) && Mathf.IsPowerOfTwo(ReflectionHeight),
                     useMipMap = false,
                     autoGenerateMips = false,
                     filterMode = FilterMode.Point,
@@ -890,7 +907,7 @@ namespace WaveHarmonic.Crest
                 if (RenderPipelineHelper.IsUniversal)
                 {
                     var additionalCameraData = _CameraReflections.gameObject.AddComponent<UniversalAdditionalCameraData>();
-                    additionalCameraData.requiresDepthTexture = true;
+                    additionalCameraData.requiresDepthTexture = _CaptureDepth;
                 }
 #endif
 
@@ -908,6 +925,7 @@ namespace WaveHarmonic.Crest
                     additionalCameraData.SetRenderer(_RendererIndex);
                     additionalCameraData.renderShadows = !_DisableShadows; // Does not appear to work!
                     additionalCameraData.requiresColorTexture = _Mode != WaterReflectionSide.Above; // or incur assertions
+                    additionalCameraData.requiresDepthTexture = _CaptureDepth;
                 }
 #endif
 
@@ -970,7 +988,7 @@ namespace WaveHarmonic.Crest
         /// Compute intersection between the frustum far plane and given plane, and return view space
         /// position and normal for this horizon line.
         /// </summary>
-        static Vector4 ComputeHorizonPositionAndNormal(Camera camera, float positionY, float offset, bool flipped)
+        static Vector4 ComputeHorizonPositionAndNormal(Camera camera, float positionY, Vector2 offset, bool flipped)
         {
             var position = Vector2.zero;
             var normal = Vector2.zero;
@@ -1060,7 +1078,8 @@ namespace WaveHarmonic.Crest
                         }
 
                         // Minor offset helps.
-                        position += normal.normalized * offset;
+                        var offsetDirection = normal.normalized;
+                        position += new Vector2(offsetDirection.x * offset.x, offsetDirection.y * offset.y);
                     }
                 }
                 finally
@@ -1171,5 +1190,11 @@ namespace WaveHarmonic.Crest
         /// </summary>
         [Obsolete("Please use ReflectionSide instead.")]
         public WaterReflectionSide Mode { get => _Mode; set => _Mode = value; }
+
+        // [FishDemo] Height of the reflection texture. 0 uses Resolution (square).
+        public int ResolutionY { get => _ResolutionY; set => _ResolutionY = value; }
+
+        // [FishDemo] Whether to copy reflection camera depth (leak mitigation).
+        public bool CaptureDepth { get => _CaptureDepth; set { _CaptureDepth = value; _UpdateCamera = true; } }
     }
 }

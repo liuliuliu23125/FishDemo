@@ -18,6 +18,8 @@
 | `LakeOrbitVerify.cs` | 轨道几何（半径 / 地形跟随不穿模 / 朝向 / 切换） + Crest 视点 / SECTR loader / tag 跟随（可 `-nographics`） | `-executeMethod LakeOrbitVerify.Run` |
 | `CrestRenderProbe.cs` | **只读**：统计 Crest/自定义 feature 的 copy 与水面 chunk | `-executeMethod CrestRenderProbe.Run` |
 | `CrestPerformanceMode.cs` | 切水面性能模式（SimpleTransparency / Quad），三项联动可逆 | `ApplySimpleTransparency` / `ApplyQuad` / `ApplyBoth` / `Restore` / `Report` |
+| `PlanarReflectionSetup.cs` | 配置平面反射（Above / 512×256 / Default 层 / 视锥门控）并挂 `PlanarReflectionController`；`LakeCrestSetup.Apply` 会调用 `Configure` | `Apply` / `Report` |
+| `PlanarReflectionVerify.cs` | **需真实图形设备**：反射相机 512×256、开/关像素差、相机停用后自动关反射 | `-executeMethod PlanarReflectionVerify.Run` |
 
 `CrestRenderProbe` **看不到 URP 在 `renderer.Setup()` 里入队的 CopyDepthPass**，确认 URP 拷贝要用 Frame Debugger。
 
@@ -25,11 +27,16 @@
 
 重跑 `WorldPipeline` / `SectrPipeline` 后湖会消失。重建顺序、`LakeCarve` 常量唯一来源、AABB 溢出判据、`Apply` 保留已存在 `LakeCameraRig` 的规则全部见 [water §2](../../../Docs/water.md)；本目录脚本表是各步骤入口。
 
+`LakeCrestSetup.Apply` 末尾会调用 `PlanarReflectionSetup.Configure`，所以重跑水流水线不会丢平面反射；只改反射参数时跑 `PlanarReflectionSetup.Apply` 即可，不必重建水面。
+
 ## 3. Crest 硬约束
 
 - `Lod.Enabled` 不能当校验判据；原因见 [Data §2](../../../Packages/com.waveharmonic.crest/Runtime/Scripts/Data/AGENTS.md) 与 [water §8.5](../../../Docs/water.md)。
 - SimpleTransparency 由 **PlayerSettings 宏 `d_Crest_SimpleTransparency`** 选择，不是材质开关；三层配置见 [water §6.1](../../../Docs/water.md)。
 - `d_Crest_NoMaskColor` 不要手工增删；语义见 [Volume §2](../../../Packages/com.waveharmonic.crest/Runtime/Scripts/Volume/AGENTS.md)。
+- 反射贴图是非方形 **512×256**，依赖 Crest 的 `ResolutionY` / `CaptureDepth` 补丁；升级 Crest 会退回方形/重新请求深度，`PlanarReflectionSetup.Report` 会报 FAIL。
+- 反射相机必须指向 `Assets/Settings/ReflectionRenderer.asset`（URP renderer index **1**，无 Feature、Auto）；它负责去掉 intermediate/FinalBlit。不要把反射相机的 `RendererIndex` 改回 0。
+- 这套配置依赖 URP 补丁 `RenderSingleCameraInternal` 对 `CameraType.Reflection` 读取 UACD；升级 URP 不重打时，`PlanarReflectionVerify` 会看到 `rendererIndex1=False` 且 pass 队列重新出现 CopyDepth/FinalBlit。
 
 Clip 语义、Absorption/Scattering、水下参数与最小 alpha 见 [water §3–§4](../../../Docs/water.md) 与 [Crest 包规约](../../../Packages/com.waveharmonic.crest/AGENTS.md)。
 

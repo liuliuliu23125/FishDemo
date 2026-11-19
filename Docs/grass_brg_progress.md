@@ -39,7 +39,7 @@
 
 | 文件 | 职责 |
 |---|---|
-| `GrassBRGManager.cs` | BRG 管理器：实例构建、空间分块、多 batch、剔除 Job、LOD 分层 |
+| `GrassBRGManager.cs` | BRG 管理器：实例构建、空间分块、多 batch、剔除 Job、LOD 分层。BRG layer **6**（Grass）；`ReflectionCamera` 位置命中时跳过剔除回调 |
 | `GrassInstance.cs` | 32B 磁盘格式 + `GrassChunkData.Read`（编辑器工具，托管）+ `GrassChunkFile`（运行时：原生读盘 + 计数排序，零托管分配） |
 | `SectrGrassStreamer.cs`（Gameplay） | 每 0.1s 对齐 SECTR `IsLoaded`，逐 chunk `Add/RemoveGrassChunk`；一次只加/卸一个，驻留上限 24 |
 | `FishDemo.Rendering.asmdef` | 独立程序集，`allowUnsafeCode=true`（工程全局为 false，BRG 输出是裸指针） |

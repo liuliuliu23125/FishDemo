@@ -21,6 +21,9 @@
 |---|---|---|
 | CopyColor | 0 | 新增消费者前必须证明必要 |
 | CopyDepth | **1（Enviro）** | URP 14 在“透明后采样深度”下不可避免；不要用 ForcePrepass 换取取消（会重绘不透明几何），详见 [rendering_rules](rendering_rules.md) §1.2 |
+| 平面反射 | 1 次 512×256 相机渲染，无 intermediate/final blit、无 CopyDepth | Above only；Default 层；草（layer 6）/水面（4）/UI 不反射；相机看不到湖时 0 |
+| 反射管线 | `ReflectionRenderer.asset`（renderer index 1，无 Feature，IntermediateTextureMode=Auto） | 反射直接写目标 RT；主相机仍用 `UniversalRenderer.asset`（index 0） |
+| 反射贴图 | 512×256×2 slice，约 1–2 MiB | 只在反射相机启用时分配；格式由 `SystemInfo.GetGraphicsFormat(HDR)` 决定 |
 | 全屏 blit | Enviro 雾 1 copy + 1 合成 | 不允许再叠全屏 ping-pong |
 | 水面 | 1 次 DrawMesh | 不开第二个水面 pass |
 | 体积雾中间 RT | 1/4 分辨率 | 不改全分辨率 |
@@ -30,7 +33,7 @@
 | Bloom Quarter/3（`B`） | 1 预滤波 + 2×2 降采样 + 2 升采样 = 7 blit | quarter-res 金字塔 3 级，6 张 RT；H 模糊 5 tap |
 | 火把点光 | ≤ 6 盏，无附加光阴影 | per-object 4；`range=48m`，范围外物体不付光照循环 |
 
-**带宽原则**：每个全屏 copy/blit 都是一次 tile load+store。1080p 深度拷贝约 8MB 读 + 8MB 写，30fps ≈ 0.5GB/s。新增 pass 前先算这一笔，并说明能否用 pass 顺序或已有 RT 替代。
+**带宽原则**：每个全屏 copy/blit 都是一次 tile load+store。1080p 深度拷贝约 8MB 读 + 8MB 写，30fps ≈ 0.5GB/s；512×256 反射相机只有颜色写回约 0.5MB/帧量级，无中间 RT、无 final blit、无深度拷贝。新增 pass 前先算这一笔，并说明能否用 pass 顺序或已有 RT 替代。
 
 **后处理降级顺序**：当前无 DOF；低画质档先 `B` 循环到 Bloom Half/3 或 Quarter/3（3 级/7 blit），再关 Bloom。不要为省成本把 HDR grading 改回 LDR（ACES 下午夜会被压黑）。夜景曝光过渡期间 LUT 会重建约 2.5s，除过渡外稳定。
 
@@ -39,6 +42,7 @@
 - Draw Call：< 300（SRP Batcher 阶段）/ < 100（BRG 阶段）
 - 三角形：< 1.5M / 帧
 - 动态光源：12 支火把，同时点亮 ≤ 6 盏点光（无阴影、per-object 4）；默认 1 盏，`L` 循环 0/1/2/4/6。不按昼夜门控
+- 平面反射：1 台反射相机、512×256、Above only；独立 ReflectionRenderer（无 Feature/Auto）直接写 RT；草 BRG 不参与反射（layer 6 + 反射相机期间跳过剔除）
 - 火把可见物：24 个不透明小网格（杆+碗）常驻；≤6 个发光核心 + ≤12 个半透明粒子系统随点亮数量增加
 - 同屏角色：≤ 200（200 人 VAT 已验，Editor/Forward；真机未测）
 

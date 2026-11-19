@@ -21,6 +21,7 @@
 |---|---|---|
 | `Runtime/Overrides/Bloom.cs` | `maxIterations` 默认 3、范围 2..6（原 6 / 2..8） | `[FishDemo]`；High 档由 `AtmosphereController` 覆盖为 6，Quarter 档 3 |
 | `Shaders/PostProcessing/Bloom.shader` | `FragBlurH` 9 tap → **5 tap 双线性等价** | `[FishDemo]`；保持原 9-tap 高斯半径/形状，减少每级采样 |
+| `Runtime/UniversalRenderPipeline.cs` | `RenderSingleCameraInternal` 对 `CameraType.Reflection` 也读取 `UniversalAdditionalCameraData` | `[FishDemo]`；不补则 Crest 反射相机的 RendererIndex / requiresDepth / renderShadows / post 全部被忽略，退回默认 renderer（CopyDepth + FinalBlit） |
 | — | ACES 仍未改 | GOT 的改法与落点见 [postprocess](../../Docs/postprocess.md) §4 |
 
 **真改 GOT ACES 的落点**（尚未修改）：
@@ -34,7 +35,7 @@
 
 1. 所有定制行加 `[FishDemo]` 标记，并在本文件登记；不要悄悄改。
 2. 升级：从 `Library/PackageCache/com.unity.render-pipelines.universal@14.0.12` 重新复制 14.0.12，
-   重打所有 `[FishDemo]` 补丁，跑 `LightingVerify` + `AtmosphereVerify`。
+   重打所有 `[FishDemo]` 补丁（含 `RenderSingleCameraInternal` 的反射相机 UACD 补丁），跑 `LightingVerify` + `AtmosphereVerify` + `PlanarReflectionVerify`。
 3. 改 shader 后必须重编 shader variant；验证需真实图形设备，不能用 `-nographics`。
 4. 低画质档的开关放在 Volume / 项目侧，不要改 URP 默认行为。
 5. 这个包是 **Runtime/Editor 全量源码**，编译时间比 PackageCache 版本长，属正常。
