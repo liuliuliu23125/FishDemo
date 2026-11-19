@@ -164,4 +164,4 @@ SimpleTransparency 的 `o_Alpha` 公式与非 Simple 模式的行为见 [Shaders
 - [ ] 钓鱼玩法需要 CPU 波高查询时，开 `com.waveharmonic.crest.cpu-queries`。
 - [ ] Crest shader 变体未审计（Shader Control 待接入）。
 - [ ] 水下体积光权重（见 §4）是 batchmode 定参，真机 HDR/色调映射下复核。
-- [ ] 后处理接入时两台相机要同步 Volume。
+- [x] 两台相机已同步后处理（`UniversalAdditionalCameraData.renderPostProcessing=1` + 全局 Volume），见 [postprocess](postprocess.md) §0。

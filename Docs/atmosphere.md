@@ -13,7 +13,8 @@
 | 昼夜 | `Time/Lighting/Sky`：太阳/月亮方向、颜色、强度、环境光、星空 | 主光、环境光、天空盒一站式 |
 | 天气 | `Weather`：Clear/Cloudy 1-4/Foggy/Rain/Snow/Storm + 雨雪粒子 | 9 个预设够 demo |
 | 体积雾 | `Fog` 的 volumetrics：Low = 1/4 res raymarch + 双边模糊上采样 | 湖面没有山谷/海面局部雾需求 |
-| 体积光 | 体积雾 shader 采样主光阴影图（`EnviroVolumetricsURP.shader`） | 树影可形成柔和光柱；灯柱类对象尚无 |
+| 体积光 | 体积雾 shader 采样主光阴影图（`EnviroVolumetricsURP.shader`） | 树影可形成柔和光柱；**不采样火把点光** |
+| 夜景曝光 | `AtmosphereController` 克隆 Volume profile，按 `isNight` +1.8EV、降饱和、冷色滤镜（2.5s 过渡） | Enviro 夜空是显示参考色，ACES 会压黑；这是补偿，不是物理眼适应 |
 
 ### 0.2 接入点
 
@@ -21,7 +22,7 @@
 |---|---|
 | `Assets/Enviro 3 - Sky and Weather/` | Enviro 3.3.2b 源码 |
 | `Assets/Editor/Atmosphere/AtmosphereSetup.cs` | 幂等工具：`EnsureDefines` / `Apply` / `Remove` / `Report` |
-| `Assets/Scripts/Runtime/Gameplay/AtmosphereController.cs` | 质量档、时间流速、天气轮换、草风桥接、HUD |
+| `Assets/Scripts/Runtime/Gameplay/AtmosphereController.cs` | 质量档、时间流速、天气轮换、草风桥接、HUD、夜景曝光/冷色补偿；Enviro `ambientIntensityModifier=1.4`（抬暗部，配合 ACES） |
 | `Assets/Editor/Atmosphere/AtmosphereVerify.cs` | Play Mode 验收：8 张截图 + 状态断言 |
 | `Assets/Settings/Enviro Mobile Quality.asset` | 移动端质量档（**唯一来源**） |
 | `Assets/Settings/UniversalRenderer.asset` | 子资产 `Enviro Render Feature` |
@@ -59,13 +60,15 @@ Unity.exe -batchmode -projectPath E:\FishDemo -executeMethod AtmosphereSetup.Rep
 Unity.exe -batchmode -projectPath E:\FishDemo -executeMethod AtmosphereVerify.Run
 ```
 
-2026-11-15 全项 PASS：正午天空顶部 1/3 平均亮度 0.629、午夜 0.047；雾天 `fogDensity=0.809`（晴 0.019）；`_EnviroVolumetricFogTex` 非空；启用方向光 = 1；旧主光已禁用。无实机 GPU 数据。
+2026-11-18（含后处理）全项 PASS：正午天空顶部 1/3 平均亮度 **0.585**、午夜 **0.005**（HDR grading + 夜景 +1.8EV；
+无后处理时午夜为 0.047）；午夜色数约 120（`AtmosphereVerify` 阈值 100，平滑夜景渐变 + 无 DOF）；雾天 `fogDensity=0.809`（晴 0.019）；
+`_EnviroVolumetricFogTex` 非空；启用方向光 = 1；旧主光已禁用。无实机 GPU 数据。
 
 ### 0.6 运行时操作
 
 `AtmosphereController.OnGUI` 左上角：**最上面是昼夜/天气操作说明**，其下显示时刻/天气/流速；相机操作放在末尾。
 
-**HUD 内容（自上而下）**：键盘操作提示标题 → 昼夜/天气/流速 → 按键说明。
+**HUD 内容（自上而下）**：键盘操作提示标题 → 昼夜/天气/流速 → 火把数（`AtmosphereController` 从 `TorchRingController` 读取，找不到就不显示该行）→ 按键说明 → **Bloom 质量独立一行**（Half/6 / Half/3 / Quarter/3，`B` 循环）。
 托管堆状态已移出 HUD；`GCMode` 接管也已移除（大块数据改走原生内存 + 流式，
 见 [grass_brg_progress](grass_brg_progress.md) §6）。
 
@@ -88,6 +91,8 @@ Unity.exe -batchmode -projectPath E:\FishDemo -executeMethod AtmosphereVerify.Ru
 | `T` | 暂停/恢复时间 |
 | `[` / `]` | ±1 小时 |
 | `\` | 流速：20 / 5 / 2 / 1 分钟一天 |
+| `L` | 火把数量：0 / 1 / 2 / 4 / 6（由 `TorchRingController` 处理） |
+| `B` | Bloom 质量：Half/6 → Half/3 → Quarter/3 |
 
 `AtmosphereTimeVerify.Run`（可 `-nographics`）验时刻设置、主光响应、昼夜亮度差、暂停/流速。太阳落山后 Enviro 用**月亮**做主光，18:00 与 00:00 光向接近是正常行为。
 
@@ -116,6 +121,8 @@ Unity.exe -batchmode -projectPath E:\FishDemo -executeMethod AtmosphereVerify.Ru
 
 - **水下**：`AtmosphereController` 在相机低于 Crest `SeaLevel` 时关闭 Enviro fog/volumetrics，交给 Crest 水下效果；但 Enviro 主光/环境光仍影响水下，组合观感需真机复核。
 - **水面雾是近似**：雾在透明之后，按水面背后的不透明深度取强度；近处略饱和。
+- **火把不参与体积光/倒影**：Enviro 体积雾只采样主光；Crest 平面反射关闭，夜间火把没有光柱或水面倒影。
+- **夜景曝光是调色补偿**：+1.8EV 是让 ACES 下的 Enviro 夜空可见，不是物理眼适应；真机 HDR 屏需复核亮度。
 - **树风未接天气**：草已由 `SetWeatherWind` 桥接；树仍用 PW shader 自己的风参数。
 - **光柱不明显**：体积雾 Low（1/4 res）下是柔和逆光；要明显光柱需加密遮挡或接 VLB2/VL2。
 - **重跑世界生成会丢**：`AtmosphereSetup.Apply` 必须加进重跑清单。

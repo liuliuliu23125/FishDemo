@@ -35,19 +35,21 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | [Assets/Scripts](Assets/Scripts/AGENTS.md) | 写任何自研代码前（程序集边界、命名空间） |
 | [Assets/Scripts/Editor](Assets/Scripts/Editor/AGENTS.md) | 改 Gaia 工具链、草烘焙与 BRG 验证 |
 | [Assets/Scripts/Runtime](Assets/Scripts/Runtime/AGENTS.md) | 改资源层、BRG 草运行时、相机 rig |
-| [Assets/Editor](Assets/Editor/AGENTS.md) | 改 SECTR/GTS/水/大气/验证脚本；已按模块拆子目录 |
+| [Assets/Editor](Assets/Editor/AGENTS.md) | 改 SECTR/GTS/水/大气/火把后处理/验证脚本；已按模块拆子目录 |
 | [Assets/Procedural Worlds](Assets/Procedural%20Worlds/AGENTS.md) | 用第三方插件、排查 Gaia/SECTR/GTS/Pegasus |
 | [Assets/AmplifyImpostors](Assets/AmplifyImpostors/AGENTS.md) | 改 impostor 烘焙/LOD 前 |
 | [Assets/Enviro 3 - Sky and Weather](Assets/Enviro%203%20-%20Sky%20and%20Weather/AGENTS.md) | 改大气、升级 Enviro、重打雾 pass 补丁前 |
 | [Assets/Grasses](Assets/Grasses/AGENTS.md) | 改草 shader、材质 keyword、Vulkan 约束前 |
 | [Assets/GTSRuntime](Assets/GTSRuntime/AGENTS.md) | 改 chunk 的 `GTSMesh` 运行时初始化 |
-| [Assets/Settings](Assets/Settings/AGENTS.md) | 改 URP Asset / Renderer / Enviro 质量档前 |
+| [Assets/Settings](Assets/Settings/AGENTS.md) | 改 URP Asset / Renderer / Volume Profile / Enviro 质量档前 |
 | [Assets/Gaia User Data](Assets/Gaia%20User%20Data/AGENTS.md) | 查/改 GTS Profile、纹理数组、Gaia session |
 | [Assets/GTS User Data](Assets/GTS%20User%20Data/AGENTS.md) | 查 GTS 转换中间产物、重跑转换 |
 | [Assets/Scenes](Assets/Scenes/AGENTS.md) | 改场景、重跑世界生成、重接草/Pegasus |
 | [Assets/GPUECSAnimationBaker](Assets/GPUECSAnimationBaker/AGENTS.md) | 接 NPC/人群、改 VAT 材质或 shader |
 | [Packages/com.tuyoogame.yooasset](Packages/com.tuyoogame.yooasset/AGENTS.md) | 改资源层代码前 |
 | [Packages/com.waveharmonic.crest](Packages/com.waveharmonic.crest/AGENTS.md) | 改 Crest 运行时/材质/水下；升级前必读补丁与生成链 |
+| [Packages/com.unity.render-pipelines.universal](Packages/com.unity.render-pipelines.universal/AGENTS.md) | 改 URP tonemap / 后处理 / shader 前（embedded 14.0.12） |
+| [Packages/com.unity.render-pipelines.core](Packages/com.unity.render-pipelines.core/AGENTS.md) | 改 ACES / 核心 shader 前（embedded 14.0.12） |
 
 ## 3. 事实源与约定
 

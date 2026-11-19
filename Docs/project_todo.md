@@ -34,7 +34,6 @@
 | SECTR 流式补丁 | `SECTR_Chunk.cs` / `SECTR_RegionLoader.cs` 已改（激活节流、加载/卸载限流、缓存接管）。升级/重装 SECTR 会覆盖，原始副本在 `Tools/sectr-patches/`；见 [terrain_streaming](terrain_streaming.md) §12 |
 | YooAsset 启动入口 | `YooAssetInitializer.InitializeAsync()` 目前**无任何调用方**，资源层尚未接线 |
 | 模拟构建产物 | 菜单 `YooAsset/FishDemo/执行模拟构建并注入路径` 未实际执行过 |
-| 后处理未接入 | 主场景无 Volume，ACES / Color Grading / LUT / Bloom 均未配置；接入规则见 [postprocess](postprocess.md) §0 |
 | NPC 动画与湖边人群 | GPU ECS Animation Baker 已接 **200 人整圈**（Ch19/Ch14/Ch09/Ch46 四种角色，4× 大小；r=191–205，Y=267.06–301.84；Forward 渲染 PASS）；121/200 在高于水位 10m 以上的陡坎。下一步决定“低岸弧段加密”或“改 `LakeCarve` 造岸坡”；真机 30fps 待测；见 [gpu_ecs_animation_baker](gpu_ecs_animation_baker.md) §9 |
 | Enviro 雾的固有全屏 pass | 每帧 1 次全屏 color copy + 1 次合成；体积云开启后还会加全分辨率 temp。要优化必须改 Enviro 并打 `[FishDemo]` 标记，见 [atmosphere](atmosphere.md) §0.7 |
 

@@ -8,7 +8,7 @@
 | 脚本 | 职责 | 入口 |
 |---|---|---|
 | `AtmosphereSetup.cs` | 把 Enviro 3 接进 World/URP：宏、模块、质量档、RendererFeature、depth；幂等可撤 | `EnsureDefines` / `Apply` / `Remove` / `Report` |
-| `AtmosphereVerify.cs` | **需真实图形设备**：Play Mode 验昼夜/天气/体积雾/光，8 张截图 + 状态断言 | `-executeMethod AtmosphereVerify.Run` |
+| `AtmosphereVerify.cs` | **需真实图形设备**：Play Mode 验昼夜/天气/体积雾/光，8 张截图 + 状态断言；截图前调 `SnapNightExposure()`，夜景截图包含后处理 | `-executeMethod AtmosphereVerify.Run` |
 | `AtmosphereTimeVerify.cs` | **可 `-nographics`**：验昼夜控制接口（设时刻 / 平移 / 暂停 / 流速 / 主光响应） | `-executeMethod AtmosphereTimeVerify.Run` |
 | `HudPixelVerify.cs` | **需真实图形设备、且不能加 `-batchmode`**（batchmode 下 `OnGUI` 不被调用）：切窄屏抓真图，数 HUD 区域像素 | `-executeMethod HudPixelVerify.Run` |
 
@@ -28,6 +28,9 @@ AtmosphereSetup.EnsureDefines   （干净导入/换机时一次）
 `ENVIRO_URP` 手动加、保存前 `LoadConfiguration()`、雾 pass 补丁升级会丢——细节见 [atmosphere](../../../Docs/atmosphere.md) §0.4，补丁位置见 [Enviro 包规约](../../Enviro%203%20-%20Sky%20and%20Weather/AGENTS.md) §3。
 
 ## 4. 质量档 ownership
+
+> 夜景截图现在经过 ACES/HDR grading：色数阈值 100（原 300）是因为平滑深蓝渐变且已移除 DOF，不是放宽黑屏检查；
+> 午夜顶部亮度 0.005。没有 `Post Processing` Volume 时夜景会被压黑，先跑 `LightingSetup.Apply`。
 
 - 移动端质量档的唯一资产与 ownership 见 [Settings §2](../../Settings/AGENTS.md)。
 - `AtmosphereController` 负责时间流速、天气轮换、草风桥接、HUD 与水下雾开关；质量档见 [atmosphere](../../../Docs/atmosphere.md) §0.3，运行时操作见 §0.6。

@@ -266,7 +266,7 @@ Terrain 仍保留的关键参数（草/树/碰撞仍由它负责）：
 |---|---|---|
 | ~~深度图未开~~ | **当前 `m_RequireDepthTexture=1`、`m_RequireOpaqueTexture=0`**：depth 是 Enviro 体积雾/云的硬依赖；Crest SimpleTransparency 自身不采样这两张图 | 不接大气时可改回 0，省一次 CopyDepth；opaque 保持 0（见 [rendering_rules](rendering_rules.md) §1.2） |
 | 阴影距离 50m / 级联 1 | `UniversalRP.asset` | 3072m 世界下只有极近处有阴影 |
-| 主场景无 Volume | `World.unity` 无 Volume 组件 | 后处理（Bloom/Tonemap）当前无配置载体 |
+| ~~主场景无 Volume~~ | **已接入**：`Post Processing` 全局 Volume + `Assets/Settings/PostProcess/FishDemo Global Volume.asset` | ACES / HDR grading / Bloom / 调色（无 DOF），见 [postprocess](postprocess.md) §0 |
 | ~~草走 Terrain detail~~ | **已修**：BRG 接管，`DetailObjectDistance=0` / `DetailObjectDensity=0` | 不再与 BRG 重复绘制 |
 | 无反射/光照探针 | `!u!215` / `!u!220` 计数 = 0 | |
 
@@ -373,6 +373,10 @@ Unity.exe -batchmode -projectPath <proj> \
 > `TerrainChunkTuning.ApplyMobile` → `GtsConvertOne.Run`（逐块）→ `GtsApplyMeshToChunks.RunAll` → `GtsFixMeshRendering.RunAll`。
 > 另外 shader 改动在 `Assets/Procedural Worlds/.../GTS/Shaders/`，**重装 GTS 会被覆盖**，备份在 `Tools/gts-shader-backup/`。
 
+> 流水线之后还要恢复**大气 / 火把后处理**：`AtmosphereSetup.EnsureDefines`（首次）→ `AtmosphereSetup.Apply`
+> → `LightingSetup.Apply`（必须在 Atmosphere 之后，绑定夜景曝光 Volume）。完整清单见
+> [Scenes/AGENTS.md](../Assets/Scenes/AGENTS.md) §1。
+
 **验证证据**（`Logs/Gaia/final-integrity.txt`）：
 
 ```
@@ -396,7 +400,8 @@ Build Settings 重建为 37 个场景（含主场景），缺失 0
 | Crest Water 5 | **已落地**：`Packages/com.waveharmonic.crest`（embedded），中心人工湖出水面 | ✅ 完成，见 [water](water.md) §1；Gaia Water 已不在场景 |
 | Enviro 3 | **已落地**：Enviro 3.3.2b（昼夜/天气/体积雾/体积光），旧 `Directional Light` 已禁用 | ✅ 完成，见 [atmosphere](atmosphere.md) §0 |
 | 自研 GPU instancing 草 | **已落地**：BRG 435 万实例 / 133MiB，Terrain detail 已关 | ✅ 完成，见 [grass_brg_progress](grass_brg_progress.md) |
-| 夜晚光源 ≤ 6 + emissive | Enviro 昼夜已接入；玩法光源尚未落地 | 部分完成 |
+| 夜晚光源 ≤ 6 + emissive | **已落地**：12 支环湖火把，默认 1 盏，`L` 循环 0/1/2/4/6，硬上限 6；点光无阴影 + emissive + Bloom | ✅ 完成，见 [rendering_rules](rendering_rules.md) §4 |
+| 后处理 / 调色 / ACES | **已落地**：全局 Volume，ACES + HDR grading + Bloom + 调色 + 夜景曝光（无 DOF） | ✅ 完成，见 [postprocess](postprocess.md) §0 |
 
 ## 9. 改动前必读
 

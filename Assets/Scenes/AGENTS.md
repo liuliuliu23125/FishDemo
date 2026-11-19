@@ -7,7 +7,7 @@
 `Assets/Scenes/World.unity` 及其 `World/` 子目录全部由批处理脚本生成：
 
 ```
-Assets/Scenes/World.unity                    主场景（20 个根对象）
+Assets/Scenes/World.unity                    主场景（23 个根对象）
 Assets/Scenes/World/Chunks/*.unity           36 个 chunk 场景（按批次命名）
 Assets/Scenes/World/TerrainSplits/*.asset    36 份 chunk TerrainData
 Assets/Scenes/World/GrassData/*.bytes        36 份 BRG 草烘焙数据（132.8 MiB）
@@ -26,6 +26,7 @@ Assets/Scenes/World/GrassData/*.bytes        36 份 BRG 草烘焙数据（132.8 
 | Pegasus 巡游 | 菜单 `FishDemo/World/② 布置 Pegasus 环绕巡游` | 没有巡游路线 / POI 悬空 |
 | **中心湖** | `LakeCarve.Apply` → `LakeVegetationClear.Apply` → 重转 GTS（受影响 2 chunk） → `LakeCrestSetup.Apply` | 湖没水 / 水边长树 / 地形没凹陷 |
 | **大气** | `AtmosphereSetup.Apply`（首次/干净导入先 `EnsureDefines`） | 没有天空/雾/天气；旧 `Directional Light` 与 Enviro 的光形成双主光 |
+| **火把 / 后处理** | `LightingSetup.Apply`（必须在 `AtmosphereSetup.Apply` **之后**） | 没有 `Lakeside Torches` / `Post Processing`；无 ACES/Bloom；相机不跑后处理 |
 | **湖边人群** | `LakesideCrowdSetup.ApplyOne`（1 人）/ `ApplyThirty`（30 人）/ `ApplyCrowd`（200 人，当前） | World 里没有 SubScene / 没有角色 |
 
 **湖边人群**：`Assets/Scenes/LakesideCrowd.unity` 是 authoring scene，`World.unity` 里的
@@ -64,7 +65,9 @@ World_SECTR Terrain_0_0-20261109 - 162007 0-1-0 Sector.unity
 | **`GrassBRG (M1)`** | 挂 `GrassBRGManager`（`FishDemo.Rendering`）。锚点 `(0, 329.6, -1151.8)`，`_grassDataDir=Assets/Scenes/World/GrassData`，`_instanceCount=4292694`（烘焙总数 4,350,225，湖区清草后减少） |
 | **`Pegasus Tour`** | 挂 `PegasusManager`（16 个 POI 是它的子对象，不入根列表）+ `PegasusTourController` |
 | **`Enviro 3`** | Enviro 3.3.2b 运行时根：`EnviroManager` + Sun/Moon 方向光 + Effects/Audio/粒子层级。**预制体实例化后由 Enviro 在编辑器 OnEnable 里自行 Unpack**，场景里是普通层级，不要再按 prefab override 处理 |
-| **`Atmosphere`** | 挂 `AtmosphereController`（`FishDemo.Gameplay`）：质量档、时间流速、天气轮换、草风桥接 |
+| **`Atmosphere`** | 挂 `AtmosphereController`（`FishDemo.Gameplay`）：质量档、时间流速、天气轮换、草风桥接、HUD、夜景曝光 |
+| **`Lakeside Torches`** | 12 支环湖火把 + `TorchRingController`（`FishDemo.Gameplay`）：默认亮 1 支，`L` 循环 0/1/2/4/6，硬上限 6 |
+| **`Post Processing`** | 全局 Volume，引用 `Assets/Settings/PostProcess/FishDemo Global Volume.asset`（ACES / HDR grading / Bloom / 调色；无 DOF） |
 | ~~`Directional Light`~~ | **Light 组件 `m_Enabled=0`**（2026-11-15）：Enviro 自带 Sun/Moon 方向光。保留对象便于 `AtmosphereSetup.Remove` 回滚；不要再启用 |
 
 **天空盒**：`RenderSettings.m_SkyboxMaterial` 是 Enviro/Skybox，`m_AmbientMode=0`（Skybox）。

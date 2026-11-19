@@ -21,6 +21,7 @@ SECTR/GTS 没有 asmdef，其编辑器 API（`SECTR_TerrainWindow.SectorizeTerra
 | [Water](Water/AGENTS.md) | 中心湖、Crest 水面、环湖相机 | 改湖、改水面、水下效果 |
 | [Atmosphere](Atmosphere/AGENTS.md) | Enviro 接入、昼夜/天气验收、HUD | 改大气、重跑世界后恢复 Enviro |
 | [Crowd](Crowd/AGENTS.md) | 湖边人群布置与验收 | 改人群规模/岸线/机位 |
+| [Lighting](Lighting/AGENTS.md) | 湖边火把、全局 Volume、相机后处理、夜景曝光 | 改火把/灯数/ACES/Bloom/调色 |
 
 ## 3. 通用铁律
 

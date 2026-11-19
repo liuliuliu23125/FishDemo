@@ -50,8 +50,10 @@ Crest 的 `CopyTargetsRenderPass` 受 `[Conditional(k_Refraction)]` 与 `WriteTo
 ### 1.5 后处理 / 调色 / ACES
 
 - Tonemapping + Color Grading + LUT 在 URP 内置**同一个 Uber pass**；ACES 只是 Tonemapping 模式，**不另起 pass**。LUT 保持 32（`m_ColorGradingLutSize=32`）。
-- 只保留一套后处理；不叠 Beautify 等第二套。Bloom 保持默认降采样链，不改全分辨率。
-- 后处理只登记 pass / 全屏 RT 数；ms 分项预算等角色接入后按真机基线分配。
+- **当前已启用全局后处理**：`Post Processing` Volume + `Assets/Settings/PostProcess/FishDemo Global Volume.asset`；`m_ColorGradingMode=1`（HDR grading），ACES + Bloom（Half/Quarter）+ Vignette + Grain；**不做 DOF**。
+- 只保留一套后处理；不叠 Beautify 等第二套。Bloom 保持 half-res/quarter-res 降采样链，不升全分辨率；H blur 用 5-tap 双线性等价（embedded URP 的 `[FishDemo]` 补丁）。
+- 低画质档先 `B` 循环到 Bloom Half/3 或 Quarter/3（3 级），再关 Bloom。夜景曝光由 `AtmosphereController` 在克隆 profile 上做（+1.8EV），不是第二个 Volume。
+- 后处理只登记 pass / 全屏 RT / blit 数；ms 分项预算等角色接入后按真机基线分配。当前账见 [postprocess](postprocess.md) §0.4。
 
 ## 2. 当前 pass 顺序（代码事实）
 
@@ -61,7 +63,7 @@ Depth prepass / CopyDepth（m_RequireDepthTexture=1，供 Enviro）
   → Crest WaterSurfaceRenderPass（BeforeRenderingTransparents，Quad 1 DrawMesh）
   → Transparent
   → Enviro 雾/体积雾（AfterRenderingTransparents）
-  → URP 后处理（内置 Uber pass；主场景当前无 Volume）
+  → URP 后处理（全局 Volume `Post Processing`：Uber pass + Bloom half-res；无 DOF）
 ```
 
 Enviro 的 pass 位置补丁在 `EnviroURPRenderPass.cs` 构造函数，升级会丢，见 [atmosphere](atmosphere.md) §0.4。
@@ -85,7 +87,10 @@ SRP Batcher 三条实战结论：合批单位是 CBUFFER 布局而不是材质�
 ## 4. 光照
 
 - 唯一启用的主光是 Enviro 的 Sun/Moon Directional Light；旧 `Directional Light` 的 Light 组件已禁用。不要再加第二盏方向光。
-- 夜晚 additional lights ≤ 6，其余靠 emissive + Bloom。当前 Forward，per-object light limit = 4；URP 14.0.12 已实现 Forward+，但工程未启用（切换前必须回归，见 [gpu_ecs_animation_baker](gpu_ecs_animation_baker.md) §1.2）。
+- **环湖火把**：`Lakeside Torches` 共 12 支，同时点亮 **≤ 6** 盏（`TorchRingController.HardLightLimit`），默认 1 盏，`L` 循环 0/1/2/4/6；按到 `Camera.main` 的距离选最近 N 盏（12% 滞回）。点光 `intensity=120 / range=48m / shadows=None`，其余靠 emissive + Bloom。
+- **不做昼夜门控**：火把按手动数量点亮，白天/阴天也可以开；只有夜景曝光跟 `Enviro.isNight`。
+- 当前 Forward，per-object light limit = 4；6 盏是预算上限，单物体仍最多叠加 4 盏。URP 14.0.12 已实现 Forward+，但工程未启用（切换前必须回归，见 [gpu_ecs_animation_baker](gpu_ecs_animation_baker.md) §1.2）。
+- 点光不投影；Enviro 体积雾只采样主光；Crest 水面平面反射关闭 → 火把没有地面阴影、光柱或水面倒影。
 
 ## 5. 禁止
 
