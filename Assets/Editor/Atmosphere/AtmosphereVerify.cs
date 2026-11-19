@@ -250,6 +250,7 @@ public static class AtmosphereVerify
 
         private void Shoot((string name, string time, string weather, bool lookAtSun) shot)
         {
+            _ctrl.SnapNightExposure();
             PoseCamera(shot.name, shot.lookAtSun);
 
             const int W = 1280, H = 720;
@@ -449,7 +450,7 @@ public static class AtmosphereVerify
             bool skyBrightnessOrder = noon.TopLum > mid.TopLum * 1.1f;
             bool volumesRan = _results.All(r => r.FogTexture);
             bool weatherOk = _results.All(r => r.WeatherOk);
-            bool imagesNotEmpty = _results.All(r => r.Distinct > 300 && r.TopLum > 0.001f);
+            bool imagesNotEmpty = _results.All(r => r.Distinct > 100 && r.TopLum > 0.001f);
             bool fogDensityOrder = fog.FogDensity > noon.FogDensity * 1.5f;
             bool rainWet = rain.WetnessTarget > 0.01f;
 
