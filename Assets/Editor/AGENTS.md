@@ -19,6 +19,7 @@ SECTR/GTS 没有 asmdef，其编辑器 API（`SECTR_TerrainWindow.SectorizeTerra
 | [Grass](Grass/AGENTS.md) | 草 BRG 验收、detail 原型探针 | 排查草消失/花不可见/流式驻留 |
 | [Vegetation](Vegetation/AGENTS.md) | 树材质、LOD、impostor、密度 | **改任何树脚本/资产前必读** |
 | [Water](Water/AGENTS.md) | 中心湖、Crest 水面、环湖相机 | 改湖、改水面、水下效果 |
+| [Underwater](Underwater/AGENTS.md) | 水下生态布置、鱼群、海床沙、焦散、验收/预览 | 改礁区、鱼群、海床、焦散 |
 | [Atmosphere](Atmosphere/AGENTS.md) | Enviro 接入、昼夜/天气验收、HUD | 改大气、重跑世界后恢复 Enviro |
 | [Crowd](Crowd/AGENTS.md) | 湖边人群布置与验收 | 改人群规模/岸线/机位 |
 | [Lighting](Lighting/AGENTS.md) | 湖边火把、全局 Volume、相机后处理、夜景曝光 | 改火把/灯数/ACES/Bloom/调色 |

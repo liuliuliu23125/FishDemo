@@ -14,6 +14,7 @@
 | 地表合批 | SRP Batcher 已生效；纹理数组 ASTC_8x8 | 维持 | [gts_srp_batcher](gts_srp_batcher.md) |
 | 大世界流式 | SECTR 承担全部 chunk 加载；已打节流/限流/缓存补丁 | SECTR 降为区域级 | [terrain_streaming](terrain_streaming.md) §12 |
 | 水体 | Crest 5.10.0；中心湖已出水面（SimpleTransparency + Quad）；平面反射 Above / 512×256 / Default 层，视锥门控 | 真机验反射耗时/水下 | [water](water.md) §1–§6 |
+| 水下生态 | 中心湖礁区 84 底栖 + 260 鱼 + 水母 + 气泡 + 全湖海床沙；Crest 焦散；GodRay 默认关 | 真机性能、GodRay、低画质档 | [underwater_ecology](underwater_ecology.md) |
 | 昼夜/天气 | Enviro 3.3.2b 已接入（昼夜/天气/雾/体积光）；体积云关；夜景曝光补偿 | 真机验性能/水下 | [atmosphere](atmosphere.md) §0 |
 | 后处理 | 已启用：全局 Volume + ACES / HDR grading / Bloom / 调色（无 DOF） | 真机验 GPU 耗时 | [postprocess](postprocess.md) |
 | 灯光 | 12 支环湖火把，默认 1 盏，`L` 循环 0/1/2/4/6，硬上限 6；无附加光阴影 | 真机验光照成本 | [rendering_rules](rendering_rules.md) §4 |
@@ -38,6 +39,7 @@
 | [world_implementation](world_implementation.md) | 重跑世界生成、排查 chunk 加载、改世界尺寸 | 长 |
 | [terrain_streaming](terrain_streaming.md) | 地形、流式加载、SECTR；**§12 流式补丁 / 缓存 / 内存归属** | 中 |
 | [water](water.md) | 水体、水下、中心湖；**改水前先读 §1–§3**，§4 透明/水下，§6 性能 | 中 |
+| [underwater_ecology](underwater_ecology.md) | 改礁区、鱼群、海床沙、焦散、GodRay 前 | 中 |
 | [crest_internals](crest_internals.md) | 第一次改 Crest 前：数据流、帧时间线、pass 顺序、Clip/透明数学 | 中 |
 | [atmosphere](atmosphere.md) | 昼夜、天气、体积雾光；**§0 落地配置** | 中 |
 | [vegetation](vegetation.md) | 植被、树的密度/LOD/impostor/keyword；**改树前先读 §6** | 中 |

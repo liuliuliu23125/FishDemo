@@ -54,6 +54,9 @@ Pegasus 没有 asmdef、编在 `Assembly-CSharp`。asmdef 程序集引用不到�
 | `Gameplay/SectrStreamingRuntime.cs` | 流式运行时宿主：驱动缓存 Tick；等 `UnloadSceneAsync` 完成后按冷却做异步 `UnloadUnusedAssets`；低内存清草驻留 + buffer 池 + chunk 缓存 |
 | `Gameplay/SectrGrassStreamer.cs` | 草数据跟随 SECTR chunk：`IsLoaded` 才读该 chunk 的 `.bytes`，卸载即释放；每次最多加/卸一个，驻留数硬上限 24。`BeforeSceneLoad` 里调 `GrassBRGManager.RequestStreaming()` |
 | `Gameplay/LakesideCrowdBehaviour.cs` | 湖边人群 Baker + Spawn 系统（Entities + GPU ECS Animation Baker）；200 人、4 种 prefab、4× 缩放 |
+| `Gameplay/UnderwaterEcologyController.cs` | 水下生态总控：`Camera.main` 入水判定、`J` 生态开关、`G` GodRay（默认关）、距礁 >120m 且在水上时禁用 `Benthic`、环境音淡入淡出 |
+| `Gameplay/FishSchool.cs` | 参数化鱼群：中心漂移 + 椭圆轨道 + 垂直摆动；prefab（skinned/水母）与 mesh（VAT）；28m 切 LOD0/LOD1 网格与材质 |
+| `Gameplay/UnderwaterDemoControls.cs` | `U` 水下机位（暂停 `LakeOrbitCamera`）↔ 环湖轨道；`F` 自由飞行仍由 `LakeCameraRig` 负责 |
 
 五条容易踩的：
 1. **切相机必须同步四样东西**：`WaterRenderer.Viewer`（水面 clipmap 以它为中心）、
@@ -69,8 +72,10 @@ Pegasus 没有 asmdef、编在 `Assembly-CSharp`。asmdef 程序集引用不到�
    `AtmosphereController` 的夜景曝光改的是 Volume 的运行时克隆 profile，不改共享资产。
 5. **平面反射开关同理**：`PlanarReflectionController` 每帧读 `WaterRenderer.Viewer` 做视锥测试，
    自行切 `Reflections.Enabled`；不要在 `LakeCameraRig.Apply()` 里加反射状态，也不要每帧重建反射贴图。
+6. **水下生态热键必须加 `Application.isFocused`**：batchmode 下 `Input.GetKeyDown(J/G/U)` 会逐帧抖动，生态/机位状态不可复现；验收脚本还会直接调 `SetEcologyEnabled`。
+7. **鱼群不用 `Graphics.*`**：`FishSchool` 用共享材质的 `MeshRenderer` 走 GPU instancing，避开 Gameplay 层不能直接操作 `Graphics.*` 的分层约束；VAT 动画相位由世界坐标 + `_Time` 推导，不需要逐实例 MPB。
 
-验收：`LakeOrbitVerify.Run`（可 `-nographics`，9 项断言）。
+验收：`LakeOrbitVerify.Run`（可 `-nographics`，9 项断言）；水下生态见 [underwater_ecology](../../Docs/underwater_ecology.md)。
 
 ### 2.6 NPC / 人群动画（规划）
 

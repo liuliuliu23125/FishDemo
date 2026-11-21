@@ -2121,5 +2121,16 @@ Assets/PW_Tree_*_Impostor_*.exr filter=lfs diff=lfs merge=lfs -text
 /Assets/Enviro[[:space:]]3[[:space:]]-[[:space:]]Sky[[:space:]]and[[:space:]]Weather/Sample/Textures/*.tga filter=lfs diff=lfs merge=lfs -text
 /Assets/Enviro[[:space:]]3[[:space:]]-[[:space:]]Sky[[:space:]]and[[:space:]]Weather/Documentation.pdf filter=lfs diff=lfs merge=lfs -text
 
+# Underwater ecology packs (imported 2026-11-21). Binary assets only; YAML stays in git.
+"Assets/Underwater world - Coral Reef & Marine Life/**/*.png" filter=lfs diff=lfs merge=lfs -text
+"Assets/Underwater world - Coral Reef & Marine Life/**/*.fbx" filter=lfs diff=lfs merge=lfs -text
+"Assets/Davis3D/OceanEnvironmentPack/Textures/**/*.png" filter=lfs diff=lfs merge=lfs -text
+"Assets/Davis3D/OceanEnvironmentPack/Textures/**/*.TGA" filter=lfs diff=lfs merge=lfs -text
+"Assets/Davis3D/OceanEnvironmentPack/Textures/**/*.HDR" filter=lfs diff=lfs merge=lfs -text
+"Assets/Davis3D/OceanEnvironmentPack/Meshes/**/*.FBX" filter=lfs diff=lfs merge=lfs -text
+"Assets/Davis3D/OceanEnvironmentPack/Meshes/**/*.fbx" filter=lfs diff=lfs merge=lfs -text
+"Assets/Davis3D/OceanEnvironmentPack/Sounds/**/*.WAV" filter=lfs diff=lfs merge=lfs -text
+/Assets/UnderwaterEcology/Meshes/*.asset filter=lfs diff=lfs merge=lfs -text
+
 # Rain ripple temp texture (2026-11-21)
 /Assets/Textures/Water/*.png filter=lfs diff=lfs merge=lfs -text

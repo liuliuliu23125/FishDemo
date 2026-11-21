@@ -702,7 +702,8 @@ namespace FishDemo.Gameplay
 
                 _hudHintText =
                     "1-5 天气  |  T 暂停/继续时间  |  [ ] 前后 1 小时  |  \\ 切时间流速\n" +
-                    "C 切相机  |  F 自由飞行  |  L 火把数量  |  B Bloom";
+                    "C 切相机  |  F 自由飞行  |  L 火把数量  |  B Bloom\n" +
+                    "U 水下机位  |  J 水下生态  |  G GodRay（WIP，默认关）";
 
                 _hudBloomText =
                     $"Bloom <b>{BloomLabel(_bloomQuality)}</b>  |  B 循环 Half/6 · Half/3 · Quarter/3";

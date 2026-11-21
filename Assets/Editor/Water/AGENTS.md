@@ -43,6 +43,8 @@
 
 Clip 语义、Absorption/Scattering、水下参数与最小 alpha 见 [water §3–§4](../../../Docs/water.md) 与 [Crest 包规约](../../../Packages/com.waveharmonic.crest/AGENTS.md)。
 
+水下焦散由 `Assets/Editor/Underwater/UnderwaterEcologySetup.Apply` 写入 `Water.mat` / `Water Volume.mat`（`_Crest_CausticsTexture` + 参数）；复用 Crest 水下 pass，不新增 pass/RT/blit。见 [underwater_ecology §5](../../../Docs/underwater_ecology.md)。
+
 ## 4. 相机 rig
 
 所有相机切换统一走 `LakeCameraRig.Apply()`；F 键飞行、Pegasus、组件级开关的规则见 [water §5](../../../Docs/water.md)。
@@ -61,3 +63,4 @@ SimpleTransparency 下 shader 不采样仿真纹理、也没有 copy pass，截�
 | [rendering_rules](../../../Docs/rendering_rules.md) | 改 pass / RendererFeature 前 |
 | [atmosphere](../../../Docs/atmosphere.md) §0 | 水下雾、Enviro 雾 pass 顺序 |
 | [../World/AGENTS.md](../World/AGENTS.md) | 重跑世界流水线 |
+| [underwater_ecology](../../../Docs/underwater_ecology.md) | 改礁区、鱼群、海床、焦散 |

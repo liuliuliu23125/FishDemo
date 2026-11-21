@@ -46,7 +46,6 @@ Material:
   - _BUILTIN_AlphaClip
   - _BUILTIN_SURFACE_TYPE_TRANSPARENT
   - _BUILTIN_TRANSPARENT_RECEIVES_SHADOWS
-  - _CREST_CUSTOM_MESH
   - _SURFACE_TYPE_TRANSPARENT
   m_InvalidKeywords:
   - _DOUBLESIDED_ON
@@ -68,7 +67,11 @@ Material:
   m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
-    m_TexEnvs: []
+    m_TexEnvs:
+    - _Crest_CausticsDistortionTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
     - _AlphaDstBlend: 10
@@ -77,6 +80,13 @@ Material:
     - _BUILTIN_SrcBlend: 5
     - _BUILTIN_ZWrite: 1
     - _Crest_AmbientTerm: 0.35
+    - _Crest_CausticsDepthOfField: 10
+    - _Crest_CausticsDistortionStrength: 0
+    - _Crest_CausticsFocalDepth: 3
+    - _Crest_CausticsMotionBlur: 0
+    - _Crest_CausticsScrollSpeed: 0.8
+    - _Crest_CausticsStrength: 1.8
+    - _Crest_CausticsTextureScale: 30
     - _Crest_DirectTerm: 0.4
     - _Crest_PlanarReflectionsEnabled: 1
     - _Crest_TransparencyMinimumAlpha: 0.12

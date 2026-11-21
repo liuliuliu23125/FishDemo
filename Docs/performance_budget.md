@@ -45,6 +45,7 @@
 - 平面反射：1 台反射相机、512×256、Above only；独立 ReflectionRenderer（无 Feature/Auto）直接写 RT；草 BRG 不参与反射（layer 6 + 反射相机期间跳过剔除）
 - 火把可见物：24 个不透明小网格（杆+碗）常驻；≤6 个发光核心 + ≤12 个半透明粒子系统随点亮数量增加
 - 同屏角色：≤ 200（200 人 VAT 已验，Editor/Forward；真机未测）
+- 水下生态（中心湖礁区）：84 底栖实例（LOD0 合计 ≈983k，Ocean prefab 带 LODGroup，水上且距礁 >120m 时整组关闭）；海床 1 个 Mesh 48896 tris；鱼群 260（2 个 VAT 学校各 1 instanced draw + 30 skinned）；GodRay 默认关闭。生态近景 LOD0 合计约 1.4M，**未计世界**，真机未测；降级看 [underwater_ecology](underwater_ecology.md) §6/§8
 
 ## 4. 验证要求
 
