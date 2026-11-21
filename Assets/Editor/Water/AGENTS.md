@@ -23,6 +23,9 @@
 | `RainRippleVerify.cs` | 雨纹补丁结构 + `Crest/Water` 全部 pass 编译检查 | `-executeMethod RainRippleVerify.Run` |
 | `RainRippleSetup.cs` | 把 `RainRippleController` 挂到 `Crest Lake` 并赋临时雨纹；切自动/手动强度 | `Apply` / `Remove` / `Report` / `PreviewOn` / `PreviewOff` |
 | `RainRipplePreview.cs` | **需真实图形设备**：同一帧雨纹开/关截图 + 像素差 | `-executeMethod RainRipplePreview.Run` |
+| `LakeDuckweedSetup.cs` | 沿湖岸布置 193 株睡莲/浮萍；生成 4 个合并网格与 1 个共享材质；幂等重建 `Lake Duckweed` | `Apply` / `Remove` / `Report` |
+| `LakeDuckweedPreview.cs` | **需真实图形设备**：广角/近景/岸线截图 + 浮萍开/关与 A/B 动画像素差 | `-executeMethod LakeDuckweedPreview.Run` |
+| `LilyModelProbe.cs` | **只读**：4 个源 FBX 的顶点/三角形/包围盒 | `-executeMethod LilyModelProbe.Run` |
 
 `CrestRenderProbe` **看不到 URP 在 `renderer.Setup()` 里入队的 CopyDepthPass**，确认 URP 拷贝要用 Frame Debugger。
 
@@ -45,6 +48,8 @@ Clip 语义、Absorption/Scattering、水下参数与最小 alpha 见 [water §3
 
 水下焦散由 `Assets/Editor/Underwater/UnderwaterEcologySetup.Apply` 写入 `Water.mat` / `Water Volume.mat`（`_Crest_CausticsTexture` + 参数）；复用 Crest 水下 pass，不新增 pass/RT/blit。见 [underwater_ecology §5](../../../Docs/underwater_ecology.md)。
 
+水面睡莲/浮萍由 `LakeDuckweedSetup.Apply` 沿 `LakeCarve` 岸线布置；湖重建后必须重跑。材质/网格生成物不要手改，见 [duckweed](../../../Docs/duckweed.md)。
+
 ## 4. 相机 rig
 
 所有相机切换统一走 `LakeCameraRig.Apply()`；F 键飞行、Pegasus、组件级开关的规则见 [water §5](../../../Docs/water.md)。
@@ -64,3 +69,4 @@ SimpleTransparency 下 shader 不采样仿真纹理、也没有 copy pass，截�
 | [atmosphere](../../../Docs/atmosphere.md) §0 | 水下雾、Enviro 雾 pass 顺序 |
 | [../World/AGENTS.md](../World/AGENTS.md) | 重跑世界流水线 |
 | [underwater_ecology](../../../Docs/underwater_ecology.md) | 改礁区、鱼群、海床、焦散 |
+| [duckweed](../../../Docs/duckweed.md) | 改水面睡莲/浮萍、重跑布置 |

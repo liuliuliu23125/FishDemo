@@ -40,6 +40,8 @@ Unity 2022.3 + URP 的 **PBR 写实钓鱼游戏 Demo**，视觉对标《对马�
 | [Assets/AmplifyImpostors](Assets/AmplifyImpostors/AGENTS.md) | 改 impostor 烘焙/LOD 前 |
 | [Assets/Enviro 3 - Sky and Weather](Assets/Enviro%203%20-%20Sky%20and%20Weather/AGENTS.md) | 改大气、升级 Enviro、重打雾 pass 补丁前 |
 | [Assets/Grasses](Assets/Grasses/AGENTS.md) | 改草 shader、材质 keyword、Vulkan 约束前 |
+| [Assets/UnderwaterEcology](Assets/UnderwaterEcology/AGENTS.md) | 改水下鱼/植物/气泡 shader、重跑水下布置 |
+| [Assets/WaterPlants](Assets/WaterPlants/AGENTS.md) | 改水面睡莲/浮萍 shader、重跑岸线布置 |
 | [Assets/GTSRuntime](Assets/GTSRuntime/AGENTS.md) | 改 chunk 的 `GTSMesh` 运行时初始化 |
 | [Assets/Settings](Assets/Settings/AGENTS.md) | 改 URP Asset / Renderer / Volume Profile / Enviro 质量档前 |
 | [Assets/Gaia User Data](Assets/Gaia%20User%20Data/AGENTS.md) | 查/改 GTS Profile、纹理数组、Gaia session |

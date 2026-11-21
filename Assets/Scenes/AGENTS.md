@@ -7,7 +7,7 @@
 `Assets/Scenes/World.unity` 及其 `World/` 子目录全部由批处理脚本生成：
 
 ```
-Assets/Scenes/World.unity                    主场景（24 个根对象）
+Assets/Scenes/World.unity                    主场景（25 个根对象）
 Assets/Scenes/World/Chunks/*.unity           36 个 chunk 场景（按批次命名）
 Assets/Scenes/World/TerrainSplits/*.asset    36 份 chunk TerrainData
 Assets/Scenes/World/GrassData/*.bytes        36 份 BRG 草烘焙数据（132.8 MiB）
@@ -29,6 +29,7 @@ Assets/Scenes/World/GrassData/*.bytes        36 份 BRG 草烘焙数据（132.8 
 | **火把 / 后处理** | `LightingSetup.Apply`（必须在 `AtmosphereSetup.Apply` **之后**） | 没有 `Lakeside Torches` / `Post Processing`；无 ACES/Bloom；相机不跑后处理 |
 | **湖边人群** | `LakesideCrowdSetup.ApplyOne`（1 人）/ `ApplyThirty`（30 人）/ `ApplyCrowd`（200 人，当前） | World 里没有 SubScene / 没有角色 |
 | **水下生态** | `UnderwaterEcologySetup.Apply`（**在湖/GTS/大气之后**） | 湖里没有礁区/鱼群/海床沙/焦散 |
+| **水面浮萍** | `LakeDuckweedSetup.Apply`（**在湖重建之后**） | 湖面没有睡莲/浮萍 |
 
 **湖边人群**：`Assets/Scenes/LakesideCrowd.unity` 是 authoring scene，`World.unity` 里的
 `Lakeside Crowd (SubScene)` 引用它（`AutoLoadScene=1`）。当前是 **200 人整圈**（1.8° 间隔，4 种角色，
@@ -61,6 +62,7 @@ World_SECTR Terrain_0_0-20261109 - 162007 0-1-0 Sector.unity
 | ~~`Gaia Water`~~ | **当前场景已无此节点**（YAML 里没有任何名字含 `Water` 的 GameObject）；水面由 `Crest Lake` 提供 |
 | **`Crest Lake`** | Crest 水面 + `WaterBody` + `ClipLodInput`（湖盆裁剪）+ `PlanarReflectionController`（Above / 512×256 / 视锥门控）。位置 `(192,264,96)` |
 | **`Underwater Ecology`** | 固定礁区 demo：84 底栖 + 260 鱼 + 水母/气泡 + 全湖海床沙 + Crest 焦散。**不随 SECTR 分块**，只做一个礁区；扩展多礁区前必须改走 chunk/YooAsset。见 [underwater_ecology](../../Docs/underwater_ecology.md) |
+| **`Lake Duckweed`** | 沿湖岸 18 簇 / 193 株睡莲（4 变体、1 共享材质、GPU instancing）；y 固定在水位 +0.06，不跟随 Crest 浪。见 [duckweed](../../Docs/duckweed.md) |
 | `Terrain_x_x` ×9 | 只有 Sector×4 + Portal×4，**无 Terrain 组件**（地形在 chunk 里） |
 | `Gaia Terrains` / `Gaia Runtime` / `Gaia Tools` | Gaia 运行时容器 |
 | `Alpine Meadow-*` ×10 | 撒点器，挂着空转的 Gaia `TerrainLoader` |
