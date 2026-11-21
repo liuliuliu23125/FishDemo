@@ -152,6 +152,16 @@ SimpleTransparency 的 `o_Alpha` 公式与非 Simple 模式的行为见 [Shaders
 
 补丁后的反射 pass 队列（2026-11-19 实测）：`MainLightShadowCasterPass DrawObjectsPass DrawSkyboxPass DrawObjectsPass InvokeOnRenderObjectCallbackPass`；无 `CopyDepthPass`、无 `FinalBlitPass`。
 
+### 6.4 雨纹补丁（骨架）
+
+- `Runtime/Shaders/Surface/RainRipples.hlsl` + `Fragment.hlsl` 调用：全局雨纹法线叠加到水面法线，只在 `!i_Underwater` 生效。
+- 参数：`_Crest_RainRippleNormal/Intensity/Scale/Speed`；**0 新 pass、+1 次水面纹理采样、无新 shader 变体**。
+- 雨纹贴图必须是可平铺 Normal map；采样用 `sampler_LinearRepeat`（`GlobalSamplers.hlsl`），不改材质 keyword。
+- 控制器 `Gameplay/RainRippleController.cs`：Enviro `wetness` → intensity；贴图为空时 intensity=0。
+- 当前状态：补丁已加；`RainRippleController` 已挂 `Crest Lake`，临时雨纹 `Assets/Textures/Water/RainRipples_Temp.png` 已赋；`AutoFromEnviro=true`，晴天 intensity=0；参数 `Scale=2 / Speed=0.05 / MaxIntensity=0.7`。
+- 雨纹单独一层视觉偏弱：同一帧开/关平均通道差约 0.4/255（13% 像素差 >2）。完整雨感还需叠加泡沫/涟漪贴花或降低水面 smoothness。
+- 升级 Crest 必须重打，见 [包 AGENTS](../Packages/com.waveharmonic.crest/AGENTS.md) §4.1。
+
 ## 7. 验收
 
 | 脚本 | 判什么 | 条件 |
@@ -161,6 +171,8 @@ SimpleTransparency 的 `o_Alpha` 公式与非 Simple 模式的行为见 [Shaders
 | `LakeRenderVerify.Run` | 水位、水面 chunk、水体色、画面内容 | 需真实图形设备；Quad 下「水面 chunk」一项预期 FAIL，只看水体色 |
 | `PlanarReflectionVerify.Run` | 反射相机 512×256、反射开/关像素差、相机停用后自动关反射 | 需真实图形设备 |
 | `PlanarReflectionSetup.Report` | 反射配置 / 层 / controller / 材质属性只读校验 | 可 `-nographics` |
+| `RainRippleVerify.Run` | 雨纹补丁结构 + `Crest/Water` 全部 pass 编译 | batchmode；编译的是 D3D11 变体，Vulkan 仍以真机为准 |
+| `RainRipplePreview.Run` | **需真实图形设备**：同一帧雨纹开/关截图 + 像素差 | `Logs/RainRipple/rain-ripple-preview-*.png` |
 | `LakeCrestSetup.Retune` | 只重写水色，打印 1/e 深度 | 调参入口 |
 
 2026-11-13：`lake-water.txt` 6/6 PASS，`lake-orbit.txt` 9/9 PASS。2026-11-17 起 `LakeOrbitVerify` 预加载湖区 9 个 chunk 跑完整圈（120 帧固定步长 1s），验证地形跟随不穿模。
@@ -189,4 +201,5 @@ SimpleTransparency 的 `o_Alpha` 公式与非 Simple 模式的行为见 [Shaders
 - [ ] 钓鱼玩法需要 CPU 波高查询时，开 `com.waveharmonic.crest.cpu-queries`。
 - [ ] Crest shader 变体未审计（Shader Control 待接入）。
 - [ ] 水下体积光权重（见 §4）是 batchmode 定参，真机 HDR/色调映射下复核。
+- [ ] 临时雨纹贴图待替换为正式资源；雨纹单独一层视觉偏弱，需叠加泡沫/涟漪/粗糙度（见 §6.4）。
 - [x] 两台相机已同步后处理（`UniversalAdditionalCameraData.renderPostProcessing=1` + 全局 Volume），见 [postprocess](postprocess.md) §0。

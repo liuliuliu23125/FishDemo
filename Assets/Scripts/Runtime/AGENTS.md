@@ -49,6 +49,7 @@ Pegasus 没有 asmdef、编在 `Assembly-CSharp`。asmdef 程序集引用不到�
 | `Gameplay/TorchLight.cs` | 单支火把：点光强度/颜色闪烁、火焰核心 `_EmissionColor`、火焰/火星粒子淡入淡出；`Bind` 由 `LightingSetup` 调用 |
 | `Gameplay/TorchRingController.cs` | 12 支火把的选择器：按 `Camera.main` 距离取最近 N 支（12% 滞回），硬上限 6，`L` 循环 0/1/2/4/6；`ApplyImmediate()` 供验证脚本跳过淡入 |
 | `Gameplay/PlanarReflectionController.cs` | 平面反射视锥门控：`WaterBody` AABB ∩ `WaterRenderer.Viewer` 视锥（10m padding），不可见 0.5s 后关，水下关；把反射相机登记给 `GrassBRGManager.ReflectionCamera` 以跳过草的 BRG 剔除；`Bind` 由 `PlanarReflectionSetup` 调用 |
+| `Gameplay/RainRippleController.cs` | 雨纹全局参数：Enviro `wetness` → `_Crest_RainRippleIntensity`，写 `_Crest_RainRippleNormal/Scale/Speed`；当前挂在 `Crest Lake`，贴图为空时 intensity=0 |
 | `Gameplay/SectrChunkCache.cs` | SECTR chunk 的 TTL + LRU 保留；接管 RegionLoader 的引用，切相机/边界回走时复用，淘汰才真正卸载 |
 | `Gameplay/SectrStreamingRuntime.cs` | 流式运行时宿主：驱动缓存 Tick；等 `UnloadSceneAsync` 完成后按冷却做异步 `UnloadUnusedAssets`；低内存清草驻留 + buffer 池 + chunk 缓存 |
 | `Gameplay/SectrGrassStreamer.cs` | 草数据跟随 SECTR chunk：`IsLoaded` 才读该 chunk 的 `.bytes`，卸载即释放；每次最多加/卸一个，驻留数硬上限 24。`BeforeSceneLoad` 里调 `GrassBRGManager.RequestStreaming()` |

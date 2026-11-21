@@ -20,6 +20,9 @@
 | `CrestPerformanceMode.cs` | 切水面性能模式（SimpleTransparency / Quad），三项联动可逆 | `ApplySimpleTransparency` / `ApplyQuad` / `ApplyBoth` / `Restore` / `Report` |
 | `PlanarReflectionSetup.cs` | 配置平面反射（Above / 512×256 / Default 层 / 视锥门控）并挂 `PlanarReflectionController`；`LakeCrestSetup.Apply` 会调用 `Configure` | `Apply` / `Report` |
 | `PlanarReflectionVerify.cs` | **需真实图形设备**：反射相机 512×256、开/关像素差、相机停用后自动关反射 | `-executeMethod PlanarReflectionVerify.Run` |
+| `RainRippleVerify.cs` | 雨纹补丁结构 + `Crest/Water` 全部 pass 编译检查 | `-executeMethod RainRippleVerify.Run` |
+| `RainRippleSetup.cs` | 把 `RainRippleController` 挂到 `Crest Lake` 并赋临时雨纹；切自动/手动强度 | `Apply` / `Remove` / `Report` / `PreviewOn` / `PreviewOff` |
+| `RainRipplePreview.cs` | **需真实图形设备**：同一帧雨纹开/关截图 + 像素差 | `-executeMethod RainRipplePreview.Run` |
 
 `CrestRenderProbe` **看不到 URP 在 `renderer.Setup()` 里入队的 CopyDepthPass**，确认 URP 拷贝要用 Frame Debugger。
 

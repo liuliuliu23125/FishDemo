@@ -87,6 +87,8 @@
 #include "Packages/com.waveharmonic.crest/Runtime/Shaders/Library/Utility/Shadows.hlsl"
 #include "Packages/com.waveharmonic.crest/Runtime/Shaders/Surface/Facing.hlsl"
 #include "Packages/com.waveharmonic.crest/Runtime/Shaders/Surface/Normal.hlsl"
+// [FishDemo] Rain ripple normal layer; re-apply on Crest upgrade.
+#include "Packages/com.waveharmonic.crest/Runtime/Shaders/Surface/RainRipples.hlsl"
 #include "Packages/com.waveharmonic.crest/Runtime/Shaders/Surface/Reflection.hlsl"
 #include "Packages/com.waveharmonic.crest/Runtime/Shaders/Surface/Refraction.hlsl"
 #include "Packages/com.waveharmonic.crest/Runtime/Shaders/Surface/Caustics.hlsl"
@@ -463,6 +465,9 @@ void Fragment
             o_NormalWS.xz += normalMap * normalMapStrength;
         }
 #endif // d_Crest_NormalMap
+
+        // [FishDemo] Rain ripples: global normal layer, no extra pass.
+        o_NormalWS.xz += RainRippleNormal(i_UndisplacedXZ, i_Underwater);
 
         // Handles normalization.
         WaterNormal

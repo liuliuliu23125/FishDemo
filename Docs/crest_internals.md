@@ -81,7 +81,7 @@ SimpleTransparency 下水面走 alpha 混合，`ConfigureInput(None)`，Crest �
 
 ## 9. 升级清单
 
-1. 重打 `DepthLod.TerrainDepthInput.TryGetIncludeArea` 补丁（见包 AGENTS §4.1）。
+1. 重打 `DepthLod.TerrainDepthInput.TryGetIncludeArea`、`WaterReflections` 的 `ResolutionY/CaptureDepth`、`Surface/RainRipples.hlsl` + `Fragment.hlsl` 雨纹调用（见包 AGENTS §4.1）。
 2. 检查 `package.json` 的 `unityRelease` 与工程版本（当前 62f3 / 62f2）。
 3. 重新生成 `Settings.Crest.*.hlsl`。
 4. 跑 `LakeCrestSetup.Report` + `LakeGeometryProbe` + 三个水面验收脚本。

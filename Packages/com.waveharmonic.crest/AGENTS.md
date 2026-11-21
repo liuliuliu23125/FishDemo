@@ -46,6 +46,8 @@
 
 `Runtime/Scripts/Surface/WaterReflections.cs`：新增 `_ResolutionY` / `ResolutionY`，反射贴图支持非方形（工程用 512×256）；`ComputeHorizonPositionAndNormal` 的 NDC offset 从 float 改为 `Vector2`；新增 `_CaptureDepth` / `CaptureDepth`，关闭时反射相机不请求深度、不执行 CopyDepth。**升级 Crest 必须重打**；按 `ResolutionY` / `CaptureDepth` 与 `[FishDemo]` 标记定位，回归 `PlanarReflectionVerify`。
 
+`Runtime/Shaders/Surface/RainRipples.hlsl` + `Fragment.hlsl` 的一处调用：水面法线叠加全局雨纹层（`_Crest_RainRippleNormal/Intensity/Scale/Speed`），只在 `!i_Underwater` 生效；0 新 pass、+1 次水面纹理采样、无新变体。**升级 Crest 必须重打**；按 `[FishDemo]` 与 `RainRippleNormal` 定位，回归雨开/关截图。控制器 `Assets/Scripts/Runtime/Gameplay/RainRippleController.cs` 用 Enviro `wetness` 驱动，当前挂在 `Crest Lake`；贴图为空时 intensity=0。
+
 ### 4.2 工程改过的资产
 
 - `Runtime/Materials/Water.mat` / `Water Volume.mat`：水色、透明、水下参数、`_Crest_PlanarReflectionsEnabled=1`，以及运行时写入的 keyword（`_CREST_CUSTOM_MESH`、`d_Crest_NoMaskColor`）。
