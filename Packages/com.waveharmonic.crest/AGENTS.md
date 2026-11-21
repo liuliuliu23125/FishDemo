@@ -51,7 +51,7 @@
 ### 4.2 工程改过的资产
 
 - `Runtime/Materials/Water.mat` / `Water Volume.mat`：水色、透明、水下参数、`_Crest_PlanarReflectionsEnabled=1`，以及运行时写入的 keyword（`_CREST_CUSTOM_MESH`、`d_Crest_NoMaskColor`）。
-- 水下焦散：`UnderwaterEcologySetup.Apply` 往 `Water.mat` / `Water Volume.mat` 写 `_Crest_CausticsTexture`（包内 `Caustics.png`）与 `_Crest_Caustics*`；复用已有 underwater pass，不新增 pass/RT/blit。`Remove` 会关掉并清空。见 [underwater_ecology](../../Docs/underwater_ecology.md) §5。
+- 水下焦散：`UnderwaterEcologySetup.Apply` 往 `Water Volume.mat` 写 `_Crest_CausticsTexture`（包内 `Caustics.png`）、`_Crest_CausticsEnabled=1` 与 `_Crest_Caustics*`；`Water.mat` 只保留浮点参数，贴图属性未序列化。复用已有 underwater pass，不新增 pass/RT/blit。`Remove` 会关掉并清空。见 [underwater_ecology](../../Docs/underwater_ecology.md) §5。
 - `Runtime/Shaders/Library/Settings/Settings.Crest.*.hlsl`：`CREST_SIMPLE_TRANSPARENCY (1)`。
 - 权威设置是 `ProjectSettings/Packages/com.waveharmonic.crest/Settings.asset`（工程外，不在 Assets 下）。
 

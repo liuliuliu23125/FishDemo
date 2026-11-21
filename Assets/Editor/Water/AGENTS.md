@@ -46,7 +46,7 @@
 
 Clip 语义、Absorption/Scattering、水下参数与最小 alpha 见 [water §3–§4](../../../Docs/water.md) 与 [Crest 包规约](../../../Packages/com.waveharmonic.crest/AGENTS.md)。
 
-水下焦散由 `Assets/Editor/Underwater/UnderwaterEcologySetup.Apply` 写入 `Water.mat` / `Water Volume.mat`（`_Crest_CausticsTexture` + 参数）；复用 Crest 水下 pass，不新增 pass/RT/blit。见 [underwater_ecology §5](../../../Docs/underwater_ecology.md)。
+水下焦散由 `Assets/Editor/Underwater/UnderwaterEcologySetup.Apply` 写入 `Water Volume.mat`（`_Crest_CausticsTexture` + `_Crest_CausticsEnabled=1` + 参数）；`Water.mat` 只有浮点参数、贴图属性未序列化。复用 Crest 水下 pass，不新增 pass/RT/blit。见 [underwater_ecology §5](../../../Docs/underwater_ecology.md)。
 
 水面睡莲/浮萍由 `LakeDuckweedSetup.Apply` 沿 `LakeCarve` 岸线布置；湖重建后必须重跑。材质/网格生成物不要手改，见 [duckweed](../../../Docs/duckweed.md)。
 

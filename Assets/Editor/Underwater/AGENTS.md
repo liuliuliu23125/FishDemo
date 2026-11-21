@@ -23,7 +23,7 @@ UnderwaterEcologySetup.Apply
 - 编辑器菜单：`FishDemo/Underwater/重建水下生态`、`校验水下生态`、`移除水下生态`。菜单路径不退出编辑器；批处理路径仍用 `EditorApplication.Exit`。
 - 重跑 `WorldPipeline` / `SectrPipeline` 后湖与 GTS 会丢，先按 [water §2](../../../Docs/water.md) 重建湖，再跑 `Apply`。
 - `Apply` 会重建根节点和 `Assets/UnderwaterEcology/{Materials,Meshes,Prefabs}`；**shader 目录保留**。
-- `Remove` 会关闭 `Water.mat` / `Water Volume.mat` 的焦散并清空贴图；`Apply` 会重新打开。
+- `Remove` 会关闭 `Water Volume.mat` 的焦散并清空贴图；`Water.mat` 同步写 0（surface 未采样焦散）。`Apply` 会重新打开。
 - `Apply` 的贴图导入有幂等判断；已配置的贴图不会重复 `SaveAndReimport`。
 
 ## 3. 布局硬约束

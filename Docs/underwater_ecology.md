@@ -44,7 +44,7 @@
 
 | shader | 用途 | 要点 |
 |---|---|---|
-| `FishVAT` | 蓝吊/青鳉 | 读 UV1 的 VAT 变形；`GetMainLight + SampleSH`；开启 instancing；一个材质 = 一个物种的 1 个 draw call |
+| `FishVAT` | 蓝吊/青鳉 | 读 UV1 的 VAT 变形；`GetMainLight + SampleSH`；一个物种共享材质并开 instancing（实际走 instancing 还是 SRP Batcher 以 Frame Debugger 为准） |
 | `Plant` | 海草/海带/珊瑚/海绵 | UV.y 高度加权的顶点摆动；alpha clip；`Cull Off`；无 diffuse 的材质用 `_DiffuseMultiply` 作基色 |
 | `SeabedSand` | 海床 | 简化光照（主光 + 固定水下环境色），不采样 light probe/shadow，保证湖底稳定可见 |
 | `JellyfishVAT` | 水母 | VAT + 透明加法混合 + 自发光；LOD0/LOD1 各一套材质 |
@@ -55,7 +55,7 @@
 
 ## 5. 焦散
 
-- 复用 Crest 已有水下 pass：给 `Packages/com.waveharmonic.crest/Runtime/Materials/Water.mat` 写 `_Crest_CausticsTexture`（Crest `Caustics.png`）与 `_Crest_Caustics*` 参数；`Water Volume.mat` 同步一份。
+- 复用 Crest 已有水下 pass：给 `Packages/com.waveharmonic.crest/Runtime/Materials/Water Volume.mat` 写 `_Crest_CausticsTexture`（Crest `Caustics.png`）、`_Crest_CausticsEnabled=1` 与 `_Crest_Caustics*`；`Apply` 也会向 `Water.mat` 写同组浮点参数，但 surface 材质的 `_Crest_CausticsTexture` 当前未序列化，实际水下焦散由 Volume pass 采样。
 - **0 个新 pass、0 个新全屏 RT、0 次 blit**；只在相机入水时已有的 underwater pass 内增加 2 次焦散纹理采样。
 - `UnderwaterEcologySetup.Remove` 会关闭焦散并清空贴图。
 
@@ -67,10 +67,10 @@
 | Crest 焦散 | 复用 underwater pass，+2 次纹理采样 |
 | 底栖 | 84 实例；唯一材质约 29；LOD0 合计 ≈983k 三角形（Ocean prefab 带 LODGroup，运行时按屏占比降级） |
 | 海床 | 1 个 Mesh，48896 三角形，1 次 draw |
-| 鱼群 | 2 个 VAT 学校：各 1 个 instanced draw（260 条鱼 = 2 draw）；30 条 skinned + 海龟/魟鱼各 1；VAT 鱼近景 ≈305k、远景 LOD1 ≈131k |
+| 鱼群 | 2 个 VAT 学校（蓝吊 120 + 青鳉 100 = 220 条），共享材质并开 instancing（实际 draw 以 Frame Debugger 为准）；30 条 skinned + 海龟/魟鱼各 1 + 水母 8；VAT 鱼近景 ≈305k、远景 LOD1 ≈131k |
 | 透明效果 | 4 个气泡粒子系统；GodRay 默认关闭 |
 | 开关 | `J` 关整片生态；`G` 关 GodRay；水上且距礁 >120m 时 `Benthic` 全关；VAT 鱼 28m 切 LOD1 |
-| 真机 | **未验**；Editor 近景 LOD0 生态合计约 1.4M，叠世界后可能超 1.5M/frame 预算，需真机与降级 |
+| 真机 | **未验**；Editor 近景 LOD0 生态合计约 1.27M，叠世界后可能超 1.5M/frame 预算，需真机与降级 |
 
 ## 7. 验收
 

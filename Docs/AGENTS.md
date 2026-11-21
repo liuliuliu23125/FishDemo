@@ -55,7 +55,7 @@
 
 ## 3. 工程约定
 
-- **Git LFS**：目录限定 + 精确扩展名，不要改成全局通配。Unity YAML（`.unity/.mat/.prefab/.asset`）刻意不进 LFS。收窄规则后必须用 `git lfs ls-files -n` + `git check-attr --stdin filter` 核对，不能留下 `filter: unspecified` 的 LFS 指针。
+- **Git LFS**：目录限定 + 精确扩展名，不要改成全局通配。Unity YAML（`.unity/.mat/.prefab` 与文本 `.asset`）刻意不进 LFS；二进制 Mesh `.asset`（如 `UnderwaterEcology/Meshes`、`WaterPlants/Meshes`）按目录精确规则进 LFS。收窄规则后必须用 `git lfs ls-files -n` + `git check-attr --stdin filter` 核对，不能留下 `filter: unspecified` 的 LFS 指针。
 - **目录**：`Assets/Scripts/Runtime/{Rendering,Gameplay}` 已有，`Streaming/` 尚未创建。
 - **默认程序集目录**：`Assets/Editor/`、`Assets/GTSRuntime/` 没有 asmdef，因为要引用同样无 asmdef 的 SECTR / GTS。不要把运行时脚本放进 `Assets/Editor/`，也不要放进有 asmdef 的 `Assets/Scripts/Runtime/`。
 - **Gameplay 不能加 asmdef**：它要引用 Pegasus / Crest 类型，加了就编不过。

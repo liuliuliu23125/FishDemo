@@ -74,7 +74,7 @@ SimpleTransparency 的 `o_Alpha` 公式与非 Simple 模式的行为见 [Shaders
 
 水下开关判定与材质覆盖规则见 [Volume §1–§2](../Packages/com.waveharmonic.crest/Runtime/Scripts/Volume/AGENTS.md)。本工程由 `Lake Body`（Volume|Physics、Include）触发，`_Crest_AmbientTerm` / `_Crest_DirectTerm` 取 **0.35 / 0.40**（写 `Water.mat`）。
 
-**焦散**由 `UnderwaterEcologySetup.Apply` 写 `Water.mat` / `Water Volume.mat` 的 `_Crest_CausticsTexture`（Crest `Caustics.png`）与 `_Crest_Caustics*`；复用已有 underwater pass，**0 新 pass / 0 RT / 0 blit**，只增加 2 次焦散纹理采样。礁区、鱼群与海床见 [underwater_ecology](underwater_ecology.md)。
+**焦散**由 `UnderwaterEcologySetup.Apply` 写 `Water Volume.mat` 的 `_Crest_CausticsTexture`（Crest `Caustics.png`）、`_Crest_CausticsEnabled=1` 与 `_Crest_Caustics*`；`Water.mat` 只有同组浮点参数，surface 的贴图属性当前未序列化。复用已有 underwater pass，**0 新 pass / 0 RT / 0 blit**，只增加 2 次焦散纹理采样。礁区、鱼群与海床见 [underwater_ecology](underwater_ecology.md)。
 
 **水面睡莲/浮萍**由 `LakeDuckweedSetup.Apply` 沿 `LakeCarve` 岸线布置（193 株、4 网格、1 材质、材质开 instancing，≈372k tris）；固定水位 +0.06m，不新增 pass/RT。见 [duckweed](duckweed.md)。
 
@@ -205,7 +205,7 @@ SimpleTransparency 的 `o_Alpha` 公式与非 Simple 模式的行为见 [Shaders
 - [ ] 钓鱼玩法需要 CPU 波高查询时，开 `com.waveharmonic.crest.cpu-queries`。
 - [ ] Crest shader 变体未审计（Shader Control 待接入）。
 - [ ] 水下体积光权重（见 §4）是 batchmode 定参，真机 HDR/色调映射下复核。
-- [ ] 水下生态（礁区/鱼群/海床）真机 30fps 未验；近景 LOD0 约 1.4M，降级与取舍见 [underwater_ecology](underwater_ecology.md) §6、§8。
+- [ ] 水下生态（礁区/鱼群/海床）真机 30fps 未验；近景 LOD0 约 1.27M，降级与取舍见 [underwater_ecology](underwater_ecology.md) §6、§8。
 - [ ] 水面睡莲/浮萍固定在水位 +6cm，不跟随 Crest 浪；无 LOD，真机未验，见 [duckweed](duckweed.md) §6。
 - [ ] 临时雨纹贴图待替换为正式资源；雨纹单独一层视觉偏弱，需叠加泡沫/涟漪/粗糙度（见 §6.4）。
 - [x] 两台相机已同步后处理（`UniversalAdditionalCameraData.renderPostProcessing=1` + 全局 Volume），见 [postprocess](postprocess.md) §0。
