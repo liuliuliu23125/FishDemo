@@ -76,7 +76,7 @@ SimpleTransparency 的 `o_Alpha` 公式与非 Simple 模式的行为见 [Shaders
 
 **焦散**由 `UnderwaterEcologySetup.Apply` 写 `Water.mat` / `Water Volume.mat` 的 `_Crest_CausticsTexture`（Crest `Caustics.png`）与 `_Crest_Caustics*`；复用已有 underwater pass，**0 新 pass / 0 RT / 0 blit**，只增加 2 次焦散纹理采样。礁区、鱼群与海床见 [underwater_ecology](underwater_ecology.md)。
 
-**水面睡莲/浮萍**由 `LakeDuckweedSetup.Apply` 沿 `LakeCarve` 岸线布置（193 株、4 网格、1 材质、instancing，≈372k tris）；固定水位 +0.06m，不新增 pass/RT。见 [duckweed](duckweed.md)。
+**水面睡莲/浮萍**由 `LakeDuckweedSetup.Apply` 沿 `LakeCarve` 岸线布置（193 株、4 网格、1 材质、材质开 instancing，≈372k tris）；固定水位 +0.06m，不新增 pass/RT。见 [duckweed](duckweed.md)。
 
 ## 5. 相机 rig
 

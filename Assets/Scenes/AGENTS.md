@@ -62,7 +62,7 @@ World_SECTR Terrain_0_0-20261109 - 162007 0-1-0 Sector.unity
 | ~~`Gaia Water`~~ | **当前场景已无此节点**（YAML 里没有任何名字含 `Water` 的 GameObject）；水面由 `Crest Lake` 提供 |
 | **`Crest Lake`** | Crest 水面 + `WaterBody` + `ClipLodInput`（湖盆裁剪）+ `PlanarReflectionController`（Above / 512×256 / 视锥门控）。位置 `(192,264,96)` |
 | **`Underwater Ecology`** | 固定礁区 demo：84 底栖 + 260 鱼 + 水母/气泡 + 全湖海床沙 + Crest 焦散。**不随 SECTR 分块**，只做一个礁区；扩展多礁区前必须改走 chunk/YooAsset。见 [underwater_ecology](../../Docs/underwater_ecology.md) |
-| **`Lake Duckweed`** | 沿湖岸 18 簇 / 193 株睡莲（4 变体、1 共享材质、GPU instancing）；y 固定在水位 +0.06，不跟随 Crest 浪。见 [duckweed](../../Docs/duckweed.md) |
+| **`Lake Duckweed`** | 沿湖岸 18 簇 / 193 株睡莲（4 变体、1 共享材质、材质开 instancing）；y 固定在水位 +0.06，不跟随 Crest 浪。见 [duckweed](../../Docs/duckweed.md) |
 | `Terrain_x_x` ×9 | 只有 Sector×4 + Portal×4，**无 Terrain 组件**（地形在 chunk 里） |
 | `Gaia Terrains` / `Gaia Runtime` / `Gaia Tools` | Gaia 运行时容器 |
 | `Alpine Meadow-*` ×10 | 撒点器，挂着空转的 Gaia `TerrainLoader` |

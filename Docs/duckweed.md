@@ -1,7 +1,7 @@
 # 水面睡莲/浮萍（中心湖）
 
 > 从 Nature Package - Swamp,Forest Environment v1.0 取出的水面植物，沿中心湖岸线点缀一圈，补足水面细节。
-> 包内**没有**严格意义的浮萍（Lemna/duckweed），可用的是 `swamp_lily_*`（睡莲/浮水植物）；本模块以它作为水面浮水植被。
+> 包内按资源命名未找到浮萍（Lemna/duckweed），可用的是 `swamp_lily_*`（睡莲/浮水植物）；本模块以它作为水面浮水植被。
 > 布置参数唯一来源：`Assets/Editor/Water/LakeDuckweedSetup.cs`。改布局先改它再重跑。
 
 ## 1. 资产提取与导入
@@ -39,12 +39,12 @@
 | 项 | 实现 |
 |---|---|
 | Shader | `Assets/WaterPlants/Shaders/WaterSurfacePlant.shader`（`FishDemo/Water/SurfacePlant`） |
-| 光照 | 主光 + `SampleSH` 环境项；无阴影、无 light probe 逐像素采样 |
+| 光照 | 主光 + `SampleSH` 环境项；不采样阴影/反射探针 |
 | 透明 | BaseMap alpha + `_Cutoff=0.5` alpha clip；`Cull Off`；`Queue=AlphaTest(2450)`、`ZWrite On` |
 | 动画 | 每株用**自身枢轴**算相位，整株 bob（`_WaveStrength=0.07`、`_WaveSpeed=0.85`）+ 水平漂移（`_DriftStrength=0.06`）+ 倾斜（`_TiltStrength=3°`）+ 偏航（`_YawStrength=2°`）；无 CPU 更新、无逐实例 MPB |
-| 合批 | 4 个共享网格 + 1 个共享材质 + `enableInstancing=true` → 理论 4 个 instanced draw |
+| 合批 | 4 个共享网格 + 1 个共享材质 + `enableInstancing=true`；shader 同时是 SRP Batcher 兼容，实际走哪条路径以 Frame Debugger 为准 |
 | 阴影 | 关闭 Cast Shadows；shader 没有 ShadowCaster pass |
-| 反射 | 在 Default 层，参与 Crest 平面反射 |
+| 反射 | 在 Default 层，符合 Crest 平面反射的层筛选；未单独做像素验证 |
 
 ## 4. 性能账
 
@@ -53,7 +53,7 @@
 | 新 pass / RT / blit | 0 / 0 / 0 |
 | 实例 | 193 个 MeshRenderer，4 个网格，1 个材质 |
 | 三角形 | 193 个实例合计 ≈371,845（单株约 1.9k） |
-| draw call | 按变体 4 个 instanced（SRP Batcher 兼容） |
+| draw call | 4 个唯一网格 / 1 个材质；instancing 已开，但 SRP Batcher 可能优先，未用 Frame Debugger 实测 |
 | Draw 开销 | 每实例独立剔除；不会因整圈网格一次提交全部三角形 |
 | 真机 | **未验**；低画质档可直接 `Remove` 或减半簇数/实例数 |
 
@@ -71,7 +71,7 @@ LakeDuckweedSetup.Apply
 - `Apply` 会覆盖 `Assets/WaterPlants/{Materials,Meshes}`；`Shaders/` 与 `Source/` 保留。
 - `Remove` 删除根节点与生成材质/网格，保留源资产与 shader。
 
-2026-11-21 Editor 实测：`Apply` PASS（193 renderer / 4 唯一网格 / 371845 tris / 0 共享材质异常）；`Report` PASS；`Preview` PASS（开/关像素差 **9.1%**；浮萍遮罩内 30 帧 A/B 平均差异 **66.5/通道**，证明顶点动画生效）。截图见 `Logs/Water/duckweed-preview-*.png`（wide/on/shore/anim-a/anim-b/off）。
+2026-11-21 Editor 实测：`Apply` PASS（193 renderer / 4 唯一网格 / 371845 tris / 0 共享材质异常）；`Report` PASS；`Preview` PASS（开/关像素差 **9.1%**；浮萍遮罩内 30 帧 A/B 平均差异 **66.5/通道**，含水面与光照随时间的变化，未做静态对照）。截图见 `Logs/Water/duckweed-preview-*.png`（wide/on/shore/anim-a/anim-b/off）。
 
 ## 6. 已知限制
 

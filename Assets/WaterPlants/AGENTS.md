@@ -19,7 +19,7 @@
 - 只提交提取出的 4 个 FBX、2 张贴图与包内原 Standard 占位材质；**不要**把 1.7GB 的 Swamp/Forest 包整体导入。
 - 源贴图 diffuse 4096、normal 2048，均已降到 **1024**；导入设置固定 `1024 / ASTC_8x8`，法线走 `NormalMap`、`Clamp`，diffuse 保留 alpha 并开 `alphaIsTransparency`。
 - `Materials/` 与 `Meshes/` 由 `LakeDuckweedSetup.Apply` 覆盖重建；不要手改后不重跑 setup。
-- 所有实例共享 **1 个材质 + 4 个变体网格**，靠 GPU instancing 合批。给单个实例换材质/换网格会破坏 instancing。
+- 所有实例共享 **1 个材质 + 4 个变体网格**，材质开 `enableInstancing`。给单个实例换材质/换网格会破坏合批；实际走 instancing 还是 SRP Batcher 以 Frame Debugger 为准。
 - 位置唯一来源是 `LakeCarve`（湖心/半径/水位）；当前 y = `WaterLevel + 0.06`，**不跟随 Crest 浪高**。改水位或重跑世界后必须重新 `Apply`。
 - 渲染器关闭阴影投射（shader 无 ShadowCaster pass）；不要打开 Cast Shadows。
 - shader 零注释；只用 URP 14 前向 include，不新增 pass / RT / blit，不改 Crest。
@@ -36,5 +36,5 @@ LakeDuckweedSetup.Apply
 - 批处理：`-executeMethod LakeDuckweedSetup.Apply` / `.Report`；预览必须去掉 `-nographics`。
 - `Remove` 会删除 `Lake Duckweed` 根节点、生成材质与网格；`Source/` 与 `Shaders/` 保留。
 - `LilyModelProbe.Run` 只读输出 4 个源 FBX 的顶点/三角形/包围盒，改源模型后先跑它。
-- 预览输出：`Logs/Water/duckweed-preview-wide.png`、`-on.png`、`-shore.png`、`-anim-a.png`、`-anim-b.png`、`-off.png`；当前 on/off 像素差 9.1%，浮萍遮罩内 A/B 平均差异 66.5。
+- 预览输出：`Logs/Water/duckweed-preview-wide.png`、`-on.png`、`-shore.png`、`-anim-a.png`、`-anim-b.png`、`-off.png`；当前 on/off 像素差 9.1%，浮萍遮罩内 A/B 平均差异 66.5（未与关闭动画的静态对照比较）。
 - 动画参数：`_WaveStrength=0.07`、`_WaveSpeed=0.85`、`_DriftStrength=0.06`、`_TiltStrength=3°`、`_YawStrength=2°`；相位取每株世界枢轴，不用 MPB。
